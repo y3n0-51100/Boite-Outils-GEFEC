@@ -300,8 +300,12 @@ table.prod tr.multi:hover td{background:#fff3df}
 .lbl.fa4 .crossed{font-size:14mm;margin-top:2mm}
 .lbl .eco{font-family:'ArchivoVF';font-weight:400;font-stretch:87%;color:var(--but-dark);align-self:flex-start;text-align:left}
 .lbl.fa4 .eco{font-size:4.6mm;margin-top:3mm}
-.lbl .pname{font-family:'ArchivoVF';font-weight:500;font-stretch:87%;color:var(--but-dark)}
-.lbl.fa4 .pname{font-size:11mm;margin-top:13mm}
+.lbl .pname{font-family:'ArchivoVF';color:var(--but-dark)}
+.lbl .pcat{font-weight:500;font-stretch:87%}
+.lbl .pref{font-weight:500;font-stretch:87%}
+.lbl.fa4 .pname{margin-top:11mm}
+.lbl.fa4 .pcat{font-size:9.5mm;line-height:1.04}
+.lbl.fa4 .pref{font-size:7mm;line-height:1.05;margin-top:1.5mm}
 .lbl .pcode{font-family:'ArchivoVF';font-weight:500;font-stretch:87%;color:var(--but-dark)}
 .lbl.fa4 .pcode{font-size:6mm;margin-top:2mm}
 .lbl .brand{font-family:'ArchivoVF';font-weight:900;font-stretch:87%;color:var(--but-dark);letter-spacing:0;margin-top:auto}
@@ -341,7 +345,8 @@ table.prod tr.multi:hover td{background:#fff3df}
 .lbl.fa5 .eco{position:absolute;left:35.3mm;top:calc(var(--boxtop) + 78.4mm);font-size:4.2mm;margin:0}
 /* libellé + code : centrés ; libellé sur 2 lignes max, le code suit dessous */
 .lbl.fa5 .a5namecode{position:absolute;left:0;right:0;top:calc(var(--boxtop) + 84.4mm);padding:0 11mm;text-align:center}
-.lbl.fa5 .a5namecode .pname{font-size:6.9mm;line-height:1.08;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lbl.fa5 .a5namecode .pcat{font-size:5.6mm;line-height:1.06;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lbl.fa5 .a5namecode .pref{font-size:5mm;line-height:1.05;margin-top:1.2mm}
 .lbl.fa5 .a5namecode .pcode{font-size:4.5mm;line-height:1;margin-top:2.5mm}
 .lbl.fa5 .brand{position:absolute;left:0;right:0;bottom:14mm;text-align:center;font-size:7mm}
 .lbl.fa5 .triman{left:3mm;bottom:2mm;width:5mm;height:5mm}
@@ -678,6 +683,18 @@ function esc(s) {
    la valorisation les garde (0011120271638) : on croise sur la forme normalisée. */
 function normCode(s) { return String(s).replace(/^0+/, ''); }
 function padCode(s) { return String(s).padStart(13, '0'); }
+/* Référence affichée : retire les préfixes de famille (ASPITRA, EXPRESS,
+   ASPIBAL, MACHDOS...) — mots purement alphabétiques placés AVANT le vrai
+   code modèle, lequel contient toujours au moins un chiffre (ex. RO2611EA).
+   On garde tout à partir du premier mot contenant un chiffre. */
+function cleanRef(refs) {
+  const s = String(refs || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  const tokens = s.split(' ');
+  const i = tokens.findIndex(t => /\d/.test(t));
+  if (i <= 0) return s;            // aucun chiffre, ou code déjà en tête -> inchangé
+  return tokens.slice(i).join(' ');
+}
 function parsePrice(s) {
   if (s == null) return null;
   const m = String(s).replace(/\s/g, '').match(/(\d+)[,.€](\d{2})/);
@@ -833,7 +850,7 @@ function parsePromoPdf(pages) {
       // l'étiquette n'affiche QUE la référence de l'appareil ; la catégorie
       // est conservée à part, uniquement pour le tri/regroupement par type
       let cat = (f.cat || '').replace(/\s+/g, ' ').trim();
-      let name = (f.refs || '').replace(/\s+/g, ' ').trim();
+      let name = cleanRef(f.refs);   // référence nettoyée (sans préfixe de famille)
       let brand = f.brand, price = f.price;
 
       // replis génériques
@@ -1337,7 +1354,8 @@ function labelHtml(p, fmtClass) {
             <div class="centcol"><span class="eur">€</span><span class="cents">${esc(price.cents)}</span></div>
           </div>`;
     const crossed = p.oldPrice != null ? `<div class="crossed">${esc(fmtEuroParts(p.oldPrice).euros)}€${esc(fmtEuroParts(p.oldPrice).cents)}</div>` : '';
-    const pname = `<div class="pname">${esc(p.name)}</div>`;
+    const catLine = p.cat ? `<div class="pcat">${esc(p.cat)}</div>` : '';
+    const pname = `<div class="pname">${catLine}<div class="pref">${esc(p.name)}</div></div>`;
     const pcode = p.ean ? `<div class="pcode">Code ${esc(p.ean)}</div>` : '';
     const brand = showBrand && p.brand ? `<div class="brand">${esc(p.brand)}</div>` : '';
     if (state.fmt === 'a5') {
