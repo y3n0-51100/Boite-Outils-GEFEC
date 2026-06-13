@@ -934,7 +934,7 @@ function parseBaseWorkbook(arrayBuffer) {
           else if (h === 'MNT_DEA_TTC') c.dea = i;
           else if (h === 'MNT_DEEE_TTC') c.deee = i;
           else if (c.price == null && h.includes('PRIX') && h.includes('VENTE')) c.price = i;
-          else if (c.name == null && (h.includes('DESIGN') || h.includes('LIBELL'))) c.name = i;
+          else if (c.name == null && (h === 'LIB_PRODUIT' || h.includes('DESIGN') || h.includes('LIBELL'))) c.name = i;
         });
         break;
       }

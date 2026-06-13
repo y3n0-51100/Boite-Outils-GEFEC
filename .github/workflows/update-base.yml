@@ -1,0 +1,63 @@
+name: Mise à jour quotidienne de la base article
+
+# Télécharge chaque jour la base article Excel (source protégée par mot de passe),
+# la convertit en base-eco.js (format chargé par l'outil), et committe les deux
+# fichiers sur main si la base a changé. L'outil récupère ainsi la base à jour
+# automatiquement, sans intervention manuelle.
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # tous les jours à 00:00 UTC (GitHub planifie en UTC)
+  workflow_dispatch: {}    # permet aussi un déclenchement manuel depuis l'onglet Actions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-base
+  cancel-in-progress: false
+
+jobs:
+  update-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Téléchargement de la base Excel (source protégée)
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          BASE_USER: ${{ secrets.BASE_USER }}
+          BASE_PASS: ${{ secrets.BASE_PASS }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$BASE_USER" ] || [ -z "$BASE_PASS" ]; then
+            echo "::error::Secrets manquants — définissez BASE_URL, BASE_USER et BASE_PASS dans Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          curl -fSL --retry 3 --retry-delay 5 \
+            --user "$BASE_USER:$BASE_PASS" \
+            "$BASE_URL" -o base.xlsx
+          echo "Téléchargé : $(stat -c%s base.xlsx) octets"
+
+      - name: Installation de SheetJS
+        run: npm install xlsx@0.18.5 --no-save
+
+      - name: Conversion en base-eco.js
+        run: node scripts/build-base.js base.xlsx base-eco.js
+
+      - name: Commit & push si la base a changé
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add base.xlsx base-eco.js
+          if git diff --cached --quiet; then
+            echo "Aucun changement — la base est déjà à jour."
+          else
+            git commit -m "Mise à jour automatique de la base article ($(date -u +'%Y-%m-%d'))"
+            git push
+          fi
