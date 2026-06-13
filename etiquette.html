@@ -129,6 +129,21 @@ section.panel.active{display:block}
 .counter{font-size:13px;font-weight:800;color:#666;white-space:nowrap}
 .counter b{color:var(--but-red)}
 
+/* ajout manuel d'un produit par recherche dans le plan promo */
+.manualadd{border:2px solid var(--but-yellow);border-radius:14px;padding:14px;margin-bottom:16px;background:#fffdf3}
+.manualadd-row{display:flex;gap:10px;align-items:center}
+.manualadd-row input[type=search]{flex:1;min-width:200px;border:2px solid var(--grey-2);border-radius:999px;padding:10px 18px;font-size:14px;font-family:inherit;outline:none}
+.manualadd-row input[type=search]:focus{border-color:var(--but-red)}
+.manualadd-hint{font-size:12.5px;color:#888;margin:8px 2px 0;font-weight:600}
+.manualresults{margin-top:10px;display:flex;flex-direction:column;gap:7px;max-height:280px;overflow:auto}
+.maitem{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--grey-2);border-radius:10px;background:#fff}
+.maitem:hover{border-color:var(--but-yellow);background:#fffdf3}
+.maitem .mi-code{font-weight:800;font-size:12.5px;color:#555;font-variant-numeric:tabular-nums;white-space:nowrap}
+.maitem .mi-name{flex:1;font-size:13.5px;font-weight:600;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.maitem .mi-price{font-weight:900;color:var(--but-red);white-space:nowrap;font-variant-numeric:tabular-nums}
+.maitem.added{opacity:.55}
+.manualresults .none{padding:10px 12px;font-size:13px;color:#999;font-weight:600}
+
 table.prod{width:100%;border-collapse:collapse;font-size:13.5px}
 table.prod th{
   text-align:left;padding:10px 7px;font-size:11.5px;
@@ -405,7 +420,8 @@ table.prod tr.multi:hover td{background:#fff3df}
         <input type="file" id="fileValo" accept=".pdf">
         <div class="status" id="stValo"></div>
       </div>
-      <div class="drop" id="dropBase" style="border-style:solid">
+      <!-- Base article (éco-participations) intégrée à l'outil : carte masquée, statut conservé pour l'init -->
+      <div class="drop" id="dropBase" style="display:none;border-style:solid" aria-hidden="true">
         <div class="ic">📊</div>
         <div class="t">Base article (éco-participations)</div>
         <div class="d">Intégrée à l'outil et mise à jour par l'administrateur — rien à charger ici</div>
@@ -433,7 +449,15 @@ table.prod tr.multi:hover td{background:#fff3df}
       <span class="counter" id="counter"></span>
       <button class="btn alt small" onclick="toggleAll(true)">Tout cocher</button>
       <button class="btn alt small" onclick="toggleAll(false)">Tout décocher</button>
-      <button class="btn yellow small" onclick="addManual()">＋ Ajouter un produit</button>
+      <button class="btn yellow small" onclick="toggleManualAdd()">＋ Ajouter un produit</button>
+    </div>
+    <div id="manualAdd" class="manualadd" style="display:none">
+      <div class="manualadd-row">
+        <input type="search" id="manualSearch" autocomplete="off" placeholder="Code EAN13 ou référence / libellé du produit…" oninput="searchManual()">
+        <button class="btn alt small" type="button" onclick="closeManualAdd()">Fermer</button>
+      </div>
+      <div class="manualadd-hint" id="manualHint">Tapez un code EAN13 ou une référence présente dans le plan promo, puis cliquez sur « Ajouter le produit ».</div>
+      <div id="manualResults" class="manualresults"></div>
     </div>
     <div id="tableWrap"></div>
     <div class="bigaction" style="margin-top:18px">
@@ -1143,9 +1167,79 @@ function toggleAll(v) {
   visibleProducts().forEach(p => p.selected = v);
   renderTable();
 }
-function addManual() {
-  state.products.unshift({ id: nextId++, ean: '', name: 'Nouveau produit', brand: '', price: null, oldPrice: null, eco: null, from: null, to: null, selected: true });
-  renderTable();
+/* Ajout manuel : recherche d'un produit (EAN13 ou référence/libellé)
+   dans le plan promo national, puis ajout d'une ligne code / référence / prix. */
+function toggleManualAdd() {
+  const panel = document.getElementById('manualAdd');
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) {
+    const box = document.getElementById('manualSearch');
+    box.value = ''; searchManual(); box.focus();
+  }
+}
+function closeManualAdd() { document.getElementById('manualAdd').style.display = 'none'; }
+function blankBtn() {
+  return '<div style="margin-top:8px"><button class="btn alt small" type="button" onclick="addBlank()">＋ Ajouter une ligne vierge</button></div>';
+}
+function searchManual() {
+  const box = document.getElementById('manualResults');
+  const q = (document.getElementById('manualSearch').value || '').toLowerCase().trim();
+  const base = state.promoProducts || [];
+  if (!base.length) {
+    box.innerHTML = '<div class="none">Aucun plan promo chargé — chargez-le à l\'étape 1, ou ajoutez une ligne vierge.</div>' + blankBtn();
+    return;
+  }
+  if (!q) { box.innerHTML = '<div class="none">Saisissez un code EAN13 ou une référence…</div>'; return; }
+  // dédoublonnage par EAN pour l'affichage (un même produit peut figurer sur plusieurs périodes)
+  const seen = new Set(); const matches = [];
+  base.forEach((p, idx) => {
+    if (seen.has(p.key)) return;
+    const hay = (p.ean + ' ' + (p.name || '') + ' ' + (p.brand || '')).toLowerCase();
+    if (!hay.includes(q)) return;
+    seen.add(p.key); matches.push({ p, idx });
+  });
+  if (!matches.length) {
+    box.innerHTML = '<div class="none">Aucun produit trouvé pour « ' + esc(q) + ' » dans le plan promo.</div>' + blankBtn();
+    return;
+  }
+  const already = new Set(state.products.map(x => x.ean));
+  box.innerHTML = matches.slice(0, 40).map(({ p, idx }) => {
+    const added = already.has(p.ean);
+    return `<div class="maitem ${added ? 'added' : ''}">
+      <span class="mi-code">${esc(p.ean)}</span>
+      <span class="mi-name">${esc(p.name || '(sans libellé)')}${p.brand ? ' · ' + esc(p.brand) : ''}</span>
+      <span class="mi-price">${p.price != null ? p.price.toFixed(2) + ' €' : '—'}</span>
+      <button class="btn yellow small" type="button" onclick="addFromBase(${idx})" ${added ? 'disabled' : ''}>${added ? 'Déjà ajouté ✓' : 'Ajouter le produit'}</button>
+    </div>`;
+  }).join('');
+}
+function addFromBase(idx) {
+  const p = state.promoProducts[idx];
+  if (!p) return;
+  if (state.products.some(x => x.ean === p.ean)) { toast('Ce produit est déjà dans la liste.'); return; }
+  state.products.unshift({
+    id: nextId++, ean: p.ean,
+    name: p.name || state.storeNames.get(p.key) || '',
+    brand: p.brand || '',
+    price: p.price, oldPrice: null,
+    eco: state.ecoMap.has(p.key) ? state.ecoMap.get(p.key) : null,
+    from: p.from, to: p.to, selected: true,
+  });
+  renderTable(); searchManual();
+  toast('✅ Produit ajouté : ' + (p.name || p.ean));
+}
+function addBlank() {
+  const q = (document.getElementById('manualSearch').value || '').trim();
+  const ean = /^\d{8,13}$/.test(q) ? padCode(q) : '';
+  state.products.unshift({
+    id: nextId++, ean, name: 'Nouveau produit', brand: '',
+    price: null, oldPrice: null,
+    eco: ean && state.ecoMap.has(normCode(ean)) ? state.ecoMap.get(normCode(ean)) : null,
+    from: null, to: null, selected: true,
+  });
+  renderTable(); closeManualAdd();
+  toast('➕ Ligne vierge ajoutée — complétez-la dans le tableau');
 }
 
 /* ============================================================
