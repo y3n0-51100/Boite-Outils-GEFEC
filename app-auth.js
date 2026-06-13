@@ -240,19 +240,24 @@
   // appelé par le moteur quand un utilisateur dépose une valorisation
   window.onValoLocallySet = async function (file, eanCount) {
     if (!CURRENT || CURRENT.role !== 'store' || !CURRENT.storeId) return; // seuls les magasins sauvegardent
+    // 1) le fichier (essentiel)
     try {
       const { error } = await sb.storage.from('valorisations')
         .upload(valoPath(CURRENT.storeId), file, { upsert: true, contentType: 'application/pdf' });
       if (error) throw error;
+    } catch (e) {
+      toast('Sauvegarde cloud impossible : ' + (e.message || e), true);
+      return;
+    }
+    // 2) les métadonnées (best-effort : n'empêche pas la sauvegarde du fichier)
+    try {
       await sb.from('valorisations').upsert({
         store_id: CURRENT.storeId, file_path: valoPath(CURRENT.storeId),
         file_name: file.name, ean_count: eanCount,
         updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
       });
-      toast('Valorisation enregistrée dans le cloud ✓');
-    } catch (e) {
-      toast('Sauvegarde cloud impossible : ' + (e.message || e), true);
-    }
+    } catch (e) { /* métadonnées facultatives */ }
+    toast('Valorisation enregistrée dans le cloud ✓');
   };
 
   /* ---------- Modale admin : comptes ---------- */
@@ -336,22 +341,37 @@
   async function openStores() {
     el('storesModal').classList.add('show');
     const list = el('stList');
+    list.innerHTML = '<div class="gempty">Chargement…</div>';
     try {
-      const { data, error } = await sb.from('stores')
-        .select('id, name, region, valorisations(file_path, file_name, ean_count, updated_at)')
-        .order('id');
-      if (error) throw error;
-      if (!data || !data.length) { list.innerHTML = '<div class="gempty">Aucun magasin enregistré.</div>'; return; }
-      list.innerHTML = data.map(s => {
-        const v = (s.valorisations && s.valorisations[0]) || null;
-        const sub = v
-          ? `${v.ean_count != null ? v.ean_count + ' EAN · ' : ''}maj ${v.updated_at ? new Date(v.updated_at).toLocaleDateString('fr-FR') : '?'}`
+      // 1) magasins (noms) + 2) métadonnées éventuelles
+      const { data: stores, error: serr } = await sb.from('stores').select('id, name, region').order('id');
+      if (serr) throw serr;
+      let metaBy = {};
+      try {
+        const { data: metas } = await sb.from('valorisations').select('store_id, ean_count, updated_at');
+        (metas || []).forEach(m => { metaBy[m.store_id] = m; });
+      } catch (e) {}
+      if (!stores || !stores.length) { list.innerHTML = '<div class="gempty">Aucun magasin enregistré.</div>'; return; }
+      // 3) vérité = fichiers réellement présents dans le Storage (par magasin)
+      const rows = await Promise.all(stores.map(async s => {
+        let file = null;
+        try {
+          const { data: files } = await sb.storage.from('valorisations').list(String(s.id), { limit: 100 });
+          file = (files || []).find(f => f.name === 'valorisation.pdf') || null;
+        } catch (e) {}
+        return { s, file, meta: metaBy[s.id] };
+      }));
+      list.innerHTML = rows.map(({ s, file, meta }) => {
+        const has = !!file;
+        const when = (meta && meta.updated_at) || (file && (file.updated_at || file.created_at));
+        const sub = has
+          ? `${meta && meta.ean_count != null ? meta.ean_count + ' EAN · ' : ''}maj ${when ? new Date(when).toLocaleDateString('fr-FR') : '?'}`
           : 'aucune valorisation déposée';
         return `<div class="grow">
           <div class="gr-main"><b>${esc(s.name || s.id)}</b>
             <div class="gr-sub">${esc(s.id)}${s.region ? ' · ' + esc(s.region) : ''} — ${esc(sub)}</div></div>
-          ${v ? `<button data-load="${esc(s.id)}">Charger dans les outils</button>
-                 <button data-dl="${esc(s.id)}">Télécharger</button>` : ''}
+          ${has ? `<button data-load="${esc(s.id)}">Charger dans les outils</button>
+                   <button data-dl="${esc(s.id)}">Télécharger</button>` : ''}
         </div>`;
       }).join('');
       list.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', async () => {
