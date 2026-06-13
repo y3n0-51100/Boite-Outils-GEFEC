@@ -11,6 +11,7 @@
   const ROLE_LABEL = { admin: 'Administrateur', director: 'Directeur régional', store: 'Magasin' };
   let sb = null;
   let CURRENT = null; // { userId, role, storeId, name }
+  let sharedPromoFile = null; // plan promo national publié par l'admin (partagé)
 
   /* ---------- Styles ---------- */
   const css = `
@@ -71,6 +72,12 @@
   .grow button:hover{background:var(--surface-3,#eceff5)}
   .grow button.danger{color:#b91c1c;border-color:#f3c2c2}
   .gempty{font-size:12.5px;color:var(--text-3,#8a93a3);font-weight:600;padding:10px 2px}
+  .gpromo{background:#f1f5ff;border:1px solid var(--border,#dde3ec);border-radius:12px;padding:14px 16px;margin-bottom:6px}
+  .gpromo-title{font-weight:800;font-size:14px;color:var(--text,#172033)}
+  .gpromo-sub{font-size:12px;color:var(--text-3,#8a93a3);font-weight:600;margin:3px 0 9px}
+  .gpromo-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .gpromo-name{font-size:12px;color:var(--text-2,#5a6678);font-weight:600}
+  .gsep{border:none;border-top:1px solid var(--border,#dde3ec);margin:16px 0}
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
   `;
 
@@ -119,7 +126,21 @@
     const admin = document.createElement('div'); admin.className = 'gmodal'; admin.id = 'adminModal';
     admin.innerHTML = `
       <div class="gmodal-card">
-        <div class="gmodal-head"><h2>⚙️ Réglages — comptes</h2><button class="gmodal-close" data-close>✕</button></div>
+        <div class="gmodal-head"><h2>⚙️ Réglages</h2><button class="gmodal-close" data-close>✕</button></div>
+
+        <div class="gpromo">
+          <div class="gpromo-title">📄 Plan promo national (centrale)</div>
+          <div class="gpromo-sub">Publiez ici le PDF reçu de la centrale : il sera chargé automatiquement dans l'outil Étiquettes de tous les magasins.</div>
+          <div class="gmsg" id="ppStatus">Chargement…</div>
+          <input type="file" id="ppFile" accept="application/pdf,.pdf" style="display:none">
+          <div class="gpromo-actions">
+            <button class="gbtn alt" id="ppPick">Choisir le PDF</button>
+            <button class="gbtn" id="ppUpload">Téléverser</button>
+            <span id="ppName" class="gpromo-name"></span>
+          </div>
+        </div>
+        <hr class="gsep">
+
         <div class="gmodal-sub">Créez les accès magasins (16) et directeurs régionaux (2). Identifiant + mot de passe.</div>
         <div class="gform">
           <label>Identifiant<input id="naUser" autocapitalize="none" spellcheck="false" placeholder="ex : reims"></label>
@@ -142,6 +163,12 @@
     admin.addEventListener('click', e => { if (e.target === admin) admin.classList.remove('show'); });
     el('naRole').addEventListener('change', syncStoreFields);
     el('naCreate').addEventListener('click', onCreateAccount);
+    el('ppPick').addEventListener('click', () => el('ppFile').click());
+    el('ppFile').addEventListener('change', () => {
+      const f = el('ppFile').files && el('ppFile').files[0];
+      el('ppName').textContent = f ? f.name : '';
+    });
+    el('ppUpload').addEventListener('click', onUploadPromo);
 
     // modale valorisations (admin + directeurs)
     const stores = document.createElement('div'); stores.className = 'gmodal'; stores.id = 'storesModal';
@@ -218,6 +245,8 @@
     if (CURRENT.role === 'store' && CURRENT.storeId) {
       await loadStoreValo(CURRENT.storeId, true);
     }
+    // tout le monde : charger le plan promo national publié par l'admin
+    await loadSharedPlanPromo();
   }
 
   function showGate() { const g = el('authGate'); if (g) g.classList.remove('hide'); }
@@ -260,10 +289,88 @@
     toast('Valorisation enregistrée dans le cloud ✓');
   };
 
+  /* ---------- Plan promo national partagé (publié par l'admin) ---------- */
+  const PROMO_PATH = 'plan-promo.pdf';
+
+  // injecte le plan promo dans l'iframe de l'outil Étiquettes (input #filePromo)
+  function injectPromoInto(frame) {
+    if (!sharedPromoFile || !frame || frame.__promoInjected) return;
+    let doc; try { doc = frame.contentDocument; } catch (e) { return; }
+    if (!doc) return;
+    const input = doc.getElementById('filePromo');
+    if (!input) return;
+    try {
+      const dt = new DataTransfer(); dt.items.add(sharedPromoFile);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      frame.__promoInjected = true;
+    } catch (e) {}
+  }
+  function tryInjectPromo() {
+    const frame = document.querySelector('.tool-frame[data-src="etiquette.html"]');
+    if (!frame) return;
+    injectPromoInto(frame);                          // si déjà chargée
+    frame.addEventListener('load', () => injectPromoInto(frame)); // au prochain chargement
+  }
+
+  async function loadSharedPlanPromo() {
+    try {
+      const { data: meta } = await sb.from('shared_docs')
+        .select('file_path, file_name, updated_at').eq('id', 'plan-promo').maybeSingle();
+      if (!meta || !meta.file_path) return;
+      const { data, error } = await sb.storage.from('shared').download(meta.file_path);
+      if (error || !data) return;
+      sharedPromoFile = new File([data], meta.file_name || 'plan-promo.pdf', { type: 'application/pdf' });
+      tryInjectPromo();
+      const d = meta.updated_at ? new Date(meta.updated_at).toLocaleDateString('fr-FR') : '';
+      toast('Plan promo de la centrale disponible' + (d ? ` — à jour du ${d}` : '') + ' ✓');
+    } catch (e) { /* pas de plan promo partagé : silencieux */ }
+  }
+
+  async function refreshPromoStatus() {
+    const s = el('ppStatus'); if (!s) return;
+    try {
+      const { data } = await sb.from('shared_docs')
+        .select('file_name, updated_at').eq('id', 'plan-promo').maybeSingle();
+      if (data && data.updated_at) {
+        s.className = 'gmsg ok';
+        s.textContent = `Publié : ${data.file_name || 'plan-promo.pdf'} — ${new Date(data.updated_at).toLocaleString('fr-FR')}`;
+      } else { s.className = 'gmsg'; s.textContent = 'Aucun plan promo publié pour le moment.'; }
+    } catch (e) { s.className = 'gmsg'; s.textContent = ''; }
+  }
+  async function onUploadPromo() {
+    const f = el('ppFile').files && el('ppFile').files[0];
+    if (!f) { toast('Choisissez d’abord un PDF', true); return; }
+    if (f.type && f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
+      toast('Format invalide — un PDF est attendu', true); return;
+    }
+    const btn = el('ppUpload'); btn.disabled = true; btn.textContent = 'Téléversement…';
+    try {
+      const { error } = await sb.storage.from('shared')
+        .upload(PROMO_PATH, f, { upsert: true, contentType: 'application/pdf' });
+      if (error) throw error;
+      await sb.from('shared_docs').upsert({
+        id: 'plan-promo', file_path: PROMO_PATH, file_name: f.name,
+        updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
+      });
+      sharedPromoFile = f;
+      document.querySelectorAll('.tool-frame').forEach(fr => { fr.__promoInjected = false; });
+      tryInjectPromo();
+      toast('Plan promo national publié pour tous les magasins ✓');
+      el('ppFile').value = ''; el('ppName').textContent = '';
+      refreshPromoStatus();
+    } catch (e) {
+      toast('Échec de la publication : ' + (e.message || e), true);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Téléverser';
+    }
+  }
+
   /* ---------- Modale admin : comptes ---------- */
   async function openAdmin() {
     syncStoreFields();
     el('adminModal').classList.add('show');
+    refreshPromoStatus();
     refreshAccounts();
   }
   async function callFn(body) {
