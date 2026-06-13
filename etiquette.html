@@ -386,7 +386,7 @@ table.prod tr.multi:hover td{background:#fff3df}
 <section class="panel active" id="step1">
   <div class="card">
     <h2>📂 Chargez vos fichiers</h2>
-    <p class="hint">Déposez le plan promo national, puis <b>la valorisation de votre propre magasin</b> (chaque magasin importe la sienne). L'outil croise automatiquement les références pour ne garder que les produits exposés chez vous et concernés par une offre.</p>
+    <p class="hint">Déposez ici le <b>plan promo national</b>. La valorisation de votre magasin est déjà importée depuis l'accueil de la suite. L'outil croise automatiquement les références pour ne garder que les produits exposés chez vous et concernés par une offre.</p>
     <div class="drops">
       <div class="drop" id="dropPromo">
         <div class="ic">🗓️</div>
@@ -396,7 +396,8 @@ table.prod tr.multi:hover td{background:#fff3df}
         <input type="file" id="filePromo" accept=".pdf">
         <div class="status" id="stPromo"></div>
       </div>
-      <div class="drop" id="dropValo">
+      <!-- Valorisation fournie depuis l'accueil de la suite : carte masquée, l'input reste pour l'injection -->
+      <div class="drop" id="dropValo" style="display:none" aria-hidden="true">
         <div class="ic">🏬</div>
         <div class="t">Valorisation de VOTRE magasin</div>
         <div class="d">PDF « Valorisation du stock » : les références réellement exposées dans votre magasin</div>

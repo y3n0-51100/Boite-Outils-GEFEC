@@ -938,7 +938,8 @@ main{flex:1;position:relative;overflow:hidden}
 
     <aside class="panel sidebar">
 
-      <section class="section">
+      <!-- Valorisation fournie depuis l'accueil de la suite : section masquée, l'input reste pour l'injection -->
+      <section class="section" style="display:none" aria-hidden="true">
         <div class="section-header">
           <div class="step-badge" id="badge1"><span>1</span></div>
           <div class="section-title">PDF de valorisation</div>
@@ -966,7 +967,7 @@ main{flex:1;position:relative;overflow:hidden}
 
       <section class="section">
         <div class="section-header">
-          <div class="step-badge" id="badge2"><span>2</span></div>
+          <div class="step-badge" id="badge2"><span>1</span></div>
           <div class="section-title">ZIP des affiches</div>
           <div class="section-hint">EAN_*.PDF</div>
         </div>
@@ -1053,8 +1054,8 @@ main{flex:1;position:relative;overflow:hidden}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
           <div class="empty-text">
-            Importer le <code>PDF de valorisation</code> et le <code>ZIP des affiches</code>.
-            L'outil croisera automatiquement les EANs et préparera la liste des affiches à imprimer.
+            Importer le <code>ZIP des affiches</code>.
+            L'outil croisera automatiquement les EANs avec la valorisation (importée depuis l'accueil) et préparera la liste des affiches à imprimer.
           </div>
         </div>
 
