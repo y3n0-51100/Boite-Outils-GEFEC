@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script defer src="base-eco.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app-config.js"></script>
 <style>
 /* ════════════════════════════════════════════════════════════════
    CHARTE CLAIRE — Suite Boîte à Outils GEFEC
@@ -225,6 +227,9 @@ main{flex:1;position:relative;overflow:hidden}
 </style>
 </head>
 <body>
+
+<!-- Portail de connexion (rempli par app-auth.js ; visible avant authentification) -->
+<div id="authGate" style="position:fixed;inset:0;z-index:9999;background:#eef1f6"></div>
 
 <div class="bg-layer" aria-hidden="true">
   <div class="bg-orb bg-orb-1"></div><div class="bg-orb bg-orb-2"></div><div class="bg-orb bg-orb-3"></div>
@@ -2640,7 +2645,7 @@ const homeDrop=document.getElementById('homeDrop'), homeFile=document.getElement
       valoPill=document.getElementById('valoPill'), valoName=document.getElementById('valoName'),
       valoMeta=document.getElementById('valoMeta');
 
-async function setValoFile(file){
+async function setValoFile(file, opts={}){
   if (!file) return;
   if (file.type && file.type!=='application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
     showToast('Format invalide — un PDF est attendu', true); return;
@@ -2655,8 +2660,11 @@ async function setValoFile(file){
   countEans(file).then(n=>{
     state.valoEanCount=n; homeDrop.classList.remove('parsing'); homeDrop.classList.add('loaded');
     dropHint.textContent=`${n} EAN uniques détectés · prêt`; valoMeta.textContent=`${n} EAN`;
+    // sauvegarde cloud (uniquement si déposée par l'utilisateur, pas si chargée depuis le cloud)
+    if (!opts.fromCloud && window.onValoLocallySet) window.onValoLocallySet(file, n);
   }).catch(()=>{ homeDrop.classList.remove('parsing'); homeDrop.classList.add('loaded');
-    dropHint.textContent='fichier prêt'; valoMeta.textContent='OK'; });
+    dropHint.textContent='fichier prêt'; valoMeta.textContent='OK';
+    if (!opts.fromCloud && window.onValoLocallySet) window.onValoLocallySet(file, null); });
 }
 function clearValoFile(){
   state.valoFile=null; state.valoEanCount=null; clearInjections();
@@ -2734,5 +2742,6 @@ function showToast(msg,isErr=false){
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>toast.classList.remove('show'),2600);
 }
 </script>
+<script src="app-auth.js"></script>
 </body>
 </html>
