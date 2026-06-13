@@ -830,7 +830,10 @@ function parsePromoPdf(pages) {
         if (!f.refs) f.refs = of.refs;
         if (f.price == null) f.price = of.price;
       }
-      let name = (f.cat + ' ' + f.refs).replace(/\s+/g, ' ').trim();
+      // l'étiquette n'affiche QUE la référence de l'appareil ; la catégorie
+      // est conservée à part, uniquement pour le tri/regroupement par type
+      let cat = (f.cat || '').replace(/\s+/g, ' ').trim();
+      let name = (f.refs || '').replace(/\s+/g, ' ').trim();
       let brand = f.brand, price = f.price;
 
       // replis génériques
@@ -859,7 +862,7 @@ function parsePromoPdf(pages) {
       seen.add(dedup);
       products.push({
         key, ean: padCode(codeItem.s),
-        name: name.slice(0, 90), brand,
+        name: name.slice(0, 90), cat: cat.slice(0, 60), brand,
         price, from, to,
       });
     }
@@ -872,7 +875,7 @@ function parsePromoPdf(pages) {
           const k = normCode(it.s);
           if ([...seen].some(s => s.startsWith(k + '|'))) continue;
           seen.add(k + '|null|null');
-          products.push({ key: k, ean: padCode(it.s), name: rowText(row).replace(it.s, '').trim().slice(0, 90), brand: '', price: null, from: null, to: null });
+          products.push({ key: k, ean: padCode(it.s), name: rowText(row).replace(it.s, '').trim().slice(0, 90), cat: '', brand: '', price: null, from: null, to: null });
         }
       }
     }
@@ -1083,6 +1086,9 @@ function logicalSort(arr) {
     groups.get(key).push(p);
   }
   const cmp = (a, b) => {
+    // regroupement par TYPE de produit (catégorie), puis libellé, puis marque
+    const ca = (a.cat || '').toLocaleUpperCase('fr'), cb = (b.cat || '').toLocaleUpperCase('fr');
+    if (ca !== cb) return ca.localeCompare(cb, 'fr');
     const na = (a.name || '').toLocaleUpperCase('fr'), nb = (b.name || '').toLocaleUpperCase('fr');
     if (na !== nb) return na.localeCompare(nb, 'fr');
     return (a.brand || '').localeCompare(b.brand || '', 'fr');
@@ -1103,6 +1109,7 @@ function runMatch() {
       id: nextId++,
       ean: p.ean,
       name: p.name || state.storeNames.get(p.key) || '',
+      cat: p.cat || '',
       brand: p.brand || '',
       price: p.price,
       oldPrice: null,
