@@ -456,7 +456,7 @@ table.prod tr.multi:hover td{background:#fff3df}
         <input type="search" id="manualSearch" autocomplete="off" placeholder="Code EAN13 ou référence / libellé du produit…" oninput="searchManual()">
         <button class="btn alt small" type="button" onclick="closeManualAdd()">Fermer</button>
       </div>
-      <div class="manualadd-hint" id="manualHint">Tapez un code EAN13 ou une référence présente dans le plan promo, puis cliquez sur « Ajouter le produit ».</div>
+      <div class="manualadd-hint" id="manualHint">Recherchez un produit de la <b>base article</b> par son code EAN13 ou son libellé (même hors plan promo), puis cliquez sur « Ajouter le produit ». Son code, son libellé et son prix de vente sont repris automatiquement.</div>
       <div id="manualResults" class="manualresults"></div>
     </div>
     <div id="tableWrap"></div>
@@ -601,6 +601,7 @@ const state = {
   storeKeys: new Set(),// codes (normalisés) présents dans la valorisation magasin
   storeNames: new Map(),// code normalisé -> libellé valorisation
   ecoMap: new Map(),   // code normalisé -> montant éco-participation
+  baseInfo: new Map(), // code normalisé -> { name, price } (libellé + prix de vente de la base article)
   products: [],        // produits croisés {id, ean, name, brand, price, oldPrice, eco, from, to, selected}
   tpl: 'bonplan',
   fmt: 'a4',
@@ -906,7 +907,17 @@ function parseValoPdf(pages) {
    imprimée est la somme des deux. Repli heuristique si le format change. */
 function parseBaseWorkbook(arrayBuffer) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
-  const map = new Map();
+  const eco = new Map();           // code normalisé -> éco-participation
+  const info = new Map();          // code normalisé -> { name, price }
+  const addInfo = (code, name, price) => {
+    const nm = name != null ? String(name).trim() : '';
+    if (!nm && price == null) return;
+    const k = normCode(code);
+    const cur = info.get(k) || { name: '', price: null };
+    if (nm && !cur.name) cur.name = nm.slice(0, 90);
+    if (price != null && cur.price == null) cur.price = price;
+    info.set(k, cur);
+  };
   for (const sheetName of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true });
     if (!rows.length) continue;
@@ -922,6 +933,8 @@ function parseBaseWorkbook(arrayBuffer) {
           if (h === 'EAN_13') c.ean = i;
           else if (h === 'MNT_DEA_TTC') c.dea = i;
           else if (h === 'MNT_DEEE_TTC') c.deee = i;
+          else if (c.price == null && h.includes('PRIX') && h.includes('VENTE')) c.price = i;
+          else if (c.name == null && (h.includes('DESIGN') || h.includes('LIBELL'))) c.name = i;
         });
         break;
       }
@@ -933,17 +946,21 @@ function parseBaseWorkbook(arrayBuffer) {
         if (!/^\d{8,13}$/.test(code)) continue;
         const dea = c.dea != null ? (parseFloat(row[c.dea]) || 0) : 0;
         const deee = c.deee != null ? (parseFloat(row[c.deee]) || 0) : 0;
-        const eco = Math.round((dea + deee) * 100) / 100;
-        if (eco > 0) map.set(normCode(code), eco);
+        const e = Math.round((dea + deee) * 100) / 100;
+        if (e > 0) eco.set(normCode(code), e);
+        addInfo(code, c.name != null ? row[c.name] : null, c.price != null ? parsePrice(row[c.price]) : null);
       }
       continue;
     }
     // 2. repli heuristique : colonne la plus riche en codes 11-13 chiffres
-    //    + colonne dont l'en-tête contient "eco"
-    let codeCol = -1, ecoCol = -1, hIdx = -1;
+    //    + colonne « eco » (+ prix de vente / désignation si détectables)
+    let codeCol = -1, ecoCol = -1, priceCol = -1, nameCol = -1, hIdx = -1;
     for (let r = 0; r < Math.min(rows.length, 20) && hIdx < 0; r++) {
       (rows[r] || []).forEach((cell, i) => {
-        if (ecoCol < 0 && /[ée]co/i.test(String(cell ?? ''))) { ecoCol = i; hIdx = r; }
+        const s = String(cell ?? '');
+        if (ecoCol < 0 && /[ée]co/i.test(s)) { ecoCol = i; hIdx = r; }
+        if (priceCol < 0 && /prix.*vente/i.test(s)) priceCol = i;
+        if (nameCol < 0 && /(d[ée]sign|libell)/i.test(s)) nameCol = i;
       });
     }
     const counts = {};
@@ -959,11 +976,12 @@ function parseBaseWorkbook(arrayBuffer) {
       const row = rows[r] || [];
       const code = String(row[codeCol] ?? '').trim();
       if (!/^\d{8,13}$/.test(code)) continue;
-      const eco = parsePrice(row[ecoCol]);
-      if (eco !== null && eco > 0) map.set(normCode(code), eco);
+      const e = parsePrice(row[ecoCol]);
+      if (e !== null && e > 0) eco.set(normCode(code), e);
+      addInfo(code, nameCol >= 0 ? row[nameCol] : null, priceCol >= 0 ? parsePrice(row[priceCol]) : null);
     }
   }
-  return map;
+  return { eco, info };
 }
 
 function setLoaded(dropId, statusId, msg) {
@@ -1017,10 +1035,14 @@ async function handleBaseFile(fileOrBuffer, label) {
   document.getElementById('stBase').textContent = '⏳ Lecture de la base…';
   try {
     const buf = fileOrBuffer instanceof ArrayBuffer ? fileOrBuffer : await fileOrBuffer.arrayBuffer();
-    state.ecoMap = parseBaseWorkbook(buf);
+    const parsed = parseBaseWorkbook(buf);
+    state.ecoMap = parsed.eco;
+    state.baseInfo = parsed.info;
     if (!state.ecoMap.size) throw new Error('Impossible de détecter les colonnes code / éco-participation.');
-    setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s)${label ? ' — ' + label : ''}`);
+    const withInfo = state.baseInfo.size ? ` · ${state.baseInfo.size} réf. avec libellé/prix` : '';
+    setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s)${withInfo}${label ? ' — ' + label : ''}`);
     await kvSet('baseEco', [...state.ecoMap.entries()]);
+    await kvSet('baseInfo', [...state.baseInfo.entries()]);
     state.products.forEach(p => { if (p.eco == null && state.ecoMap.has(normCode(p.ean))) p.eco = state.ecoMap.get(normCode(p.ean)); });
     renderTable();
   } catch (e) {
@@ -1185,49 +1207,71 @@ function blankBtn() {
 function searchManual() {
   const box = document.getElementById('manualResults');
   const q = (document.getElementById('manualSearch').value || '').toLowerCase().trim();
-  const base = state.promoProducts || [];
-  if (!base.length) {
-    box.innerHTML = '<div class="none">Aucun plan promo chargé — chargez-le à l\'étape 1, ou ajoutez une ligne vierge.</div>' + blankBtn();
+  const base = state.baseInfo;          // code normalisé -> { name, price }
+  const hasInfo = base && base.size;
+  // base ancienne (EAN + éco seulement, sans libellé/prix) : recherche par EAN dans ecoMap
+  if (!hasInfo) {
+    if (!state.ecoMap.size) {
+      box.innerHTML = '<div class="none">Base article non chargée — elle est normalement publiée par l\'administrateur.</div>' + blankBtn();
+      return;
+    }
+    if (!q) { box.innerHTML = '<div class="none">La base actuelle ne contient que les EAN + éco (libellé et prix non publiés). Saisissez un EAN13 pour l\'ajouter — l\'administrateur peut republier une base enrichie.</div>'; return; }
+    const nq = normCode(q);
+    const already = new Set(state.products.map(x => normCode(x.ean)));
+    const items = [];
+    for (const [code, ecov] of state.ecoMap) {
+      if (!code.includes(nq)) continue;
+      items.push([code, ecov]); if (items.length >= 40) break;
+    }
+    if (!items.length) { box.innerHTML = '<div class="none">Aucun EAN correspondant dans la base.</div>' + blankBtn(); return; }
+    box.innerHTML = items.map(([code, ecov]) => {
+      const ean = padCode(code); const added = already.has(code);
+      return `<div class="maitem ${added ? 'added' : ''}">
+        <span class="mi-code">${esc(ean)}</span>
+        <span class="mi-name">${esc(state.storeNames.get(code) || '(libellé à compléter)')}</span>
+        <span class="mi-price">éco ${ecov.toFixed(2)} €</span>
+        <button class="btn yellow small" type="button" onclick="addFromBase('${code}')" ${added ? 'disabled' : ''}>${added ? 'Déjà ajouté ✓' : 'Ajouter le produit'}</button>
+      </div>`;
+    }).join('');
     return;
   }
-  if (!q) { box.innerHTML = '<div class="none">Saisissez un code EAN13 ou une référence…</div>'; return; }
-  // dédoublonnage par EAN pour l'affichage (un même produit peut figurer sur plusieurs périodes)
-  const seen = new Set(); const matches = [];
-  base.forEach((p, idx) => {
-    if (seen.has(p.key)) return;
-    const hay = (p.ean + ' ' + (p.name || '') + ' ' + (p.brand || '')).toLowerCase();
-    if (!hay.includes(q)) return;
-    seen.add(p.key); matches.push({ p, idx });
-  });
+  if (!q) { box.innerHTML = '<div class="none">Saisissez un code EAN13 ou une référence/libellé du produit…</div>'; return; }
+  const nq = normCode(q);
+  const matches = [];
+  for (const [code, v] of base) {
+    const hay = (code + ' ' + (v.name || '')).toLowerCase();
+    if (!hay.includes(q) && !code.includes(nq)) continue;
+    matches.push([code, v]); if (matches.length >= 40) break;
+  }
   if (!matches.length) {
-    box.innerHTML = '<div class="none">Aucun produit trouvé pour « ' + esc(q) + ' » dans le plan promo.</div>' + blankBtn();
+    box.innerHTML = '<div class="none">Aucun produit trouvé pour « ' + esc(q) + ' » dans la base article.</div>' + blankBtn();
     return;
   }
-  const already = new Set(state.products.map(x => x.ean));
-  box.innerHTML = matches.slice(0, 40).map(({ p, idx }) => {
-    const added = already.has(p.ean);
+  const already = new Set(state.products.map(x => normCode(x.ean)));
+  box.innerHTML = matches.map(([code, v]) => {
+    const ean = padCode(code); const added = already.has(code);
     return `<div class="maitem ${added ? 'added' : ''}">
-      <span class="mi-code">${esc(p.ean)}</span>
-      <span class="mi-name">${esc(p.name || '(sans libellé)')}${p.brand ? ' · ' + esc(p.brand) : ''}</span>
-      <span class="mi-price">${p.price != null ? p.price.toFixed(2) + ' €' : '—'}</span>
-      <button class="btn yellow small" type="button" onclick="addFromBase(${idx})" ${added ? 'disabled' : ''}>${added ? 'Déjà ajouté ✓' : 'Ajouter le produit'}</button>
+      <span class="mi-code">${esc(ean)}</span>
+      <span class="mi-name">${esc(v.name || state.storeNames.get(code) || '(sans libellé)')}</span>
+      <span class="mi-price">${v.price != null ? v.price.toFixed(2) + ' €' : '—'}</span>
+      <button class="btn yellow small" type="button" onclick="addFromBase('${code}')" ${added ? 'disabled' : ''}>${added ? 'Déjà ajouté ✓' : 'Ajouter le produit'}</button>
     </div>`;
   }).join('');
 }
-function addFromBase(idx) {
-  const p = state.promoProducts[idx];
-  if (!p) return;
-  if (state.products.some(x => x.ean === p.ean)) { toast('Ce produit est déjà dans la liste.'); return; }
+function addFromBase(code) {
+  const k = normCode(code);
+  if (state.products.some(x => normCode(x.ean) === k)) { toast('Ce produit est déjà dans la liste.'); return; }
+  const v = (state.baseInfo && state.baseInfo.get(k)) || {};
+  const name = v.name || state.storeNames.get(k) || '';
   state.products.unshift({
-    id: nextId++, ean: p.ean,
-    name: p.name || state.storeNames.get(p.key) || '',
-    brand: p.brand || '',
-    price: p.price, oldPrice: null,
-    eco: state.ecoMap.has(p.key) ? state.ecoMap.get(p.key) : null,
-    from: p.from, to: p.to, selected: true,
+    id: nextId++, ean: padCode(code),
+    name, brand: '',
+    price: v.price != null ? v.price : null, oldPrice: null,
+    eco: state.ecoMap.has(k) ? state.ecoMap.get(k) : null,
+    from: null, to: null, selected: true,
   });
   renderTable(); searchManual();
-  toast('✅ Produit ajouté : ' + (p.name || p.ean));
+  toast('✅ Produit ajouté : ' + (name || padCode(code)));
 }
 function addBlank() {
   const q = (document.getElementById('manualSearch').value || '').trim();
@@ -1416,7 +1460,9 @@ async function clearMasks() {
 }
 async function clearStoredBase() {
   state.ecoMap = new Map();
+  state.baseInfo = new Map();
   await kvDel('baseEco');
+  await kvDel('baseInfo');
   document.getElementById('dropBase').classList.remove('loaded');
   document.getElementById('stBase').textContent = '';
   toast('🧹 Base article mémorisée effacée');
@@ -1430,6 +1476,15 @@ async function saveBaseCfg() {
   toast('💾 Lien et identifiants enregistrés (stockage local uniquement)');
 }
 
+/* base64 sûr en UTF-8 (les libellés contiennent des accents / € -> btoa direct échouerait) */
+function utf8ToB64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  return btoa(bin);
+}
+
 /* Publication de la base sur GitHub : remplace base-eco.js dans le dépôt,
    tous les magasins récupèrent la nouvelle base au prochain chargement. */
 async function pushBaseToGitHub() {
@@ -1441,11 +1496,15 @@ async function pushBaseToGitHub() {
   await kvSet('ghCfg', { token, repo, branch });
   toast('⏳ Publication de la base sur GitHub…');
   try {
-    const payload = '/* Base éco-participations — générée par Étiquettes 2.0 */\n'
+    // info compacte : { code: [libellé, prix] } pour limiter la taille du fichier
+    const infoData = {};
+    for (const [k, v] of state.baseInfo) infoData[k] = [v.name || '', v.price != null ? v.price : null];
+    const payload = '/* Base article (éco-participations, libellés, prix de vente) — générée par Étiquettes 2.0 */\n'
       + 'window.BASE_ECO = ' + JSON.stringify({
           updated: new Date().toISOString(),
           count: state.ecoMap.size,
           data: Object.fromEntries(state.ecoMap),
+          info: infoData,
         }) + ';\n';
     const api = `https://api.github.com/repos/${repo}/contents/base-eco.js`;
     const headers = {
@@ -1456,7 +1515,7 @@ async function pushBaseToGitHub() {
     let sha;
     const g = await fetch(api + (branch ? '?ref=' + encodeURIComponent(branch) : ''), { headers });
     if (g.ok) sha = (await g.json()).sha;
-    const body = { message: 'Mise à jour de la base éco-participations', content: btoa(payload) };
+    const body = { message: 'Mise à jour de la base article (éco, libellés, prix)', content: utf8ToB64(payload) };
     if (sha) body.sha = sha;
     if (branch) body.branch = branch;
     const r = await fetch(api, { method: 'PUT', headers, body: JSON.stringify(body) });
@@ -1541,11 +1600,17 @@ function goStep(n) {
   // base éco : 1) base-eco.js publiée dans le dépôt, 2) copie mémorisée localement
   if (window.BASE_ECO && BASE_ECO.data && Object.keys(BASE_ECO.data).length) {
     state.ecoMap = new Map(Object.entries(BASE_ECO.data).map(([k, v]) => [k, +v]));
+    if (BASE_ECO.info) {
+      state.baseInfo = new Map(Object.entries(BASE_ECO.info).map(([k, a]) =>
+        [k, { name: (a && a[0]) || '', price: a && a[1] != null ? +a[1] : null }]));
+    }
     const d = BASE_ECO.updated ? new Date(BASE_ECO.updated).toLocaleDateString('fr-FR') : '?';
     setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s) — base du ${d}`);
   } else {
     try {
       const baseEco = await kvGet('baseEco');
+      const baseInfo = await kvGet('baseInfo');
+      if (baseInfo && baseInfo.length) state.baseInfo = new Map(baseInfo);
       if (baseEco && baseEco.length) {
         state.ecoMap = new Map(baseEco);
         setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s) — copie locale mémorisée`);
