@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script defer src="base-eco.js"></script>
 <style>
 /* ════════════════════════════════════════════════════════════════
    CHARTE CLAIRE — Suite Boîte à Outils GEFEC
@@ -113,6 +114,16 @@ main{flex:1;position:relative;overflow:hidden}
 /* accueil */
 .view-home{overflow:auto;padding:40px 22px 60px}
 .home-inner{max-width:1060px;margin:0 auto}
+/* bandeau de statut de la base article */
+.base-status{display:flex;align-items:center;gap:10px;max-width:1060px;margin:0 auto 20px;
+  padding:10px 16px;border-radius:12px;font-size:13px;font-weight:600;
+  background:var(--surface);border:1px solid var(--border);color:var(--text-2);
+  animation:fadeUp .5s var(--ease) both}
+.base-status.ok{background:#f1faf4;border-color:#bfe8cf;color:#0f7a3d}
+.base-status.err{background:#fdeaea;border-color:#f3c2c2;color:#b91c1c}
+.base-status b{font-weight:800}
+.bs-icon{display:inline-flex;flex-shrink:0}
+.bs-icon svg{width:18px;height:18px}
 .home-welcome{text-align:center;margin-bottom:34px;animation:fadeUp .5s var(--ease) both}
 .hw-eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--primary);margin-bottom:8px}
 .hw-title{font-size:30px;font-weight:800;letter-spacing:-.5px}
@@ -250,6 +261,10 @@ main{flex:1;position:relative;overflow:hidden}
     <!-- ACCUEIL -->
     <section class="view view-home active" data-view="home">
       <div class="home-inner">
+        <div class="base-status" id="baseStatus" role="status" aria-live="polite">
+          <span class="bs-icon" id="bsIcon"></span>
+          <span class="bs-text" id="bsText">Vérification de la base article…</span>
+        </div>
         <div class="home-welcome">
           <div class="hw-eyebrow">GEFEC · Magasin BUT</div>
           <div class="hw-title">Vos outils opérationnels</div>
@@ -2548,6 +2563,27 @@ function injectTheme(doc){
     (doc.head||doc.documentElement).appendChild(st);
   }catch(e){}
 }
+
+/* ── Statut de la base article (bandeau d'accueil) ──────────── */
+function updateBaseStatus(){
+  const el=document.getElementById('baseStatus'); if(!el) return;
+  const icon=document.getElementById('bsIcon'), txt=document.getElementById('bsText');
+  const okSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  const warnSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  try{
+    const b=window.BASE_ECO;
+    const n=b&&b.data?(b.count||Object.keys(b.data).length):0;
+    if(!n) throw new Error('base vide ou absente');
+    const d=b.updated?new Date(b.updated):null;
+    const ds=d&&!isNaN(d.getTime())?d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}):'date inconnue';
+    el.className='base-status ok'; icon.innerHTML=okSvg;
+    txt.innerHTML=`Base article chargée — <b>${n.toLocaleString('fr-FR')}</b> références · à jour du <b>${ds}</b>`;
+  }catch(e){
+    el.className='base-status err'; icon.innerHTML=warnSvg;
+    txt.innerHTML='Base article non chargée — en cas de problème, contactez <b>Rémi SCHAFFHAUSER</b>';
+  }
+}
+document.addEventListener('DOMContentLoaded', updateBaseStatus);
 
 /* ── Chargement des outils ──────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
