@@ -447,7 +447,10 @@ table.prod tr.multi:hover td{background:#fff3df}
         <h2>🛒 Produits de votre magasin concernés par une offre</h2>
         <p class="hint">Cochez les produits à imprimer. Libellé, marque, prix et éco-participation sont modifiables directement dans le tableau.</p>
       </div>
-      <button class="btn" onclick="goStep(3)">🖨️ Préparer les étiquettes →</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn alt" onclick="goStep(3)">Préparer / ajuster →</button>
+        <button class="btn" onclick="printNow()">🖨️ Imprimer directement</button>
+      </div>
     </div>
     <div class="toolbar">
       <input type="search" id="searchBox" placeholder="Rechercher un produit, une marque, un code…" oninput="renderTable()">
@@ -499,13 +502,13 @@ table.prod tr.multi:hover td{background:#fff3df}
       </div>
       <div class="optblock">
         <h3>Période de validité</h3>
-        <div class="switch" style="margin-top:0;margin-bottom:8px"><input type="checkbox" id="perProductDates" checked onchange="renderPreview()"> Utiliser les dates du plan promo (propres à chaque produit)</div>
+        <div class="switch" style="margin-top:0;margin-bottom:8px"><input type="checkbox" id="perProductDates" checked onchange="onPrefChange()"> Utiliser les dates du plan promo (propres à chaque produit)</div>
         <div class="datefields">
           <label>Du <input type="date" id="dateFrom" onchange="renderPreview()"></label>
           <label>Au <input type="date" id="dateTo" onchange="renderPreview()"></label>
         </div>
-        <div class="switch"><input type="checkbox" id="showDates" checked onchange="renderPreview()"> Afficher « PRIX VALABLE DU … AU … »</div>
-        <div class="switch"><input type="checkbox" id="showBrand" checked onchange="renderPreview()"> Afficher la marque en bas d'étiquette</div>
+        <div class="switch"><input type="checkbox" id="showDates" checked onchange="onPrefChange()"> Afficher « PRIX VALABLE DU … AU … »</div>
+        <div class="switch"><input type="checkbox" id="showBrand" checked onchange="onPrefChange()"> Afficher la marque en bas d'étiquette</div>
       </div>
     </div>
   </div>
@@ -1010,8 +1013,14 @@ function setLoaded(dropId, statusId, msg) {
   updateMatchBtn();
 }
 function updateMatchBtn() {
-  document.getElementById('btnMatch').disabled =
-    !(state.promoProducts.length && state.storeKeys.size);
+  const ready = state.promoProducts.length && state.storeKeys.size;
+  document.getElementById('btnMatch').disabled = !ready;
+  // auto-croisement : dès que plan promo + valorisation sont prêts, on croise
+  // automatiquement (une seule fois, et seulement si rien n'a encore été généré)
+  if (ready && !state._autoMatched && !state.products.length) {
+    state._autoMatched = true;
+    runMatch();
+  }
 }
 
 async function handlePromoFile(file) {
@@ -1317,19 +1326,49 @@ function setTpl(t) {
   state.tpl = t;
   document.getElementById('chBonplan').classList.toggle('active', t === 'bonplan');
   document.getElementById('chPromo').classList.toggle('active', t === 'promo');
-  renderPreview();
+  renderPreview(); savePrintPrefs();
 }
 function setFmt(f) {
   state.fmt = f;
   document.getElementById('chA4').classList.toggle('active', f === 'a4');
   document.getElementById('chA5').classList.toggle('active', f === 'a5');
-  renderPreview();
+  renderPreview(); savePrintPrefs();
 }
 function setBg(v) {
   state.printBg = v;
   document.getElementById('chBgYes').classList.toggle('active', v);
   document.getElementById('chBgNo').classList.toggle('active', !v);
-  renderPreview();
+  renderPreview(); savePrintPrefs();
+}
+/* mémorisation des préférences d'impression (masque, format, papier, options) */
+async function savePrintPrefs() {
+  try {
+    await kvSet('printPrefs', {
+      tpl: state.tpl, fmt: state.fmt, printBg: state.printBg,
+      showDates: document.getElementById('showDates').checked,
+      showBrand: document.getElementById('showBrand').checked,
+      perProductDates: document.getElementById('perProductDates').checked,
+    });
+  } catch (e) {}
+}
+function onPrefChange() { savePrintPrefs(); renderPreview(); }
+async function applyPrintPrefs() {
+  try {
+    const pp = await kvGet('printPrefs');
+    if (!pp) return;
+    if (pp.tpl) setTpl(pp.tpl);
+    if (pp.fmt) setFmt(pp.fmt);
+    if (typeof pp.printBg === 'boolean') setBg(pp.printBg);
+    if (typeof pp.showDates === 'boolean') document.getElementById('showDates').checked = pp.showDates;
+    if (typeof pp.showBrand === 'boolean') document.getElementById('showBrand').checked = pp.showBrand;
+    if (typeof pp.perProductDates === 'boolean') document.getElementById('perProductDates').checked = pp.perProductDates;
+  } catch (e) {}
+}
+/* impression directe (1 clic) depuis l'étape 2 */
+function printNow() {
+  if (!state.products.filter(p => p.selected).length) { toast('⚠️ Aucun produit sélectionné'); return; }
+  goStep(3);
+  requestAnimationFrame(() => doPrint());
 }
 function getMask(key) { return state.masks[key] || DEFAULT_MASKS[key] || null; }
 
@@ -1605,6 +1644,7 @@ function goStep(n) {
     if (masks) state.masks = masks;
     const useImg = await kvGet('useMaskImages');
     if (useImg === false) { state.useMaskImages = false; document.getElementById('useMaskImages').checked = false; }
+    await applyPrintPrefs();   // réglages d'impression mémorisés
     cfg = await kvGet('baseCfg');
     ghCfg = await kvGet('ghCfg');
   } catch (e) { /* stockage indisponible : l'outil reste utilisable sans persistance */ }
