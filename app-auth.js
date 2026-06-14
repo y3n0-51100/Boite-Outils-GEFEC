@@ -78,6 +78,13 @@
   .gpromo-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .gpromo-name{font-size:12px;color:var(--text-2,#5a6678);font-weight:600}
   .gsep{border:none;border-top:1px solid var(--border,#dde3ec);margin:16px 0}
+  .promo-body{font-size:13.5px;color:var(--text-2,#5a6678)}
+  .promo-ok{font-size:15px;font-weight:800;color:#0f8a45;margin-bottom:10px}
+  .promo-warn{font-size:15px;font-weight:800;color:#b25e00;margin-bottom:10px}
+  .promo-info{margin:4px 0}
+  .promo-info b{color:var(--text,#172033)}
+  .promo-age{color:var(--text-3,#8a93a3);font-weight:600}
+  .promo-note{margin-top:12px;padding:11px 13px;background:var(--surface-2,#f5f7fb);border-radius:10px;font-size:12.5px;line-height:1.5}
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
   `;
 
@@ -181,6 +188,22 @@
     document.body.appendChild(stores);
     stores.querySelector('[data-close]').addEventListener('click', () => stores.classList.remove('show'));
     stores.addEventListener('click', e => { if (e.target === stores) stores.classList.remove('show'); });
+
+    // pop-up plan promo (affiché à l'ouverture de l'outil Étiquettes)
+    const promo = document.createElement('div'); promo.className = 'gmodal'; promo.id = 'promoModal';
+    promo.innerHTML = `
+      <div class="gmodal-card" style="max-width:480px">
+        <div class="gmodal-head"><h2>🏷️ Étiquettes — Plan promo</h2></div>
+        <div id="promoPopupBody" class="promo-body"><div class="gempty">Chargement…</div></div>
+        <div style="text-align:right;margin-top:18px"><button class="gbtn" id="promoOk">Compris</button></div>
+      </div>`;
+    document.body.appendChild(promo);
+    promo.addEventListener('click', e => { if (e.target === promo) promo.classList.remove('show'); });
+    el('promoOk').addEventListener('click', () => {
+      promo.classList.remove('show');
+      etiquetteAck = true;
+      try { if (window.switchView) window.switchView('etiquette'); } finally { etiquetteAck = false; }
+    });
   }
 
   function syncStoreFields() {
@@ -313,19 +336,71 @@
     frame.addEventListener('load', () => injectPromoInto(frame)); // au prochain chargement
   }
 
-  async function loadSharedPlanPromo() {
+  let promoLoadedAt = null;   // updated_at du plan promo actuellement injecté
+
+  async function fetchPromoMeta() {
     try {
-      const { data: meta } = await sb.from('shared_docs')
+      const { data } = await sb.from('shared_docs')
         .select('file_path, file_name, updated_at').eq('id', 'plan-promo').maybeSingle();
-      if (!meta || !meta.file_path) return;
+      return data || null;
+    } catch (e) { return null; }
+  }
+  async function ensurePromoLoaded(meta) {
+    if (!meta || !meta.file_path) return;
+    if (sharedPromoFile && promoLoadedAt === meta.updated_at) return; // déjà à jour
+    try {
       const { data, error } = await sb.storage.from('shared').download(meta.file_path);
       if (error || !data) return;
       sharedPromoFile = new File([data], meta.file_name || 'plan-promo.pdf', { type: 'application/pdf' });
+      promoLoadedAt = meta.updated_at;
+      document.querySelectorAll('.tool-frame').forEach(fr => { fr.__promoInjected = false; });
       tryInjectPromo();
-      const d = meta.updated_at ? new Date(meta.updated_at).toLocaleDateString('fr-FR') : '';
-      toast('Plan promo de la centrale disponible' + (d ? ` — à jour du ${d}` : '') + ' ✓');
-    } catch (e) { /* pas de plan promo partagé : silencieux */ }
+    } catch (e) {}
   }
+  async function loadSharedPlanPromo() {
+    const meta = await fetchPromoMeta();
+    if (!meta) return;
+    await ensurePromoLoaded(meta);
+    const d = meta.updated_at ? new Date(meta.updated_at).toLocaleDateString('fr-FR') : '';
+    toast('Plan promo de la centrale disponible' + (d ? ` — à jour du ${d}` : '') + ' ✓');
+  }
+
+  function relAge(dt) {
+    const days = Math.floor((Date.now() - dt.getTime()) / 86400000);
+    if (days <= 0) return "aujourd'hui";
+    if (days === 1) return 'il y a 1 jour';
+    if (days < 7) return `il y a ${days} jours`;
+    const w = Math.floor(days / 7);
+    return w === 1 ? 'il y a 1 semaine' : `il y a ${w} semaines`;
+  }
+  // Pop-up affiché à l'ouverture de l'outil Étiquettes (état du plan promo)
+  async function showPromoPopup() {
+    const body = el('promoPopupBody');
+    body.innerHTML = '<div class="gempty">Vérification du plan promo…</div>';
+    el('promoModal').classList.add('show');
+    const meta = await fetchPromoMeta();
+    if (meta) await ensurePromoLoaded(meta); // récupère la dernière version si l'admin l'a mise à jour
+    if (meta && meta.updated_at) {
+      const dt = new Date(meta.updated_at);
+      const dateStr = dt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
+      body.innerHTML = `
+        <div class="promo-ok">✅ Plan promo national disponible et chargé</div>
+        <div class="promo-info"><b>Fichier :</b> ${esc(meta.file_name || 'plan-promo.pdf')}</div>
+        <div class="promo-info"><b>Mis en ligne le :</b> ${esc(dateStr)} <span class="promo-age">(${esc(relAge(dt))})</span></div>
+        <div class="promo-note">Il est déjà chargé dans l'outil avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers ».</div>`;
+    } else {
+      body.innerHTML = `
+        <div class="promo-warn">⚠️ Aucun plan promo n'a encore été publié par la centrale.</div>
+        <div class="promo-note">Vous pouvez déposer votre propre plan promo national dans l'outil (étape « Chargez vos fichiers »).</div>`;
+    }
+  }
+  // Portail consulté par le moteur avant d'ouvrir l'outil Étiquettes
+  let etiquetteAck = false;
+  window.etiquetteGate = function () {
+    if (etiquetteAck) return true;     // clic « Compris » : on laisse passer
+    showPromoPopup();                  // sinon on affiche le pop-up et on bloque
+    return false;
+  };
 
   async function refreshPromoStatus() {
     const s = el('ppStatus'); if (!s) return;
