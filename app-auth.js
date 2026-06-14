@@ -77,6 +77,16 @@
   .gpromo-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .gpromo-name{font-size:12px;color:var(--text-2,#5a6678);font-weight:600}
   .gsep{border:none;border-top:1px solid var(--border,#dde3ec);margin:16px 0}
+  .stsum{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+  .stsum .pill{padding:7px 13px;border-radius:10px;background:var(--surface-2,#f5f7fb);font-size:12.5px;font-weight:700;color:var(--text-2,#5a6678)}
+  .stsum .pill b{font-size:15px;margin-left:3px}
+  .stsum .pill.ok b{color:#0f8a45}
+  .stsum .pill.late b{color:#b25e00}
+  .stsum .pill.never b{color:#b91c1c}
+  .stbadge{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap;flex-shrink:0}
+  .stbadge.ok{background:#e6f7ee;color:#0f8a45}
+  .stbadge.late{background:#fff3e0;color:#b25e00}
+  .stbadge.never{background:#fdeaea;color:#b91c1c}
   .promo-body{font-size:13.5px;color:var(--text-2,#5a6678)}
   .promo-ok{font-size:15px;font-weight:800;color:#0f8a45;margin-bottom:10px}
   .promo-warn{font-size:15px;font-weight:800;color:#b25e00;margin-bottom:10px}
@@ -623,19 +633,43 @@
         } catch (e) {}
         return { s, file, meta: metaBy[s.id] };
       }));
-      list.innerHTML = rows.map(({ s, file, meta }) => {
+      // statut par magasin : à jour (<=10 j), en retard (>10 j), jamais déposée
+      const enriched = rows.map(({ s, file, meta }) => {
         const has = !!file;
         const when = (meta && meta.updated_at) || (file && (file.updated_at || file.created_at));
-        const sub = has
-          ? `${meta && meta.ean_count != null ? meta.ean_count + ' EAN · ' : ''}maj ${when ? new Date(when).toLocaleDateString('fr-FR') : '?'}`
+        const dt = when ? new Date(when) : null;
+        const ageDays = (has && dt && !isNaN(dt.getTime())) ? Math.floor((Date.now() - dt.getTime()) / 86400000) : null;
+        const status = !has ? 'never' : (ageDays != null && ageDays > 10 ? 'late' : 'ok');
+        return { s, has, meta, dt, ageDays, status };
+      });
+      const nOk = enriched.filter(e => e.status === 'ok').length;
+      const nLate = enriched.filter(e => e.status === 'late').length;
+      const nNever = enriched.filter(e => e.status === 'never').length;
+      // tri : le plus urgent d'abord (jamais déposée, puis le plus ancien)
+      enriched.sort((a, b) => (b.status === 'never' ? 1e9 : (b.ageDays || 0)) - (a.status === 'never' ? 1e9 : (a.ageDays || 0)));
+
+      const summary = `<div class="stsum">
+        <span class="pill ok">À jour<b>${nOk}</b></span>
+        <span class="pill late">En retard<b>${nLate}</b></span>
+        <span class="pill never">Jamais<b>${nNever}</b></span>
+        <span class="pill">Total<b>${enriched.length}</b></span>
+      </div>`;
+      const rowsHtml = enriched.map(e => {
+        const badge = e.status === 'ok' ? '<span class="stbadge ok">À jour</span>'
+          : e.status === 'late' ? `<span class="stbadge late">En retard${e.ageDays != null ? ' · ' + e.ageDays + ' j' : ''}</span>`
+          : '<span class="stbadge never">Jamais déposée</span>';
+        const sub = e.has
+          ? `${e.meta && e.meta.ean_count != null ? e.meta.ean_count + ' EAN · ' : ''}maj ${e.dt ? e.dt.toLocaleDateString('fr-FR') : '?'}`
           : 'aucune valorisation déposée';
         return `<div class="grow">
-          <div class="gr-main"><b>${esc(s.name || s.id)}</b>
-            <div class="gr-sub">${esc(s.id)}${s.region ? ' · ' + esc(s.region) : ''} — ${esc(sub)}</div></div>
-          ${has ? `<button data-load="${esc(s.id)}">Charger dans les outils</button>
-                   <button data-dl="${esc(s.id)}">Télécharger</button>` : ''}
+          ${badge}
+          <div class="gr-main"><b>${esc(e.s.name || e.s.id)}</b>
+            <div class="gr-sub">${esc(e.s.id)}${e.s.region ? ' · ' + esc(e.s.region) : ''} — ${esc(sub)}</div></div>
+          ${e.has ? `<button data-load="${esc(e.s.id)}">Charger dans les outils</button>
+                     <button data-dl="${esc(e.s.id)}">Télécharger</button>` : ''}
         </div>`;
       }).join('');
+      list.innerHTML = summary + rowsHtml;
       list.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', async () => {
         await loadStoreValo(b.dataset.load, false); el('storesModal').classList.remove('show');
       }));
