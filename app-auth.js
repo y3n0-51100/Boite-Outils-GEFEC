@@ -201,9 +201,20 @@
     promo.addEventListener('click', e => { if (e.target === promo) promo.classList.remove('show'); });
     el('promoOk').addEventListener('click', () => {
       promo.classList.remove('show');
-      etiquetteAck = true;
-      try { if (window.switchView) window.switchView('etiquette'); } finally { etiquetteAck = false; }
+      promoSeen = true;                 // ne plus réafficher de la session
+      if (window.switchView) window.switchView('etiquette');
     });
+
+    // pop-up d'ancienneté de la valorisation (> 10 jours)
+    const valo = document.createElement('div'); valo.className = 'gmodal'; valo.id = 'valoModal';
+    valo.innerHTML = `
+      <div class="gmodal-card" style="max-width:480px">
+        <div class="gmodal-head"><h2>📦 Valorisation de votre magasin</h2></div>
+        <div id="valoPopupBody" class="promo-body"></div>
+        <div style="text-align:right;margin-top:18px"><button class="gbtn" id="valoOk">Compris</button></div>
+      </div>`;
+    document.body.appendChild(valo);
+    el('valoOk').addEventListener('click', () => valo.classList.remove('show'));
   }
 
   function syncStoreFields() {
@@ -270,6 +281,10 @@
     }
     // tout le monde : charger le plan promo national publié par l'admin
     await loadSharedPlanPromo();
+    // magasin : alerter si la valorisation a plus de 10 jours
+    if (CURRENT.role === 'store' && CURRENT.storeId) {
+      await checkValoAge(CURRENT.storeId);
+    }
   }
 
   function showGate() { const g = el('authGate'); if (g) g.classList.remove('hide'); }
@@ -287,6 +302,34 @@
       toast('Valorisation chargée depuis le cloud ✓');
       return true;
     } catch (e) { if (!silent) toast('Échec du chargement : ' + e.message, true); return false; }
+  }
+
+  // date de dernier dépôt de la valorisation d'un magasin (métadonnées, sinon Storage)
+  async function getValoUpdatedAt(storeId) {
+    try {
+      const { data } = await sb.from('valorisations').select('updated_at').eq('store_id', storeId).maybeSingle();
+      if (data && data.updated_at) return new Date(data.updated_at);
+    } catch (e) {}
+    try {
+      const { data: files } = await sb.storage.from('valorisations').list(String(storeId), { limit: 100 });
+      const f = (files || []).find(x => x.name === 'valorisation.pdf');
+      if (f) return new Date(f.updated_at || f.created_at);
+    } catch (e) {}
+    return null;
+  }
+  // pop-up d'alerte si la valorisation a plus de 10 jours
+  async function checkValoAge(storeId) {
+    const upd = await getValoUpdatedAt(storeId);
+    if (!upd || isNaN(upd.getTime())) return;
+    const days = Math.floor((Date.now() - upd.getTime()) / 86400000);
+    if (days <= 10) return;
+    const body = el('valoPopupBody');
+    if (!body) return;
+    body.innerHTML = `
+      <div class="promo-warn">⚠️ Votre valorisation date de ${days} jours</div>
+      <div class="promo-info"><b>Dernier dépôt :</b> ${esc(upd.toLocaleDateString('fr-FR', { dateStyle: 'long' }))}</div>
+      <div class="promo-note">De nouveaux produits sont peut-être désormais en stock et disponibles. Pensez à <b>redéposer une valorisation à jour</b> depuis la page d'accueil, afin que vos affiches et étiquettes soient complètes.</div>`;
+    el('valoModal').classList.add('show');
   }
 
   // appelé par le moteur quand un utilisateur dépose une valorisation
@@ -394,11 +437,12 @@
         <div class="promo-note">Vous pouvez déposer votre propre plan promo national dans l'outil (étape « Chargez vos fichiers »).</div>`;
     }
   }
-  // Portail consulté par le moteur avant d'ouvrir l'outil Étiquettes
-  let etiquetteAck = false;
+  // Portail consulté par le moteur avant d'ouvrir l'outil Étiquettes.
+  // Le pop-up plan promo n'apparaît qu'UNE fois par session (après « Compris »).
+  let promoSeen = false;
   window.etiquetteGate = function () {
-    if (etiquetteAck) return true;     // clic « Compris » : on laisse passer
-    showPromoPopup();                  // sinon on affiche le pop-up et on bloque
+    if (promoSeen) return true;
+    showPromoPopup();
     return false;
   };
 
