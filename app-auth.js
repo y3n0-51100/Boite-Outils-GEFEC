@@ -87,14 +87,7 @@
   .stbadge.ok{background:#e6f7ee;color:#0f8a45}
   .stbadge.late{background:#fff3e0;color:#b25e00}
   .stbadge.never{background:#fdeaea;color:#b91c1c}
-  .prep-status{max-width:1060px;margin:0 auto 20px;padding:14px 18px;background:var(--surface,#fff);border:1px solid var(--border,#dde3ec);border-radius:14px}
-  .ps-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3,#8a93a3);margin-bottom:8px}
-  .ps-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
-  .ps-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-  .ps-dot.ok{background:#16a34a}.ps-dot.late{background:#e0a800}.ps-dot.never,.ps-dot.none{background:#cbd2dd}
-  .ps-label{font-weight:700;color:var(--text,#172033);min-width:190px}
-  .ps-val{color:var(--text-2,#5a6678)}
-  @media(max-width:560px){.ps-label{min-width:0}}
+  /* prep-status supprimé — intégré dans .status-ribbon (index.html) */
   .promo-body{font-size:13.5px;color:var(--text-2,#5a6678)}
   .promo-ok{font-size:15px;font-weight:800;color:#0f8a45;margin-bottom:10px}
   .promo-warn{font-size:15px;font-weight:800;color:#b25e00;margin-bottom:10px}
@@ -307,33 +300,38 @@
     }
   }
 
-  // Panneau d'accueil : fraîcheur de la valorisation + des documents partagés
+  // Ruban de statut : valorisation + documents partagés (chips inline)
   async function renderHomeStatus() {
-    const host = el('prepStatus');
-    if (!host || !CURRENT) return;
-    const rows = [];
-    if (CURRENT.role === 'store' && CURRENT.storeId) {
+    const slot = el(‘srDocs’);
+    const ribbon = el(‘statusRibbon’);
+    if (!slot || !CURRENT) return;
+    const chips = [];
+
+    if (CURRENT.role === ‘store’ && CURRENT.storeId) {
       let upd = null, ean = null;
       try {
-        const { data } = await sb.from('valorisations').select('updated_at, ean_count').eq('store_id', CURRENT.storeId).maybeSingle();
+        const { data } = await sb.from(‘valorisations’).select(‘updated_at, ean_count’).eq(‘store_id’, CURRENT.storeId).maybeSingle();
         if (data) { upd = data.updated_at ? new Date(data.updated_at) : null; ean = data.ean_count; }
       } catch (e) {}
       if (!upd) upd = await getValoUpdatedAt(CURRENT.storeId);
-      const st = !upd ? 'never' : (Math.floor((Date.now() - upd.getTime()) / 86400000) > 10 ? 'late' : 'ok');
-      const txt = upd
-        ? `à jour du ${upd.toLocaleDateString('fr-FR')}${ean != null ? ' · ' + ean + ' EAN' : ''}${st === 'late' ? ' — à actualiser (> 10 j)' : ''}`
-        : 'non déposée — à déposer en haut de page';
-      rows.push({ st, label: 'Votre valorisation', txt });
+      const st = !upd ? ‘never’ : (Math.floor((Date.now() - upd.getTime()) / 86400000) > 10 ? ‘late’ : ‘ok’);
+      const val = upd
+        ? upd.toLocaleDateString(‘fr-FR’) + (st === ‘late’ ? ‘ — à actualiser’ : ‘’)
+        : ‘non déposée’;
+      chips.push({ st, name: ‘Valorisation’, val });
     }
-    const labels = { 'plan-promo': 'Plan promo (Étiquettes)', 'affiches-cetelem': 'Affiches CETELEM', 'medias-soldes': 'Média Centrale (Soldes)' };
+
+    const labels = { ‘plan-promo’: ‘Plan promo’, ‘affiches-cetelem’: ‘CETELEM’, ‘medias-soldes’: ‘Soldes’ };
     for (const id of Object.keys(SHARED)) {
       const meta = await fetchSharedMeta(id);
-      if (meta && meta.updated_at) rows.push({ st: 'ok', label: labels[id], txt: `à jour du ${new Date(meta.updated_at).toLocaleDateString('fr-FR')}` });
-      else rows.push({ st: 'none', label: labels[id], txt: 'non publié par l’administrateur' });
+      if (meta && meta.updated_at) chips.push({ st: ‘ok’, name: labels[id], val: new Date(meta.updated_at).toLocaleDateString(‘fr-FR’) });
+      else chips.push({ st: ‘none’, name: labels[id], val: ‘non publié’ });
     }
-    host.innerHTML = '<div class="ps-title">État de préparation</div>' + rows.map(r =>
-      `<div class="ps-row"><span class="ps-dot ${r.st}"></span><span class="ps-label">${esc(r.label)}</span><span class="ps-val">${esc(r.txt)}</span></div>`).join('');
-    host.hidden = false;
+
+    slot.innerHTML = chips.map(c =>
+      `<div class="sr-chip"><span class="sr-dot ${c.st}"></span><span class="sr-name">${esc(c.name)}</span><span class="sr-sep">·</span><span>${esc(c.val)}</span></div>`
+    ).join(‘’);
+    if (ribbon) ribbon.hidden = false;
   }
 
   function showGate() { const g = el('authGate'); if (g) g.classList.remove('hide'); }
