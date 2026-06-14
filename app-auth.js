@@ -377,19 +377,27 @@
       return data || null;
     } catch (e) { return null; }
   }
-  function injectSharedInto(id, frame) {
+  async function injectSharedInto(id, frame) {
     const f = sharedFile[id], cfg = SHARED[id];
     if (!f || !cfg || !frame || frame['__inj_' + id]) return;
-    let doc; try { doc = frame.contentDocument; } catch (e) { return; }
-    if (!doc) return;
+    let win, doc;
+    try { win = frame.contentWindow; doc = frame.contentDocument; } catch (e) { return; }
+    if (!win || !doc) return;
     const input = doc.getElementById(cfg.input);
     if (!input) return;
+    frame['__inj_' + id] = true; // marquer tôt (injection async) pour éviter les doublons
     try {
-      const dt = new DataTransfer(); dt.items.add(f);
+      // Reconstruire le fichier DANS le realm de l'iframe : sinon JSZip échoue
+      // (instanceof Blob/ArrayBuffer faux d'un contexte JS à l'autre).
+      const buf = await f.arrayBuffer();
+      const ab = new win.ArrayBuffer(buf.byteLength);
+      new win.Uint8Array(ab).set(new Uint8Array(buf));
+      const ifile = new win.File([ab], f.name || cfg.input, { type: f.type || '' });
+      const dt = new win.DataTransfer();
+      dt.items.add(ifile);
       input.files = dt.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      frame['__inj_' + id] = true;
-    } catch (e) {}
+      input.dispatchEvent(new win.Event('change', { bubbles: true }));
+    } catch (e) { frame['__inj_' + id] = false; }
   }
   function tryInjectShared(id) {
     const cfg = SHARED[id]; if (!cfg) return;
