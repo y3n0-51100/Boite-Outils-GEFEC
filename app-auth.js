@@ -11,7 +11,6 @@
   const ROLE_LABEL = { admin: 'Administrateur', director: 'Directeur régional', store: 'Magasin' };
   let sb = null;
   let CURRENT = null; // { userId, role, storeId, name }
-  let sharedPromoFile = null; // plan promo national publié par l'admin (partagé)
 
   /* ---------- Styles ---------- */
   const css = `
@@ -135,17 +134,18 @@
       <div class="gmodal-card">
         <div class="gmodal-head"><h2>⚙️ Réglages</h2><button class="gmodal-close" data-close>✕</button></div>
 
+        <div class="gpromo-sub" style="margin-top:0">Documents communs (centrale) — publiés une fois, chargés automatiquement chez tous les magasins :</div>
+        ${Object.keys(SHARED).map(id => `
         <div class="gpromo">
-          <div class="gpromo-title">📄 Plan promo national (centrale)</div>
-          <div class="gpromo-sub">Publiez ici le PDF reçu de la centrale : il sera chargé automatiquement dans l'outil Étiquettes de tous les magasins.</div>
-          <div class="gmsg" id="ppStatus">Chargement…</div>
-          <input type="file" id="ppFile" accept="application/pdf,.pdf" style="display:none">
+          <div class="gpromo-title">${esc(SHARED[id].name)}</div>
+          <div class="gmsg" id="ds-status-${id}">Chargement…</div>
+          <input type="file" id="ds-file-${id}" accept="${SHARED[id].accept}" style="display:none">
           <div class="gpromo-actions">
-            <button class="gbtn alt" id="ppPick">Choisir le PDF</button>
-            <button class="gbtn" id="ppUpload">Téléverser</button>
-            <span id="ppName" class="gpromo-name"></span>
+            <button class="gbtn alt" data-pick="${id}">Choisir le fichier</button>
+            <button class="gbtn" data-upload="${id}">Téléverser</button>
+            <span class="gpromo-name" id="ds-name-${id}"></span>
           </div>
-        </div>
+        </div>`).join('')}
         <hr class="gsep">
 
         <div class="gmodal-sub">Créez les accès magasins (16) et directeurs régionaux (2). Identifiant + mot de passe.</div>
@@ -170,12 +170,12 @@
     admin.addEventListener('click', e => { if (e.target === admin) admin.classList.remove('show'); });
     el('naRole').addEventListener('change', syncStoreFields);
     el('naCreate').addEventListener('click', onCreateAccount);
-    el('ppPick').addEventListener('click', () => el('ppFile').click());
-    el('ppFile').addEventListener('change', () => {
-      const f = el('ppFile').files && el('ppFile').files[0];
-      el('ppName').textContent = f ? f.name : '';
+    admin.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => el('ds-file-' + b.dataset.pick).click()));
+    admin.querySelectorAll('[data-upload]').forEach(b => b.addEventListener('click', () => onUploadShared(b.dataset.upload)));
+    Object.keys(SHARED).forEach(id => {
+      const fi = el('ds-file-' + id);
+      if (fi) fi.addEventListener('change', () => { const f = fi.files && fi.files[0]; const nm = el('ds-name-' + id); if (nm) nm.textContent = f ? f.name : ''; });
     });
-    el('ppUpload').addEventListener('click', onUploadPromo);
 
     // modale valorisations (admin + directeurs)
     const stores = document.createElement('div'); stores.className = 'gmodal'; stores.id = 'storesModal';
@@ -189,20 +189,20 @@
     stores.querySelector('[data-close]').addEventListener('click', () => stores.classList.remove('show'));
     stores.addEventListener('click', e => { if (e.target === stores) stores.classList.remove('show'); });
 
-    // pop-up plan promo (affiché à l'ouverture de l'outil Étiquettes)
-    const promo = document.createElement('div'); promo.className = 'gmodal'; promo.id = 'promoModal';
-    promo.innerHTML = `
+    // pop-up générique affiché à l'ouverture d'un outil (plan promo / affiches / médias)
+    const mod = document.createElement('div'); mod.className = 'gmodal'; mod.id = 'modModal';
+    mod.innerHTML = `
       <div class="gmodal-card" style="max-width:480px">
-        <div class="gmodal-head"><h2>🏷️ Étiquettes — Plan promo</h2></div>
-        <div id="promoPopupBody" class="promo-body"><div class="gempty">Chargement…</div></div>
-        <div style="text-align:right;margin-top:18px"><button class="gbtn" id="promoOk">Compris</button></div>
+        <div class="gmodal-head"><h2 id="modTitle"></h2></div>
+        <div id="modBody" class="promo-body"><div class="gempty">Chargement…</div></div>
+        <div style="text-align:right;margin-top:18px"><button class="gbtn" id="modOk">Compris</button></div>
       </div>`;
-    document.body.appendChild(promo);
-    promo.addEventListener('click', e => { if (e.target === promo) promo.classList.remove('show'); });
-    el('promoOk').addEventListener('click', () => {
-      promo.classList.remove('show');
-      promoSeen = true;                 // ne plus réafficher de la session
-      if (window.switchView) window.switchView('etiquette');
+    document.body.appendChild(mod);
+    mod.addEventListener('click', e => { if (e.target === mod) mod.classList.remove('show'); });
+    el('modOk').addEventListener('click', () => {
+      mod.classList.remove('show');
+      const a = modOkAction; modOkAction = null;
+      if (a) a();
     });
 
     // pop-up d'ancienneté de la valorisation (> 10 jours)
@@ -279,8 +279,8 @@
     if (CURRENT.role === 'store' && CURRENT.storeId) {
       await loadStoreValo(CURRENT.storeId, true);
     }
-    // tout le monde : charger le plan promo national publié par l'admin
-    await loadSharedPlanPromo();
+    // tout le monde : charger les documents partagés publiés par l'admin
+    await loadAllSharedDocs();
     // magasin : alerter si la valorisation a plus de 10 jours
     if (CURRENT.role === 'store' && CURRENT.storeId) {
       await checkValoAge(CURRENT.storeId);
@@ -355,57 +355,66 @@
     toast('Valorisation enregistrée dans le cloud ✓');
   };
 
-  /* ---------- Plan promo national partagé (publié par l'admin) ---------- */
-  const PROMO_PATH = 'plan-promo.pdf';
+  /* ---------- Documents partagés publiés par l'admin ----------
+     Même bucket "shared" + table "shared_docs" pour 3 documents communs :
+     plan promo (Étiquettes), affiches CETELEM, fichiers Média Centrale (Soldes). */
+  const SHARED = {
+    'plan-promo':       { name: 'Plan promo national',     accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo' },
+    'affiches-cetelem': { name: 'Affiches CETELEM',        accept: '.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]',     input: 'file2' },
+    'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input' },
+  };
+  const MODULE_DOC = { etiquette: 'plan-promo', match: 'affiches-cetelem', solde: 'medias-soldes' };
+  const sharedFile = {};       // id -> File chargé
+  const sharedLoadedAt = {};   // id -> updated_at injecté
+  let modOkAction = null;
 
-  // injecte le plan promo dans l'iframe de l'outil Étiquettes (input #filePromo)
-  function injectPromoInto(frame) {
-    if (!sharedPromoFile || !frame || frame.__promoInjected) return;
-    let doc; try { doc = frame.contentDocument; } catch (e) { return; }
-    if (!doc) return;
-    const input = doc.getElementById('filePromo');
-    if (!input) return;
+  function extOf(name) { const m = String(name || '').match(/\.([a-z0-9]+)$/i); return m ? '.' + m[1].toLowerCase() : ''; }
+  function pathFor(id, fileName) { return id + (extOf(fileName) || (id === 'affiches-cetelem' ? '.zip' : '.pdf')); }
+
+  async function fetchSharedMeta(id) {
     try {
-      const dt = new DataTransfer(); dt.items.add(sharedPromoFile);
-      input.files = dt.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      frame.__promoInjected = true;
-    } catch (e) {}
-  }
-  function tryInjectPromo() {
-    const frame = document.querySelector('.tool-frame[data-src="etiquette.html"]');
-    if (!frame) return;
-    injectPromoInto(frame);                          // si déjà chargée
-    frame.addEventListener('load', () => injectPromoInto(frame)); // au prochain chargement
-  }
-
-  let promoLoadedAt = null;   // updated_at du plan promo actuellement injecté
-
-  async function fetchPromoMeta() {
-    try {
-      const { data } = await sb.from('shared_docs')
-        .select('file_path, file_name, updated_at').eq('id', 'plan-promo').maybeSingle();
+      const { data } = await sb.from('shared_docs').select('file_path, file_name, updated_at').eq('id', id).maybeSingle();
       return data || null;
     } catch (e) { return null; }
   }
-  async function ensurePromoLoaded(meta) {
+  function injectSharedInto(id, frame) {
+    const f = sharedFile[id], cfg = SHARED[id];
+    if (!f || !cfg || !frame || frame['__inj_' + id]) return;
+    let doc; try { doc = frame.contentDocument; } catch (e) { return; }
+    if (!doc) return;
+    const input = doc.getElementById(cfg.input);
+    if (!input) return;
+    try {
+      const dt = new DataTransfer(); dt.items.add(f);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      frame['__inj_' + id] = true;
+    } catch (e) {}
+  }
+  function tryInjectShared(id) {
+    const cfg = SHARED[id]; if (!cfg) return;
+    const frame = document.querySelector(cfg.frameSel);
+    if (!frame) return;
+    injectSharedInto(id, frame);                              // si déjà chargée
+    frame.addEventListener('load', () => injectSharedInto(id, frame)); // au prochain chargement
+  }
+  async function ensureSharedLoaded(id, meta) {
     if (!meta || !meta.file_path) return;
-    if (sharedPromoFile && promoLoadedAt === meta.updated_at) return; // déjà à jour
+    if (sharedFile[id] && sharedLoadedAt[id] === meta.updated_at) return; // déjà à jour
     try {
       const { data, error } = await sb.storage.from('shared').download(meta.file_path);
       if (error || !data) return;
-      sharedPromoFile = new File([data], meta.file_name || 'plan-promo.pdf', { type: 'application/pdf' });
-      promoLoadedAt = meta.updated_at;
-      document.querySelectorAll('.tool-frame').forEach(fr => { fr.__promoInjected = false; });
-      tryInjectPromo();
+      sharedFile[id] = new File([data], meta.file_name || meta.file_path, { type: data.type || '' });
+      sharedLoadedAt[id] = meta.updated_at;
+      document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
+      tryInjectShared(id);
     } catch (e) {}
   }
-  async function loadSharedPlanPromo() {
-    const meta = await fetchPromoMeta();
-    if (!meta) return;
-    await ensurePromoLoaded(meta);
-    const d = meta.updated_at ? new Date(meta.updated_at).toLocaleDateString('fr-FR') : '';
-    toast('Plan promo de la centrale disponible' + (d ? ` — à jour du ${d}` : '') + ' ✓');
+  async function loadAllSharedDocs() {
+    for (const id of Object.keys(SHARED)) {
+      const meta = await fetchSharedMeta(id);
+      if (meta) await ensureSharedLoaded(id, meta);
+    }
   }
 
   function relAge(dt) {
@@ -416,72 +425,91 @@
     const w = Math.floor(days / 7);
     return w === 1 ? 'il y a 1 semaine' : `il y a ${w} semaines`;
   }
-  // Pop-up affiché à l'ouverture de l'outil Étiquettes (état du plan promo)
-  async function showPromoPopup() {
-    const body = el('promoPopupBody');
-    body.innerHTML = '<div class="gempty">Vérification du plan promo…</div>';
-    el('promoModal').classList.add('show');
-    const meta = await fetchPromoMeta();
-    if (meta) await ensurePromoLoaded(meta); // récupère la dernière version si l'admin l'a mise à jour
+  const MODULE_TITLE = {
+    etiquette: '🏷️ Étiquettes — Plan promo',
+    match: '📄 Affiches CETELEM',
+    solde: '🧮 Soldes — Média Centrale',
+  };
+  const MODULE_NOTE = {
+    etiquette: "Il est déjà chargé dans l'outil avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers ».",
+    match: "Les affiches publiées par la centrale sont déjà chargées dans l'outil : vous pouvez générer vos affiches directement. Déposez votre propre ZIP si vous en avez un plus récent.",
+    solde: "Les fichiers Média Centrale sont déjà chargés. Ajoutez vos fichiers de regroupement magasin, puis lancez « Analyser et générer ».",
+  };
+  const MODULE_NOTE_EMPTY = {
+    etiquette: "Aucun plan promo publié pour le moment. Vous pouvez déposer votre propre plan promo dans l'outil.",
+    match: "Aucune affiche publiée par l'administrateur. Vous pouvez déposer votre propre ZIP d'affiches dans l'outil.",
+    solde: "Aucun fichier Média Centrale publié. Vous pouvez déposer vos propres fichiers dans l'outil.",
+  };
+
+  // Pop-up affiché UNE fois (par session, par module) à l'ouverture d'un outil
+  let moduleSeen = {};
+  async function showModulePopup(name, id) {
+    const cfg = SHARED[id];
+    el('modTitle').textContent = MODULE_TITLE[name] || cfg.name;
+    el('modBody').innerHTML = '<div class="gempty">Vérification…</div>';
+    modOkAction = () => { moduleSeen[name] = true; if (window.switchView) window.switchView(name); };
+    el('modModal').classList.add('show');
+    const meta = await fetchSharedMeta(id);
+    if (meta) await ensureSharedLoaded(id, meta); // récupère la dernière version éventuelle
+    const body = el('modBody');
     if (meta && meta.updated_at) {
       const dt = new Date(meta.updated_at);
       const dateStr = dt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
       body.innerHTML = `
-        <div class="promo-ok">✅ Plan promo national disponible et chargé</div>
-        <div class="promo-info"><b>Fichier :</b> ${esc(meta.file_name || 'plan-promo.pdf')}</div>
+        <div class="promo-ok">✅ ${esc(cfg.name)} disponible et chargé</div>
+        <div class="promo-info"><b>Fichier :</b> ${esc(meta.file_name || '')}</div>
         <div class="promo-info"><b>Mis en ligne le :</b> ${esc(dateStr)} <span class="promo-age">(${esc(relAge(dt))})</span></div>
-        <div class="promo-note">Il est déjà chargé dans l'outil avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers ».</div>`;
+        <div class="promo-note">${MODULE_NOTE[name] || ''}</div>`;
     } else {
       body.innerHTML = `
-        <div class="promo-warn">⚠️ Aucun plan promo n'a encore été publié par la centrale.</div>
-        <div class="promo-note">Vous pouvez déposer votre propre plan promo national dans l'outil (étape « Chargez vos fichiers »).</div>`;
+        <div class="promo-warn">⚠️ Aucun document publié par l'administrateur pour cet outil.</div>
+        <div class="promo-note">${MODULE_NOTE_EMPTY[name] || ''}</div>`;
     }
   }
-  // Portail consulté par le moteur avant d'ouvrir l'outil Étiquettes.
-  // Le pop-up plan promo n'apparaît qu'UNE fois par session (après « Compris »).
-  let promoSeen = false;
-  window.etiquetteGate = function () {
-    if (promoSeen) return true;
-    showPromoPopup();
+  // Portail consulté par le moteur avant d'ouvrir un outil
+  window.moduleGate = function (name) {
+    const id = MODULE_DOC[name];
+    if (!id) return true;                 // module sans document partagé
+    if (moduleSeen[name]) return true;    // déjà vu cette session
+    showModulePopup(name, id);
     return false;
   };
 
-  async function refreshPromoStatus() {
-    const s = el('ppStatus'); if (!s) return;
-    try {
-      const { data } = await sb.from('shared_docs')
-        .select('file_name, updated_at').eq('id', 'plan-promo').maybeSingle();
-      if (data && data.updated_at) {
-        s.className = 'gmsg ok';
-        s.textContent = `Publié : ${data.file_name || 'plan-promo.pdf'} — ${new Date(data.updated_at).toLocaleString('fr-FR')}`;
-      } else { s.className = 'gmsg'; s.textContent = 'Aucun plan promo publié pour le moment.'; }
-    } catch (e) { s.className = 'gmsg'; s.textContent = ''; }
+  /* ---------- Publication des documents partagés (admin) ---------- */
+  async function refreshSharedStatus(id) {
+    const s = el('ds-status-' + id); if (!s) return;
+    const meta = await fetchSharedMeta(id);
+    if (meta && meta.updated_at) {
+      s.className = 'gmsg ok';
+      s.textContent = `Publié : ${meta.file_name || ''} — ${new Date(meta.updated_at).toLocaleString('fr-FR')}`;
+    } else { s.className = 'gmsg'; s.textContent = 'Aucun fichier publié pour le moment.'; }
   }
-  async function onUploadPromo() {
-    const f = el('ppFile').files && el('ppFile').files[0];
-    if (!f) { toast('Choisissez d’abord un PDF', true); return; }
-    if (f.type && f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-      toast('Format invalide — un PDF est attendu', true); return;
-    }
-    const btn = el('ppUpload'); btn.disabled = true; btn.textContent = 'Téléversement…';
+  function refreshAllSharedStatus() { Object.keys(SHARED).forEach(refreshSharedStatus); }
+  async function onUploadShared(id) {
+    const cfg = SHARED[id];
+    const input = el('ds-file-' + id);
+    const f = input && input.files && input.files[0];
+    if (!f) { toast('Choisissez d’abord un fichier', true); return; }
+    const btn = document.querySelector(`[data-upload="${id}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Téléversement…'; }
     try {
-      const { error } = await sb.storage.from('shared')
-        .upload(PROMO_PATH, f, { upsert: true, contentType: 'application/pdf' });
+      const path = pathFor(id, f.name);
+      const { error } = await sb.storage.from('shared').upload(path, f, { upsert: true, contentType: f.type || undefined });
       if (error) throw error;
       await sb.from('shared_docs').upsert({
-        id: 'plan-promo', file_path: PROMO_PATH, file_name: f.name,
+        id, file_path: path, file_name: f.name,
         updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
       });
-      sharedPromoFile = f;
-      document.querySelectorAll('.tool-frame').forEach(fr => { fr.__promoInjected = false; });
-      tryInjectPromo();
-      toast('Plan promo national publié pour tous les magasins ✓');
-      el('ppFile').value = ''; el('ppName').textContent = '';
-      refreshPromoStatus();
+      sharedFile[id] = f; sharedLoadedAt[id] = null;
+      document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
+      tryInjectShared(id);
+      toast(cfg.name + ' publié pour tous les magasins ✓');
+      input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
+      refreshSharedStatus(id);
     } catch (e) {
       toast('Échec de la publication : ' + (e.message || e), true);
     } finally {
-      btn.disabled = false; btn.textContent = 'Téléverser';
+      if (btn) { btn.disabled = false; btn.textContent = 'Téléverser'; }
     }
   }
 
@@ -489,7 +517,7 @@
   async function openAdmin() {
     syncStoreFields();
     el('adminModal').classList.add('show');
-    refreshPromoStatus();
+    refreshAllSharedStatus();
     refreshAccounts();
   }
   async function callFn(body) {

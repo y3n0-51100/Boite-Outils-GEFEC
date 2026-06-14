@@ -2709,8 +2709,8 @@ document.querySelectorAll('.tool-card').forEach(card=>{
 const shell=document.querySelector('.shell'), tabNav=document.getElementById('tabNav'),
       tabs=tabNav.querySelectorAll('.tab'), tabIndicator=tabNav.querySelector('.tab-indicator');
 function switchView(name){
-  // pop-up plan promo avant d'ouvrir l'outil Étiquettes (géré par app-auth.js)
-  if (name==='etiquette' && typeof window.etiquetteGate==='function' && !window.etiquetteGate()) return;
+  // pop-up "document partagé" avant d'ouvrir un outil (géré par app-auth.js)
+  if (typeof window.moduleGate==='function' && !window.moduleGate(name)) return;
   shell.dataset.view=name;
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));
   if (name==='home'){ tabNav.hidden=true; }

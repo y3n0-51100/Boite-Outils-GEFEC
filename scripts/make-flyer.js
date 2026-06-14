@@ -142,14 +142,14 @@ badge(ML + 26, 382, '#f59e0b'); star(ML + 26, 381, 8, 3.4, '#fff');
 T('Le petit plus', ML + 52, 363, { b: true, s: 12, c: C.dark, br: false });
 T('L’outil intègre la base NOSICA complète, mise à jour automatiquement. Besoin d’un produit absent du plan promo ? Ajoutez-le manuellement, en BON PLAN ou PROMO.', ML + 52, 380, { s: 9.5, c: C.grey, w: CW - 66, lg: 1.5 });
 
-box(ML, 424, CW, 60, 10, '#eaf7ef', '#bfe3cc');
-badge(ML + 26, 454, C.green); icoSave(ML + 26, 454);
-T('Déjà prêt à l’emploi', ML + 52, 435, { b: true, s: 12, c: C.dark, br: false });
-T('À chaque connexion, vos fichiers mémorisés se rechargent tout seuls. Un pop-up vous indique si le plan promo est à jour, et vous alerte si votre valorisation a plus de 10 jours.', ML + 52, 452, { s: 9.5, c: C.grey, w: CW - 66, lg: 1.5 });
+box(ML, 418, CW, 92, 10, '#eaf7ef', '#bfe3cc');
+badge(ML + 26, 446, C.green); icoSave(ML + 26, 446);
+T('Déjà prêt à l’emploi', ML + 52, 428, { b: true, s: 12, c: C.dark, br: false });
+T('À chaque connexion, vos documents se chargent tout seuls : votre valorisation, le plan promo (Étiquettes), les affiches (CETELEM) et les fichiers Média Centrale (Soldes) publiés par l’administrateur. À l’ouverture de chaque outil, un pop-up vous indique si le document est à jour — et vous êtes alerté si votre valorisation a plus de 10 jours.', ML + 52, 444, { s: 9.5, c: C.grey, w: CW - 66, lg: 1.5 });
 
-box(ML, 500, CW, 58, 12, '#f1f5ff', C.softline);
-T('Une question ?', ML + 20, 512, { b: true, s: 12, c: C.dark, br: false });
-T('Rémi SCHAFFHAUSER — Administrateur de l’outil. Je reste à votre disposition. Bonne semaine à tous !', ML + 20, 531, { s: 10.5, c: C.grey, w: CW - 40, br: false });
+box(ML, 522, CW, 52, 12, '#f1f5ff', C.softline);
+T('Une question ?', ML + 20, 532, { b: true, s: 12, c: C.dark, br: false });
+T('Rémi SCHAFFHAUSER — Administrateur de l’outil. Je reste à votre disposition. Bonne semaine à tous !', ML + 20, 550, { s: 10.5, c: C.grey, w: CW - 40, br: false });
 
 /* ---------- pieds de page ---------- */
 const range = doc.bufferedPageRange();
