@@ -481,9 +481,9 @@ table.prod tr.multi:hover td{background:#fff3df}
     <div class="optgrid">
       <div class="optblock">
         <h3>Type d'affiche</h3>
-        <div class="choices">
-          <button class="choice active" id="chBonplan" onclick="setTpl('bonplan')">BON PLAN<small>masque officiel</small></button>
-          <button class="choice" id="chPromo" onclick="setTpl('promo')">PROMO DU MOMENT<small>masque officiel</small></button>
+        <div class="choices" id="tplChoices">
+          <button class="choice active" data-tpl="bonplan" id="chBonplan" onclick="setTpl('bonplan')">BON PLAN<small>masque officiel</small></button>
+          <button class="choice" data-tpl="promo" id="chPromo" onclick="setTpl('promo')">PROMO DU MOMENT<small>masque officiel</small></button>
         </div>
       </div>
       <div class="optblock">
@@ -615,6 +615,7 @@ const state = {
   fmt: 'a4',
   printBg: true,       // false = papier pré-imprimé, on n'imprime que le contenu
   masks: {},           // fonds importés par l'utilisateur (priorité sur DEFAULT_MASKS)
+  customMasks: [],     // masques additionnels publiés par l'admin {id,name,calage}
   useMaskImages: true,
   promoFileName: '',
   valoFileName: '',
@@ -1324,9 +1325,45 @@ function addBlank() {
    ============================================================ */
 function setTpl(t) {
   state.tpl = t;
-  document.getElementById('chBonplan').classList.toggle('active', t === 'bonplan');
-  document.getElementById('chPromo').classList.toggle('active', t === 'promo');
+  document.querySelectorAll('#tplChoices .choice').forEach(b =>
+    b.classList.toggle('active', b.dataset.tpl === t));
   renderPreview(); savePrintPrefs();
+}
+// disposition CSS d'un masque (les masques perso réutilisent le calage choisi)
+function tplPos(t) {
+  const cm = state.customMasks.find(m => m.id === t);
+  return cm ? (cm.calage || 'promo') : t;
+}
+
+/* ------------------------------------------------------------------
+   Masques additionnels publiés par l'administrateur (SOLDES, VENTES
+   PRIVÉES…). Appelé par la coque (app-auth.js) avec des images en
+   data-URL. Le moteur de rendu reste inchangé : seul le fond et le
+   bouton « Type d'affiche » sont ajoutés ; le contenu se cale comme
+   le masque officiel indiqué (calage). */
+window.applyCustomMasks = function (list) {
+  if (!Array.isArray(list)) return;
+  state.customMasks = list.map(m => ({ id: m.id, name: m.name, calage: m.calage || 'promo' }));
+  for (const m of list) {
+    if (m.a4) state.masks[m.id + '-a4'] = m.a4;
+    if (m.a5) state.masks[m.id + '-a5'] = m.a5;
+  }
+  renderTplChoices();
+  // si le masque mémorisé n'existe plus, repli sur BON PLAN
+  if (!document.querySelector(`#tplChoices .choice[data-tpl="${state.tpl}"]`)) state.tpl = 'bonplan';
+  setTpl(state.tpl);
+};
+function renderTplChoices() {
+  const box = document.getElementById('tplChoices');
+  if (!box) return;
+  box.querySelectorAll('.choice[data-custom]').forEach(b => b.remove());
+  for (const m of state.customMasks) {
+    const b = document.createElement('button');
+    b.className = 'choice'; b.dataset.tpl = m.id; b.dataset.custom = '1';
+    b.innerHTML = `${esc(m.name)}<small>masque centrale</small>`;
+    b.onclick = () => setTpl(m.id);
+    box.appendChild(b);
+  }
 }
 function setFmt(f) {
   state.fmt = f;
@@ -1421,7 +1458,7 @@ function labelHtml(p, fmtClass) {
   // A4 : dates dans la bande jaune sous le titre ; A5 : dates en haut de
   // la zone blanche (position du bordereau officiel), dans tous les modes
   const datesInHead = drawVector && state.fmt === 'a4';
-  return `<div class="lbl ${fmtClass} tpl-${tpl} ${useImg ? 'with-img' : ''} ${noBg ? 'no-bg' : ''} ${p ? '' : 'empty-slot'}">
+  return `<div class="lbl ${fmtClass} tpl-${tplPos(tpl)} ${useImg ? 'with-img' : ''} ${noBg ? 'no-bg' : ''} ${p ? '' : 'empty-slot'}">
     ${maskImgTag}
     <div class="inner">
       ${drawVector ? `<div class="head">${title}${datesInHead && dates && p ? `<div class="dates">${esc(dates)}</div>` : ''}</div>` : ''}

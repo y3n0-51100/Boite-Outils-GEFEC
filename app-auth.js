@@ -96,6 +96,8 @@
   .promo-age{color:var(--text-3,#8a93a3);font-weight:600}
   .promo-note{margin-top:12px;padding:11px 13px;background:var(--surface-2,#f5f7fb);border-radius:10px;font-size:12.5px;line-height:1.5}
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
+  .gmask-name{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2,#5a6678);margin:8px 0}
+  .gmask-name input{padding:9px 11px;border:1px solid var(--border,#dde3ec);border-radius:9px;font-size:14px;font-weight:600;text-transform:uppercase}
   `;
 
   /* ---------- petits utilitaires ---------- */
@@ -157,6 +159,25 @@
             <span class="gpromo-name" id="ds-name-${id}"></span>
           </div>
         </div>`).join('')}
+
+        <hr class="gsep">
+        <div class="gpromo-sub" style="margin-top:0">Masques personnalisés (Étiquettes) — opérations spéciales (SOLDES, VENTES PRIVÉES…), disponibles chez tous les magasins. Le contenu produit se cale automatiquement comme « PROMO DU MOMENT ».</div>
+        <div class="gpromo">
+          <div class="glist" id="masksList"><div class="gempty">Chargement…</div></div>
+          <div class="gpromo-title" style="margin-top:12px">Ajouter un masque</div>
+          <label class="gmask-name">Nom affiché<input id="maskName" autocapitalize="characters" placeholder="ex : SOLDES"></label>
+          <div class="gpromo-actions">
+            <button class="gbtn alt" id="maskPickA4">Fond A4…</button>
+            <span class="gpromo-name" id="maskNameA4"></span>
+            <button class="gbtn alt" id="maskPickA5">Fond A5 (planche double)…</button>
+            <span class="gpromo-name" id="maskNameA5"></span>
+          </div>
+          <input type="file" id="maskFileA4" accept="image/*" style="display:none">
+          <input type="file" id="maskFileA5" accept="image/*" style="display:none">
+          <div class="gpromo-actions"><button class="gbtn" id="maskAdd">＋ Publier le masque</button></div>
+          <div class="gmsg" id="maskMsg"></div>
+        </div>
+
         <hr class="gsep">
 
         <div class="gmodal-sub">Créez les accès magasins (16) et directeurs régionaux (2). Identifiant + mot de passe.</div>
@@ -187,6 +208,13 @@
       const fi = el('ds-file-' + id);
       if (fi) fi.addEventListener('change', () => { const f = fi.files && fi.files[0]; const nm = el('ds-name-' + id); if (nm) nm.textContent = f ? f.name : ''; });
     });
+
+    // masques personnalisés (admin)
+    el('maskPickA4').addEventListener('click', () => el('maskFileA4').click());
+    el('maskPickA5').addEventListener('click', () => el('maskFileA5').click());
+    el('maskFileA4').addEventListener('change', () => { const f = el('maskFileA4').files[0]; el('maskNameA4').textContent = f ? f.name : ''; });
+    el('maskFileA5').addEventListener('change', () => { const f = el('maskFileA5').files[0]; el('maskNameA5').textContent = f ? f.name : ''; });
+    el('maskAdd').addEventListener('click', onAddMask);
 
     // modale valorisations (admin + directeurs)
     const stores = document.createElement('div'); stores.className = 'gmodal'; stores.id = 'storesModal';
@@ -292,6 +320,8 @@
     }
     // tout le monde : charger les documents partagés publiés par l'admin
     await loadAllSharedDocs();
+    // masques personnalisés (SOLDES, etc.) → injectés dans Étiquettes
+    await loadCustomMasks();
     // panneau "état de préparation" sur l'accueil
     renderHomeStatus();
     // magasin : alerter si la valorisation a plus de 10 jours
@@ -568,11 +598,127 @@
     }
   }
 
+  /* ---------- Masques personnalisés partagés (admin) ----------
+     Stockés dans le bucket "shared" : images masks/<id>/a4|a5.<ext>,
+     index masks/manifest.json. Aucune table SQL supplémentaire requise. */
+  const MASK_MANIFEST = 'masks/manifest.json';
+  let customMasksData = null; // [{id,name,calage,a4:dataURL,a5:dataURL}] côté client
+
+  function slugify(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'masque';
+  }
+  function blobToDataURL(blob) {
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+  }
+  async function loadMaskManifest() {
+    try {
+      const { data, error } = await sb.storage.from('shared').download(MASK_MANIFEST);
+      if (error || !data) return [];
+      const arr = JSON.parse(await data.text());
+      return Array.isArray(arr.masks) ? arr.masks : [];
+    } catch (e) { return []; }
+  }
+  async function saveMaskManifest(masks) {
+    const blob = new Blob([JSON.stringify({ masks })], { type: 'application/json' });
+    const { error } = await sb.storage.from('shared').upload(MASK_MANIFEST, blob, { upsert: true, contentType: 'application/json', cacheControl: '0' });
+    if (error) throw error;
+  }
+
+  async function refreshMasksList() {
+    const host = el('masksList'); if (!host) return;
+    const masks = await loadMaskManifest();
+    if (!masks.length) { host.innerHTML = '<div class="gempty">Aucun masque personnalisé publié.</div>'; return; }
+    host.innerHTML = masks.map(m => `
+      <div class="grow">
+        <span class="tagrole">Masque</span>
+        <div class="gr-main"><b>${esc(m.name)}</b>
+          <div class="gr-sub">A4${m.a5 ? ' + A5' : ''} · publié le ${m.updated_at ? new Date(m.updated_at).toLocaleDateString('fr-FR') : '—'}</div></div>
+        <button class="danger" data-delmask="${esc(m.id)}" data-name="${esc(m.name)}">Supprimer</button>
+      </div>`).join('');
+    host.querySelectorAll('[data-delmask]').forEach(b => b.addEventListener('click', () => onDeleteMask(b.dataset.delmask, b.dataset.name)));
+  }
+
+  async function onAddMask() {
+    const name = (el('maskName').value || '').trim();
+    const fa4 = el('maskFileA4').files[0];
+    const fa5 = el('maskFileA5').files[0];
+    const msg = el('maskMsg');
+    if (!name) { msg.className = 'gmsg err'; msg.textContent = 'Indiquez un nom.'; return; }
+    if (!fa4 || !fa5) { msg.className = 'gmsg err'; msg.textContent = 'Choisissez les deux fonds (A4 et A5).'; return; }
+    const btn = el('maskAdd'); btn.disabled = true; btn.textContent = 'Publication…';
+    try {
+      const masks = await loadMaskManifest();
+      let id = slugify(name);
+      if (['bonplan', 'promo'].includes(id) || masks.some(m => m.id === id)) id += '-' + Date.now().toString(36).slice(-4);
+      const ext = f => (f.name.match(/\.([a-z0-9]+)$/i) || [, 'jpg'])[1].toLowerCase();
+      const p4 = `masks/${id}/a4.${ext(fa4)}`, p5 = `masks/${id}/a5.${ext(fa5)}`;
+      let r = await sb.storage.from('shared').upload(p4, fa4, { upsert: true, contentType: fa4.type || undefined }); if (r.error) throw r.error;
+      r = await sb.storage.from('shared').upload(p5, fa5, { upsert: true, contentType: fa5.type || undefined }); if (r.error) throw r.error;
+      masks.push({ id, name, calage: 'promo', a4: p4, a5: p5, updated_at: new Date().toISOString(), updated_by: CURRENT.userId });
+      await saveMaskManifest(masks);
+      el('maskName').value = ''; el('maskFileA4').value = ''; el('maskFileA5').value = '';
+      el('maskNameA4').textContent = ''; el('maskNameA5').textContent = '';
+      msg.className = 'gmsg ok'; msg.textContent = `Masque « ${name} » publié pour tous les magasins ✓`;
+      refreshMasksList();
+      await loadCustomMasks(); // rafraîchit l'injection dans l'outil
+    } catch (e) {
+      msg.className = 'gmsg err'; msg.textContent = 'Échec : ' + (e.message || e);
+    } finally { btn.disabled = false; btn.textContent = '＋ Publier le masque'; }
+  }
+
+  async function onDeleteMask(id, name) {
+    if (!confirm(`Supprimer le masque « ${name} » pour tous les magasins ?`)) return;
+    try {
+      const masks = await loadMaskManifest();
+      const m = masks.find(x => x.id === id);
+      const keep = masks.filter(x => x.id !== id);
+      await saveMaskManifest(keep);
+      if (m) { try { await sb.storage.from('shared').remove([m.a4, m.a5].filter(Boolean)); } catch (e) {} }
+      refreshMasksList();
+      await loadCustomMasks();
+      toast('Masque supprimé.');
+    } catch (e) { toast('Échec de la suppression : ' + (e.message || e), true); }
+  }
+
+  // Client : télécharge les masques et les injecte dans l'outil Étiquettes
+  async function loadCustomMasks() {
+    const manifest = await loadMaskManifest();
+    const out = [];
+    for (const m of manifest) {
+      try {
+        const a4 = m.a4 ? await sb.storage.from('shared').download(m.a4) : null;
+        const a5 = m.a5 ? await sb.storage.from('shared').download(m.a5) : null;
+        out.push({
+          id: m.id, name: m.name, calage: m.calage || 'promo',
+          a4: a4 && !a4.error && a4.data ? await blobToDataURL(a4.data) : null,
+          a5: a5 && !a5.error && a5.data ? await blobToDataURL(a5.data) : null,
+        });
+      } catch (e) {}
+    }
+    customMasksData = out;
+    document.querySelectorAll('.tool-frame').forEach(fr => { fr.__masksInj = false; });
+    tryInjectMasks();
+  }
+  function injectMasksInto(frame) {
+    if (!customMasksData || !frame || frame.__masksInj) return;
+    let win; try { win = frame.contentWindow; } catch (e) { return; }
+    if (!win || typeof win.applyCustomMasks !== 'function') return;
+    try { win.applyCustomMasks(customMasksData); frame.__masksInj = true; } catch (e) {}
+  }
+  function tryInjectMasks() {
+    const frame = document.querySelector('.tool-frame[data-src="etiquette.html"]');
+    if (!frame) return;
+    injectMasksInto(frame);
+    frame.addEventListener('load', () => { frame.__masksInj = false; injectMasksInto(frame); });
+  }
+
   /* ---------- Modale admin : comptes ---------- */
   async function openAdmin() {
     syncStoreFields();
     el('adminModal').classList.add('show');
     refreshAllSharedStatus();
+    refreshMasksList();
     refreshAccounts();
   }
   async function callFn(body) {
