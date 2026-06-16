@@ -14,6 +14,7 @@ const XLSX = require('xlsx');
 
 const SRC = process.argv[2] || 'base.xlsx';
 const OUT = process.argv[3] || 'base-eco.js';
+const CHECKED = process.argv[4] || 'base-checked.js';
 
 const normCode = s => String(s).replace(/^0+/, '');
 function parsePrice(s) {
@@ -131,13 +132,21 @@ if (!eco.size) {
 
 const prev = readExisting();
 const now = new Date().toISOString();
+
+// Heartbeat : on enregistre la date de dernière vérification à CHAQUE passage,
+// même si les données n'ont pas bougé. Fichier minuscule, prouve que le contrôle
+// quotidien fonctionne. (base-eco.js, lui, n'est réécrit que sur changement réel.)
+fs.writeFileSync(CHECKED,
+  '/* Date de dernière vérification de la base (GitHub Actions). Généré automatiquement. */\n'
+  + 'window.BASE_CHECKED = ' + JSON.stringify(now) + ';\n');
+
 // on compare le contenu utile (tout sauf `updated`)
 const sameData = prev
   && JSON.stringify({ d: prev.data, i: prev.info }) ===
      JSON.stringify({ d: Object.fromEntries(eco), i: (() => { const o = {}; for (const [k, v] of info) o[k] = [v.name || '', v.price != null ? v.price : null]; return o; })() });
 
 if (sameData) {
-  console.log(`✓ Données identiques (${eco.size} éco, ${info.size} libellés/prix) — base-eco.js inchangé.`);
+  console.log(`✓ Données identiques (${eco.size} éco, ${info.size} libellés/prix) — base-eco.js inchangé, ${CHECKED} mis à jour.`);
   process.exit(0);
 }
 

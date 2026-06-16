@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script defer src="base-eco.js"></script>
+<script defer src="base-checked.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="app-config.js"></script>
 <style>
@@ -2632,9 +2633,11 @@ function updateBaseStatus(){
     const b=window.BASE_ECO;
     const n=b&&b.data?(b.count||Object.keys(b.data).length):0;
     if(!n) throw new Error('vide');
-    const d=b.updated?new Date(b.updated):null;
-    const ds=d&&!isNaN(d.getTime())?d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}):'date inconnue';
-    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span>${n.toLocaleString('fr-FR')} réf. — ${ds}</span></div>`;
+    const fmt=v=>{const d=v?new Date(v):null;return d&&!isNaN(d.getTime())?d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}):null;};
+    const ds=fmt(b.updated)||'date inconnue';
+    const cs=fmt(window.BASE_CHECKED);
+    const check=cs&&cs!==ds?`<span class="sr-sep">·</span><span title="Contrôle automatique quotidien de la source">vérifiée le ${cs}</span>`:'';
+    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span>${n.toLocaleString('fr-FR')} réf.</span><span class="sr-sep">·</span><span>données du ${ds}</span>${check}</div>`;
   }catch(e){
     slot.innerHTML=`<div class="sr-chip"><span class="sr-dot never"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span>non chargée — contacter Rémi SCHAFFHAUSER</span></div>`;
   }

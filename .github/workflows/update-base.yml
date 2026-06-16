@@ -48,13 +48,13 @@ jobs:
         run: npm install xlsx@0.18.5 --no-save
 
       - name: Conversion en base-eco.js
-        run: node scripts/build-base.js base.xlsx base-eco.js
+        run: node scripts/build-base.js base.xlsx base-eco.js base-checked.js
 
       - name: Commit & push si la base a changé
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add base.xlsx base-eco.js
+          git add base.xlsx base-eco.js base-checked.js
           if git diff --cached --quiet; then
             echo "Aucun changement — la base est déjà à jour."
           else
