@@ -189,6 +189,7 @@ table.prod tr.multi:hover td{background:#fff3df}
 }
 .choice small{display:block;font-weight:600;font-size:11px;color:#999;margin-top:3px}
 .choice.active{border-color:var(--but-red);color:var(--but-red);background:#fff7f7}
+.choice:disabled,.choice.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
 .datefields{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .datefields label{font-size:12.5px;font-weight:700;color:#666}
 .datefields input[type=date]{
@@ -1327,12 +1328,25 @@ function setTpl(t) {
   state.tpl = t;
   document.querySelectorAll('#tplChoices .choice').forEach(b =>
     b.classList.toggle('active', b.dataset.tpl === t));
+  // masque perso sans planche A5 → on verrouille / force le format A4
+  const a5btn = document.getElementById('chA5');
+  if (a5btn) {
+    const ok = maskHasA5(t);
+    a5btn.disabled = !ok;
+    a5btn.classList.toggle('disabled', !ok);
+    if (!ok && state.fmt === 'a5') { setFmt('a4'); return; }
+  }
   renderPreview(); savePrintPrefs();
 }
 // disposition CSS d'un masque (les masques perso réutilisent le calage choisi)
 function tplPos(t) {
   const cm = state.customMasks.find(m => m.id === t);
   return cm ? (cm.calage || 'promo') : t;
+}
+// planche A5 dispo : oui pour les masques officiels, sinon selon le masque perso
+function maskHasA5(t) {
+  const cm = state.customMasks.find(m => m.id === t);
+  return cm ? !!cm.a5 : true;
 }
 
 /* ------------------------------------------------------------------
@@ -1343,7 +1357,7 @@ function tplPos(t) {
    le masque officiel indiqué (calage). */
 window.applyCustomMasks = function (list) {
   if (!Array.isArray(list)) return;
-  state.customMasks = list.map(m => ({ id: m.id, name: m.name, calage: m.calage || 'promo' }));
+  state.customMasks = list.map(m => ({ id: m.id, name: m.name, calage: m.calage || 'promo', a5: !!m.a5 }));
   for (const m of list) {
     if (m.a4) state.masks[m.id + '-a4'] = m.a4;
     if (m.a5) state.masks[m.id + '-a5'] = m.a5;
@@ -1366,6 +1380,7 @@ function renderTplChoices() {
   }
 }
 function setFmt(f) {
+  if (f === 'a5' && !maskHasA5(state.tpl)) f = 'a4'; // masque perso sans planche A5
   state.fmt = f;
   document.getElementById('chA4').classList.toggle('active', f === 'a4');
   document.getElementById('chA5').classList.toggle('active', f === 'a5');

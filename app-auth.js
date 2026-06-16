@@ -161,19 +161,16 @@
         </div>`).join('')}
 
         <hr class="gsep">
-        <div class="gpromo-sub" style="margin-top:0">Masques personnalisés (Étiquettes) — opérations spéciales (SOLDES, VENTES PRIVÉES…), disponibles chez tous les magasins. Le contenu produit se cale automatiquement comme « PROMO DU MOMENT ».</div>
+        <div class="gpromo-sub" style="margin-top:0">Masques personnalisés (Étiquettes) — opérations spéciales (SOLDES, VENTES PRIVÉES…), au format A4, disponibles chez tous les magasins. Déposez le PDF du masque : sa première page devient le fond. Le contenu produit se cale automatiquement comme « PROMO DU MOMENT ».</div>
         <div class="gpromo">
           <div class="glist" id="masksList"><div class="gempty">Chargement…</div></div>
           <div class="gpromo-title" style="margin-top:12px">Ajouter un masque</div>
           <label class="gmask-name">Nom affiché<input id="maskName" autocapitalize="characters" placeholder="ex : SOLDES"></label>
           <div class="gpromo-actions">
-            <button class="gbtn alt" id="maskPickA4">Fond A4…</button>
-            <span class="gpromo-name" id="maskNameA4"></span>
-            <button class="gbtn alt" id="maskPickA5">Fond A5 (planche double)…</button>
-            <span class="gpromo-name" id="maskNameA5"></span>
+            <button class="gbtn alt" id="maskPickPdf">Choisir le PDF…</button>
+            <span class="gpromo-name" id="maskNamePdf"></span>
           </div>
-          <input type="file" id="maskFileA4" accept="image/*" style="display:none">
-          <input type="file" id="maskFileA5" accept="image/*" style="display:none">
+          <input type="file" id="maskFilePdf" accept="application/pdf,.pdf" style="display:none">
           <div class="gpromo-actions"><button class="gbtn" id="maskAdd">＋ Publier le masque</button></div>
           <div class="gmsg" id="maskMsg"></div>
         </div>
@@ -210,10 +207,8 @@
     });
 
     // masques personnalisés (admin)
-    el('maskPickA4').addEventListener('click', () => el('maskFileA4').click());
-    el('maskPickA5').addEventListener('click', () => el('maskFileA5').click());
-    el('maskFileA4').addEventListener('change', () => { const f = el('maskFileA4').files[0]; el('maskNameA4').textContent = f ? f.name : ''; });
-    el('maskFileA5').addEventListener('change', () => { const f = el('maskFileA5').files[0]; el('maskNameA5').textContent = f ? f.name : ''; });
+    el('maskPickPdf').addEventListener('click', () => el('maskFilePdf').click());
+    el('maskFilePdf').addEventListener('change', () => { const f = el('maskFilePdf').files[0]; el('maskNamePdf').textContent = f ? f.name : ''; });
     el('maskAdd').addEventListener('click', onAddMask);
 
     // modale valorisations (admin + directeurs)
@@ -639,26 +634,43 @@
     host.querySelectorAll('[data-delmask]').forEach(b => b.addEventListener('click', () => onDeleteMask(b.dataset.delmask, b.dataset.name)));
   }
 
+  // 1re page d'un PDF → image JPEG (≈150 dpi A4) pour servir de fond
+  async function pdfFirstPageToBlob(file, targetW) {
+    if (!window.pdfjsLib) throw new Error('pdf.js indisponible');
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: (targetW || 1240) / base.width });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return await new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('rendu impossible')), 'image/jpeg', 0.92));
+  }
+
   async function onAddMask() {
     const name = (el('maskName').value || '').trim();
-    const fa4 = el('maskFileA4').files[0];
-    const fa5 = el('maskFileA5').files[0];
+    const fpdf = el('maskFilePdf').files[0];
     const msg = el('maskMsg');
     if (!name) { msg.className = 'gmsg err'; msg.textContent = 'Indiquez un nom.'; return; }
-    if (!fa4 || !fa5) { msg.className = 'gmsg err'; msg.textContent = 'Choisissez les deux fonds (A4 et A5).'; return; }
-    const btn = el('maskAdd'); btn.disabled = true; btn.textContent = 'Publication…';
+    if (!fpdf) { msg.className = 'gmsg err'; msg.textContent = 'Choisissez le PDF du masque.'; return; }
+    const btn = el('maskAdd'); btn.disabled = true; btn.textContent = 'Conversion…';
     try {
+      const img = await pdfFirstPageToBlob(fpdf, 1240); // page 1 → fond A4
+      btn.textContent = 'Publication…';
       const masks = await loadMaskManifest();
       let id = slugify(name);
       if (['bonplan', 'promo'].includes(id) || masks.some(m => m.id === id)) id += '-' + Date.now().toString(36).slice(-4);
-      const ext = f => (f.name.match(/\.([a-z0-9]+)$/i) || [, 'jpg'])[1].toLowerCase();
-      const p4 = `masks/${id}/a4.${ext(fa4)}`, p5 = `masks/${id}/a5.${ext(fa5)}`;
-      let r = await sb.storage.from('shared').upload(p4, fa4, { upsert: true, contentType: fa4.type || undefined }); if (r.error) throw r.error;
-      r = await sb.storage.from('shared').upload(p5, fa5, { upsert: true, contentType: fa5.type || undefined }); if (r.error) throw r.error;
-      masks.push({ id, name, calage: 'promo', a4: p4, a5: p5, updated_at: new Date().toISOString(), updated_by: CURRENT.userId });
+      const p4 = `masks/${id}/a4.jpg`;
+      const r = await sb.storage.from('shared').upload(p4, img, { upsert: true, contentType: 'image/jpeg' });
+      if (r.error) throw r.error;
+      masks.push({ id, name, calage: 'promo', a4: p4, a5: null, updated_at: new Date().toISOString(), updated_by: CURRENT.userId });
       await saveMaskManifest(masks);
-      el('maskName').value = ''; el('maskFileA4').value = ''; el('maskFileA5').value = '';
-      el('maskNameA4').textContent = ''; el('maskNameA5').textContent = '';
+      el('maskName').value = ''; el('maskFilePdf').value = ''; el('maskNamePdf').textContent = '';
       msg.className = 'gmsg ok'; msg.textContent = `Masque « ${name} » publié pour tous les magasins ✓`;
       refreshMasksList();
       await loadCustomMasks(); // rafraîchit l'injection dans l'outil
