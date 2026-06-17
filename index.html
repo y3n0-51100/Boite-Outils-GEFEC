@@ -1806,6 +1806,8 @@ main{flex:1;position:relative;overflow:hidden}
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -2029,6 +2031,10 @@ body{font-family:var(--font-sans);background:var(--bg-0);color:var(--text);min-h
           <div class="main-sub" id="main-sub">Importez vos fichiers puis cliquez sur Analyser</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" id="btn-pdf" disabled title="Télécharger le listing complet au format PDF">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Télécharger le PDF
+          </button>
           <button class="btn print-btn" id="btn-print" disabled title="Génère un seul document imprimable regroupant tous les listings (Verrou + Vieux Stock)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             Impression du listing complet (Verrou + Vieux Stock)
@@ -2355,6 +2361,7 @@ document.getElementById('btn-analyze').addEventListener('click', runAnalysis);
 async function runAnalysis() {
   document.getElementById('btn-analyze').disabled = true;
   document.getElementById('btn-print').disabled   = true;
+  document.getElementById('btn-pdf').disabled     = true;
   document.getElementById('empty-state').style.display  = 'none';
   document.getElementById('results-wrap').style.display = 'none';
   document.getElementById('err-banner').className       = 'error-banner';
@@ -2413,6 +2420,7 @@ async function runAnalysis() {
     document.getElementById('cbar').className = 'console-bar ok';
     document.getElementById('btn-analyze').disabled = false;
     document.getElementById('btn-print').disabled   = false;
+    document.getElementById('btn-pdf').disabled     = false;
     document.getElementById('prog-wrap').style.display = 'none';
     document.getElementById('res-status').textContent  = 'terminé';
 
@@ -2561,6 +2569,50 @@ document.getElementById('btn-print').addEventListener('click', () => {
   if (!S.results) return;
   buildPrintArea(S.results);
   window.print();
+});
+
+// Télécharger le listing en PDF (A4 paysage, pagination automatique)
+document.getElementById('btn-pdf').addEventListener('click', async () => {
+  if (!S.results) return;
+  if (!window.html2canvas || !window.jspdf) { alert('Module PDF indisponible — utilisez « Impression » puis « Enregistrer en PDF ».'); return; }
+  const btn = document.getElementById('btn-pdf'); const orig = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Génération…';
+  buildPrintArea(S.results);
+  const area = document.getElementById('printArea');
+  const prev = area.style.cssText;
+  area.style.cssText = 'display:block;position:fixed;left:-20000px;top:0;width:277mm;background:#fff;padding:10mm';
+  try {
+    await new Promise(r => setTimeout(r, 60));
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pw = 297, ph = 210, m = 8, cw = pw - 2 * m;
+    const docs = area.querySelectorAll('.pr-doc');
+    let first = true;
+    for (const d of docs) {
+      const canvas = await html2canvas(d, { scale: 2, backgroundColor: '#fff', logging: false });
+      const imgW = cw, imgH = canvas.width ? imgW * canvas.height / canvas.width : 0;
+      const pageContentH = ph - 2 * m;
+      let remaining = imgH, posY = 0;
+      while (remaining > 0.5) {
+        if (!first) pdf.addPage('a4', 'landscape'); first = false;
+        // tranche de la hauteur image qui tient sur une page
+        const sliceH = Math.min(pageContentH, remaining);
+        const sxH = sliceH * canvas.width / imgW; // hauteur source en px
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width; slice.height = Math.round(sxH);
+        slice.getContext('2d').drawImage(canvas, 0, Math.round(posY * canvas.width / imgW), canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', m, m, imgW, sliceH);
+        remaining -= sliceH; posY += sliceH;
+      }
+    }
+    pdf.save('listing-soldes-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  } catch (e) {
+    alert('Échec de la génération : ' + (e.message || e));
+  } finally {
+    area.style.cssText = prev; area.innerHTML = '';
+    btn.innerHTML = orig; btn.disabled = false;
+  }
 });
 
 function buildPrintArea(results) {

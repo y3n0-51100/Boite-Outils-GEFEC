@@ -95,6 +95,12 @@
   .promo-info b{color:var(--text,#172033)}
   .promo-age{color:var(--text-3,#8a93a3);font-weight:600}
   .promo-note{margin-top:12px;padding:11px 13px;background:var(--surface-2,#f5f7fb);border-radius:10px;font-size:12.5px;line-height:1.5}
+  .help-row{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-top:1px solid var(--border,#eceff5)}
+  .help-row:first-child{border-top:none}
+  .help-ic{font-size:24px;flex-shrink:0;line-height:1}
+  .help-row b{font-size:14px;color:var(--text,#172033)}
+  .help-sub{font-size:12.5px;color:var(--text-2,#5a6678);margin:3px 0 9px;line-height:1.45}
+  .help-link{display:inline-block;text-decoration:none;font-size:12.5px;padding:8px 14px}
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
   .gmask-name{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2,#5a6678);margin:8px 0}
   .gmask-name input{padding:9px 11px;border:1px solid var(--border,#dde3ec);border-radius:9px;font-size:14px;font-weight:600;text-transform:uppercase}
@@ -134,11 +140,13 @@
         <span class="ac-info"><b id="acName"></b><span id="acRole"></span></span>
         <button id="acStores" hidden>📂 Valorisations</button>
         <button id="acAdmin" class="primary" hidden>⚙️ Réglages</button>
+        <button id="acHelp" title="Aide et support">❔ Aide</button>
         <button id="acLogout">Déconnexion</button>`;
       right.appendChild(chip);
       el('acLogout').addEventListener('click', doLogout);
       el('acAdmin').addEventListener('click', openAdmin);
       el('acStores').addEventListener('click', openStores);
+      el('acHelp').addEventListener('click', openHelp);
     }
 
     // modale admin
@@ -239,6 +247,29 @@
       if (a) a();
     });
 
+    // modale Aide & support
+    const help = document.createElement('div'); help.className = 'gmodal'; help.id = 'helpModal';
+    help.innerHTML = `
+      <div class="gmodal-card" style="max-width:500px">
+        <div class="gmodal-head"><h2>❔ Aide & support</h2><button class="gmodal-close" data-close>✕</button></div>
+        <div class="promo-body">
+          <div class="help-row">
+            <div class="help-ic">📘</div>
+            <div><b>Guide d'utilisation</b><div class="help-sub">Tout l'outil en 2 pages (connexion, croisement, impression…).</div>
+              <a class="gbtn alt help-link" href="docs/Guide-Outil-Promo-GEFEC.pdf" target="_blank" rel="noopener">Ouvrir le guide PDF</a></div>
+          </div>
+          <div class="help-row">
+            <div class="help-ic">🛟</div>
+            <div><b>Un souci, un bug, une question ?</b><div class="help-sub">Rémi SCHAFFHAUSER vous répond. Le message est pré-rempli avec les infos techniques utiles au diagnostic.</div>
+              <button class="gbtn help-link" id="helpReport">✉️ Signaler un problème</button></div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(help);
+    help.querySelector('[data-close]').addEventListener('click', () => help.classList.remove('show'));
+    help.addEventListener('click', e => { if (e.target === help) help.classList.remove('show'); });
+    el('helpReport').addEventListener('click', reportProblem);
+
     // pop-up d'ancienneté de la valorisation (> 10 jours)
     const valo = document.createElement('div'); valo.className = 'gmodal'; valo.id = 'valoModal';
     valo.innerHTML = `
@@ -297,6 +328,9 @@
       await sb.auth.signOut(); showGate(); return;
     }
     CURRENT = { userId: user.id, role: prof.role, storeId: prof.store_id, name: prof.display_name || user.email };
+
+    // horodatage de connexion (tableau de bord) — sans bloquer si la migration SQL n'est pas faite
+    try { sb.rpc('mark_seen'); } catch (e) {}
 
     // en-tête
     el('authChip').hidden = false;
@@ -361,6 +395,33 @@
 
   function showGate() { const g = el('authGate'); if (g) g.classList.remove('hide'); }
   function hideGate() { const g = el('authGate'); if (g) g.classList.add('hide'); }
+
+  /* ---------- Aide & support ---------- */
+  const SUPPORT_EMAIL = 'remi.schaff@gmail.com';
+  let lastError = '';
+  window.addEventListener('error', e => { lastError = (e && e.message ? e.message : String(e)) + (e && e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : ''); });
+  window.addEventListener('unhandledrejection', e => { try { lastError = 'Promesse rejetée : ' + (e.reason && e.reason.message ? e.reason.message : e.reason); } catch (x) {} });
+
+  function openHelp() { el('helpModal').classList.add('show'); }
+  function reportProblem() {
+    const who = CURRENT ? `${CURRENT.display_name || CURRENT.username || '?'} (${ROLE_LABEL[CURRENT.role] || CURRENT.role}${CURRENT.storeId ? ', magasin ' + CURRENT.storeId : ''})` : 'non connecté';
+    let base = 'inconnue';
+    try { const b = window.BASE_ECO; if (b && b.data) base = (b.count || Object.keys(b.data).length) + ' réf., données du ' + (b.updated ? new Date(b.updated).toLocaleDateString('fr-FR') : '?'); } catch (e) {}
+    const lines = [
+      'Bonjour Rémi,', '',
+      'Je rencontre le problème suivant :', '', '(décrivez ici ce qui se passe)', '',
+      '-------------------------------------------',
+      'Infos techniques (ne pas effacer) :',
+      '• Utilisateur : ' + who,
+      '• Date : ' + new Date().toLocaleString('fr-FR'),
+      '• Page : ' + location.href,
+      '• Base NOSICA : ' + base,
+      '• Navigateur : ' + navigator.userAgent,
+      '• Dernière erreur technique : ' + (lastError || 'aucune'),
+    ];
+    const subject = 'Outil Promo GEFEC — signalement' + (CURRENT && CURRENT.storeId ? ' (magasin ' + CURRENT.storeId + ')' : '');
+    window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
+  }
 
   /* ---------- Valorisation : cloud <-> outils ---------- */
   function valoPath(storeId) { return `${storeId}/valorisation.pdf`; }
@@ -818,6 +879,15 @@
         const { data: metas } = await sb.from('valorisations').select('store_id, ean_count, updated_at');
         (metas || []).forEach(m => { metaBy[m.store_id] = m; });
       } catch (e) {}
+      // dernière connexion par magasin (si la migration last_seen est en place)
+      let seenBy = {};
+      try {
+        const { data: profs } = await sb.from('profiles').select('store_id, last_seen');
+        (profs || []).forEach(p => {
+          if (!p.store_id || !p.last_seen) return;
+          if (!seenBy[p.store_id] || new Date(p.last_seen) > new Date(seenBy[p.store_id])) seenBy[p.store_id] = p.last_seen;
+        });
+      } catch (e) {}
       if (!stores || !stores.length) { list.innerHTML = '<div class="gempty">Aucun magasin enregistré.</div>'; return; }
       // 3) vérité = fichiers réellement présents dans le Storage (par magasin)
       const rows = await Promise.all(stores.map(async s => {
@@ -835,11 +905,13 @@
         const dt = when ? new Date(when) : null;
         const ageDays = (has && dt && !isNaN(dt.getTime())) ? Math.floor((Date.now() - dt.getTime()) / 86400000) : null;
         const status = !has ? 'never' : (ageDays != null && ageDays > 10 ? 'late' : 'ok');
-        return { s, has, meta, dt, ageDays, status };
+        const seen = seenBy[s.id] ? new Date(seenBy[s.id]) : null;
+        return { s, has, meta, dt, ageDays, status, seen };
       });
       const nOk = enriched.filter(e => e.status === 'ok').length;
       const nLate = enriched.filter(e => e.status === 'late').length;
       const nNever = enriched.filter(e => e.status === 'never').length;
+      const nActive = enriched.filter(e => e.seen && (Date.now() - e.seen.getTime()) / 86400000 <= 7).length;
       // tri : le plus urgent d'abord (jamais déposée, puis le plus ancien)
       enriched.sort((a, b) => (b.status === 'never' ? 1e9 : (b.ageDays || 0)) - (a.status === 'never' ? 1e9 : (a.ageDays || 0)));
 
@@ -847,6 +919,7 @@
         <span class="pill ok">À jour<b>${nOk}</b></span>
         <span class="pill late">En retard<b>${nLate}</b></span>
         <span class="pill never">Jamais<b>${nNever}</b></span>
+        <span class="pill">Actifs 7 j<b>${nActive}</b></span>
         <span class="pill">Total<b>${enriched.length}</b></span>
       </div>`;
       const rowsHtml = enriched.map(e => {
@@ -856,10 +929,11 @@
         const sub = e.has
           ? `${e.meta && e.meta.ean_count != null ? e.meta.ean_count + ' EAN · ' : ''}maj ${e.dt ? e.dt.toLocaleDateString('fr-FR') : '?'}`
           : 'aucune valorisation déposée';
+        const seenTxt = e.seen ? `connexion ${relAge(e.seen)}` : 'jamais connecté';
         return `<div class="grow">
           ${badge}
           <div class="gr-main"><b>${esc(e.s.name || e.s.id)}</b>
-            <div class="gr-sub">${esc(e.s.id)}${e.s.region ? ' · ' + esc(e.s.region) : ''} — ${esc(sub)}</div></div>
+            <div class="gr-sub">${esc(e.s.id)}${e.s.region ? ' · ' + esc(e.s.region) : ''} — ${esc(sub)} · ${esc(seenTxt)}</div></div>
           ${e.has ? `<button data-load="${esc(e.s.id)}">Charger dans les outils</button>
                      <button data-dl="${esc(e.s.id)}">Télécharger</button>` : ''}
         </div>`;
