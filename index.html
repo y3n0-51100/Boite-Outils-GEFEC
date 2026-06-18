@@ -1975,6 +1975,15 @@ body{font-family:var(--font-sans);background:var(--bg-0);color:var(--text);min-h
     <aside class="panel sidebar">
 
       <section>
+        <a class="btn primary" id="dlIntegration" href="IntegrationEAN.exe" download
+           style="display:flex;align-items:center;gap:10px;justify-content:center;text-decoration:none;width:100%">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Télécharger l'outil Intégration EAN
+        </a>
+        <div class="zone-note" style="text-align:center;margin-top:6px">Application Windows · à exécuter sur votre poste</div>
+      </section>
+
+      <section>
         <div class="sec-head">
           <div class="step-n active" id="s1">1</div>
           <div class="sec-title">Fichiers Média Centrale</div>
@@ -2570,6 +2579,15 @@ document.getElementById('btn-print').addEventListener('click', () => {
   buildPrintArea(S.results);
   window.print();
 });
+
+// Lien de téléchargement de l'outil Intégration EAN : on force une URL absolue
+// (l'iframe est en srcdoc, on résout depuis la page parente = racine du site).
+try {
+  const a = document.getElementById('dlIntegration');
+  if (a && window.parent && parent.location && parent.location.origin) {
+    a.href = parent.location.origin + parent.location.pathname.replace(/[^/]*$/, '') + 'IntegrationEAN.exe';
+  }
+} catch (e) {}
 
 // Télécharger le listing en PDF (A4 paysage, pagination automatique)
 document.getElementById('btn-pdf').addEventListener('click', async () => {
