@@ -386,7 +386,7 @@
     const labels = { 'plan-promo': 'Plan promo', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
     for (const id of Object.keys(SHARED)) {
       const meta = await fetchSharedMeta(id);
-      if (meta && meta.updated_at) chips.push({ st: 'ok', name: labels[id], val: new Date(meta.updated_at).toLocaleDateString('fr-FR') });
+      if (meta && meta.file_path && meta.updated_at) chips.push({ st: 'ok', name: labels[id], val: new Date(meta.updated_at).toLocaleDateString('fr-FR') });
       else chips.push({ st: 'none', name: labels[id], val: 'non publié' });
     }
 
@@ -596,7 +596,7 @@
     const meta = await fetchSharedMeta(id);
     if (meta) await ensureSharedLoaded(id, meta); // récupère la dernière version éventuelle
     const body = el('modBody');
-    if (meta && meta.updated_at) {
+    if (meta && meta.file_path && meta.updated_at) {
       const dt = new Date(meta.updated_at);
       const dateStr = dt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
       body.innerHTML = `
@@ -623,7 +623,7 @@
   async function refreshSharedStatus(id) {
     const s = el('ds-status-' + id); if (!s) return;
     const meta = await fetchSharedMeta(id);
-    if (meta && meta.updated_at) {
+    if (meta && meta.file_path && meta.updated_at) {
       s.className = 'gmsg ok';
       s.textContent = `Publié : ${meta.file_name || ''} — ${new Date(meta.updated_at).toLocaleString('fr-FR')}`;
     } else { s.className = 'gmsg'; s.textContent = 'Aucun fichier publié pour le moment.'; }
@@ -666,9 +666,14 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Retrait…'; }
     try {
       try { await sb.storage.from('shared').remove([meta.file_path]); } catch (e) {}
-      const { data, error } = await sb.from('shared_docs').delete().eq('id', id).select();
+      // On "vide" la fiche (file_path = '') plutôt que de la supprimer : l'UPDATE
+      // est autorisé par les policies existantes, aucune migration SQL requise.
+      // Un document à file_path vide est traité partout comme « non publié ».
+      const { data, error } = await sb.from('shared_docs')
+        .update({ file_path: '', file_name: '', updated_at: new Date().toISOString(), updated_by: CURRENT.userId })
+        .eq('id', id).select();
       if (error) throw error;
-      if (!data || !data.length) throw new Error('suppression refusée — exécutez supabase/add-shared-delete.sql dans Supabase');
+      if (!data || !data.length) throw new Error('retrait refusé par la base (droits administrateur requis)');
       delete sharedFile[id]; delete sharedLoadedAt[id];
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       toast(cfg.name + ' retiré pour tous les magasins.');
