@@ -159,11 +159,11 @@
         <div class="gpromo-sub" style="margin-top:0">Documents communs (centrale) — publiés une fois, chargés automatiquement chez tous les magasins :</div>
         ${Object.keys(SHARED).map(id => `
         <div class="gpromo">
-          <div class="gpromo-title">${esc(SHARED[id].name)}</div>
+          <div class="gpromo-title">${esc(SHARED[id].name)}${SHARED[id].multi ? ' <span style="font-weight:600;font-size:11px;opacity:.7">· plusieurs fichiers possibles</span>' : ''}</div>
           <div class="gmsg" id="ds-status-${id}">Chargement…</div>
-          <input type="file" id="ds-file-${id}" accept="${SHARED[id].accept}" style="display:none">
+          <input type="file" id="ds-file-${id}" accept="${SHARED[id].accept}"${SHARED[id].multi ? ' multiple' : ''} style="display:none">
           <div class="gpromo-actions">
-            <button class="gbtn alt" data-pick="${id}">Choisir le fichier</button>
+            <button class="gbtn alt" data-pick="${id}">${SHARED[id].multi ? 'Choisir les fichiers' : 'Choisir le fichier'}</button>
             <button class="gbtn" data-upload="${id}">Téléverser</button>
             <button class="gbtn danger" data-delshared="${id}">Retirer</button>
             <span class="gpromo-name" id="ds-name-${id}"></span>
@@ -214,7 +214,11 @@
     admin.querySelectorAll('[data-delshared]').forEach(b => b.addEventListener('click', () => onDeleteShared(b.dataset.delshared)));
     Object.keys(SHARED).forEach(id => {
       const fi = el('ds-file-' + id);
-      if (fi) fi.addEventListener('change', () => { const f = fi.files && fi.files[0]; const nm = el('ds-name-' + id); if (nm) nm.textContent = f ? f.name : ''; });
+      if (fi) fi.addEventListener('change', () => {
+        const n = fi.files ? fi.files.length : 0;
+        const nm = el('ds-name-' + id);
+        if (nm) nm.textContent = n === 0 ? '' : (n === 1 ? fi.files[0].name : n + ' fichiers sélectionnés');
+      });
     });
 
     // masques personnalisés (admin)
@@ -497,15 +501,25 @@
   const SHARED = {
     'plan-promo':       { name: 'Plan promo national',     accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo' },
     'affiches-cetelem': { name: 'Affiches CETELEM',        accept: '.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]',     input: 'file2' },
-    'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input' },
+    'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
   };
   const MODULE_DOC = { etiquette: 'plan-promo', match: 'affiches-cetelem', solde: 'medias-soldes' };
-  const sharedFile = {};       // id -> File chargé
+  const sharedFiles = {};      // id -> [File, ...] chargés (1 pour les docs simples, N pour multi)
   const sharedLoadedAt = {};   // id -> updated_at injecté
   let modOkAction = null;
 
   function extOf(name) { const m = String(name || '').match(/\.([a-z0-9]+)$/i); return m ? '.' + m[1].toLowerCase() : ''; }
   function pathFor(id, fileName) { return id + (extOf(fileName) || (id === 'affiches-cetelem' ? '.zip' : '.pdf')); }
+  function folderFor(id) { return id + '/'; } // documents multi-fichiers : un dossier par id
+  const isFolder = p => typeof p === 'string' && p.endsWith('/');
+  const safeName = n => String(n || 'fichier').replace(/[^\w.\-]+/g, '_');
+  // liste les fichiers d'un dossier du bucket "shared"
+  async function listShared(prefix) {
+    try {
+      const { data } = await sb.storage.from('shared').list(prefix.replace(/\/$/, ''), { limit: 200 });
+      return (data || []).filter(f => f && f.name && f.id !== null).map(f => prefix.replace(/\/$/, '') + '/' + f.name);
+    } catch (e) { return []; }
+  }
 
   async function fetchSharedMeta(id) {
     try {
@@ -514,8 +528,8 @@
     } catch (e) { return null; }
   }
   async function injectSharedInto(id, frame) {
-    const f = sharedFile[id], cfg = SHARED[id];
-    if (!f || !cfg || !frame || frame['__inj_' + id]) return;
+    const files = sharedFiles[id], cfg = SHARED[id];
+    if (!files || !files.length || !cfg || !frame || frame['__inj_' + id]) return;
     let win, doc;
     try { win = frame.contentWindow; doc = frame.contentDocument; } catch (e) { return; }
     if (!win || !doc) return;
@@ -523,14 +537,15 @@
     if (!input) return;
     frame['__inj_' + id] = true; // marquer tôt (injection async) pour éviter les doublons
     try {
-      // Reconstruire le fichier DANS le realm de l'iframe : sinon JSZip échoue
-      // (instanceof Blob/ArrayBuffer faux d'un contexte JS à l'autre).
-      const buf = await f.arrayBuffer();
-      const ab = new win.ArrayBuffer(buf.byteLength);
-      new win.Uint8Array(ab).set(new Uint8Array(buf));
-      const ifile = new win.File([ab], f.name || cfg.input, { type: f.type || '' });
       const dt = new win.DataTransfer();
-      dt.items.add(ifile);
+      // Reconstruire CHAQUE fichier DANS le realm de l'iframe : sinon JSZip échoue
+      // (instanceof Blob/ArrayBuffer faux d'un contexte JS à l'autre).
+      for (const f of files) {
+        const buf = await f.arrayBuffer();
+        const ab = new win.ArrayBuffer(buf.byteLength);
+        new win.Uint8Array(ab).set(new Uint8Array(buf));
+        dt.items.add(new win.File([ab], f.name || cfg.input, { type: f.type || '' }));
+      }
       input.files = dt.files;
       input.dispatchEvent(new win.Event('change', { bubbles: true }));
     } catch (e) { frame['__inj_' + id] = false; }
@@ -544,11 +559,19 @@
   }
   async function ensureSharedLoaded(id, meta) {
     if (!meta || !meta.file_path) return;
-    if (sharedFile[id] && sharedLoadedAt[id] === meta.updated_at) return; // déjà à jour
+    if (sharedFiles[id] && sharedFiles[id].length && sharedLoadedAt[id] === meta.updated_at) return; // déjà à jour
     try {
-      const { data, error } = await sb.storage.from('shared').download(meta.file_path);
-      if (error || !data) return;
-      sharedFile[id] = new File([data], meta.file_name || meta.file_path, { type: data.type || '' });
+      // chemins à télécharger : dossier (multi) -> tous les fichiers ; sinon le fichier unique
+      const paths = isFolder(meta.file_path) ? await listShared(meta.file_path) : [meta.file_path];
+      if (!paths.length) return;
+      const out = [];
+      for (const p of paths) {
+        const { data, error } = await sb.storage.from('shared').download(p);
+        if (error || !data) continue;
+        out.push(new File([data], p.split('/').pop() || meta.file_name || id, { type: data.type || '' }));
+      }
+      if (!out.length) return;
+      sharedFiles[id] = out;
       sharedLoadedAt[id] = meta.updated_at;
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       tryInjectShared(id);
@@ -632,22 +655,41 @@
   async function onUploadShared(id) {
     const cfg = SHARED[id];
     const input = el('ds-file-' + id);
-    const f = input && input.files && input.files[0];
-    if (!f) { toast('Choisissez d’abord un fichier', true); return; }
+    const files = input && input.files ? [...input.files] : [];
+    if (!files.length) { toast('Choisissez d’abord un fichier', true); return; }
     const btn = document.querySelector(`[data-upload="${id}"]`);
     if (btn) { btn.disabled = true; btn.textContent = 'Téléversement…'; }
     try {
-      const path = pathFor(id, f.name);
-      const { error } = await sb.storage.from('shared').upload(path, f, { upsert: true, contentType: f.type || undefined });
-      if (error) throw error;
-      await sb.from('shared_docs').upsert({
-        id, file_path: path, file_name: f.name,
-        updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
-      });
-      sharedFile[id] = f; sharedLoadedAt[id] = null;
+      if (cfg.multi) {
+        // document multi-fichiers : un dossier par id. On remplace tout le jeu.
+        const old = await listShared(folderFor(id));
+        if (old.length) { try { await sb.storage.from('shared').remove(old); } catch (e) {} }
+        let i = 0;
+        for (const f of files) {
+          const p = folderFor(id) + String(i++).padStart(2, '0') + '_' + safeName(f.name);
+          const { error } = await sb.storage.from('shared').upload(p, f, { upsert: true, contentType: f.type || undefined });
+          if (error) throw error;
+        }
+        await sb.from('shared_docs').upsert({
+          id, file_path: folderFor(id), file_name: files.length + ' fichier(s)',
+          updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
+        });
+        sharedFiles[id] = files;
+      } else {
+        const f = files[0];
+        const path = pathFor(id, f.name);
+        const { error } = await sb.storage.from('shared').upload(path, f, { upsert: true, contentType: f.type || undefined });
+        if (error) throw error;
+        await sb.from('shared_docs').upsert({
+          id, file_path: path, file_name: f.name,
+          updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
+        });
+        sharedFiles[id] = [f];
+      }
+      sharedLoadedAt[id] = null;
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       tryInjectShared(id);
-      toast(cfg.name + ' publié pour tous les magasins ✓');
+      toast(cfg.name + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
       input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
       refreshSharedStatus(id);
     } catch (e) {
@@ -665,7 +707,9 @@
     const btn = document.querySelector(`[data-delshared="${id}"]`);
     if (btn) { btn.disabled = true; btn.textContent = 'Retrait…'; }
     try {
-      try { await sb.storage.from('shared').remove([meta.file_path]); } catch (e) {}
+      // supprime le(s) fichier(s) : dossier complet (multi) ou fichier unique
+      const toRemove = isFolder(meta.file_path) ? await listShared(meta.file_path) : [meta.file_path];
+      if (toRemove.length) { try { await sb.storage.from('shared').remove(toRemove); } catch (e) {} }
       // On "vide" la fiche (file_path = '') plutôt que de la supprimer : l'UPDATE
       // est autorisé par les policies existantes, aucune migration SQL requise.
       // Un document à file_path vide est traité partout comme « non publié ».
@@ -674,7 +718,7 @@
         .eq('id', id).select();
       if (error) throw error;
       if (!data || !data.length) throw new Error('retrait refusé par la base (droits administrateur requis)');
-      delete sharedFile[id]; delete sharedLoadedAt[id];
+      delete sharedFiles[id]; delete sharedLoadedAt[id];
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       toast(cfg.name + ' retiré pour tous les magasins.');
       refreshSharedStatus(id);
