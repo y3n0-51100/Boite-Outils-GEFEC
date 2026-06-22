@@ -60,6 +60,7 @@
   .gbtn{background:var(--primary,#3056d3);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
   .gbtn:hover{filter:brightness(1.08)} .gbtn:disabled{opacity:.6;cursor:wait}
   .gbtn.alt{background:var(--surface,#fff);color:var(--primary,#3056d3);border:1.5px solid var(--primary,#3056d3)}
+  .gbtn.danger{background:var(--surface,#fff);color:#b91c1c;border:1.5px solid #f3c2c2}
   .gmsg{font-size:12.5px;font-weight:600;margin:8px 0;min-height:0}
   .gmsg.err{color:#b91c1c} .gmsg.ok{color:#0f8a45}
   .glist{margin-top:18px;border-top:1px solid var(--border,#dde3ec);padding-top:14px}
@@ -164,6 +165,7 @@
           <div class="gpromo-actions">
             <button class="gbtn alt" data-pick="${id}">Choisir le fichier</button>
             <button class="gbtn" data-upload="${id}">Téléverser</button>
+            <button class="gbtn danger" data-delshared="${id}">Retirer</button>
             <span class="gpromo-name" id="ds-name-${id}"></span>
           </div>
         </div>`).join('')}
@@ -209,6 +211,7 @@
     el('naCreate').addEventListener('click', onCreateAccount);
     admin.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => el('ds-file-' + b.dataset.pick).click()));
     admin.querySelectorAll('[data-upload]').forEach(b => b.addEventListener('click', () => onUploadShared(b.dataset.upload)));
+    admin.querySelectorAll('[data-delshared]').forEach(b => b.addEventListener('click', () => onDeleteShared(b.dataset.delshared)));
     Object.keys(SHARED).forEach(id => {
       const fi = el('ds-file-' + id);
       if (fi) fi.addEventListener('change', () => { const f = fi.files && fi.files[0]; const nm = el('ds-name-' + id); if (nm) nm.textContent = f ? f.name : ''; });
@@ -651,6 +654,29 @@
       toast('Échec de la publication : ' + (e.message || e), true);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Téléverser'; }
+    }
+  }
+
+  async function onDeleteShared(id) {
+    const cfg = SHARED[id];
+    const meta = await fetchSharedMeta(id);
+    if (!meta || !meta.file_path) { toast('Aucun document à retirer pour ' + cfg.name + '.'); return; }
+    if (!confirm(`Retirer « ${cfg.name} » pour tous les magasins ?\nLe document ne sera plus disponible dans l'outil.`)) return;
+    const btn = document.querySelector(`[data-delshared="${id}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Retrait…'; }
+    try {
+      try { await sb.storage.from('shared').remove([meta.file_path]); } catch (e) {}
+      const { data, error } = await sb.from('shared_docs').delete().eq('id', id).select();
+      if (error) throw error;
+      if (!data || !data.length) throw new Error('suppression refusée — exécutez supabase/add-shared-delete.sql dans Supabase');
+      delete sharedFile[id]; delete sharedLoadedAt[id];
+      document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
+      toast(cfg.name + ' retiré pour tous les magasins.');
+      refreshSharedStatus(id);
+    } catch (e) {
+      toast('Échec du retrait : ' + (e.message || e), true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Retirer'; }
     }
   }
 
