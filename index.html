@@ -1047,12 +1047,12 @@ main{flex:1;position:relative;overflow:hidden}
           <div class="section-hint">EAN_*.PDF</div>
         </div>
         <label class="dropzone" id="zone2">
-          <input type="file" id="file2" accept=".zip,application/zip,application/x-zip-compressed">
+          <input type="file" id="file2" accept=".zip,application/zip,application/x-zip-compressed" multiple>
           <div class="dropzone-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
-          <div class="dropzone-text" id="zone2-text">Déposer le ZIP</div>
-          <div class="dropzone-info" id="zone2-info">.zip · EAN en début de nom de fichier</div>
+          <div class="dropzone-text" id="zone2-text">Déposer le(s) ZIP</div>
+          <div class="dropzone-info" id="zone2-info">.zip · plusieurs possibles · EAN en début de nom de fichier</div>
         </label>
         <div class="progress hidden" id="prog2"><div class="progress-fill" id="progFill2"></div></div>
         <div class="console">
@@ -1226,11 +1226,11 @@ main{flex:1;position:relative;overflow:hidden}
       zone.classList.remove('dragover');
       if (e.dataTransfer.files.length > 0) {
         input.files = e.dataTransfer.files;
-        handler(e.dataTransfer.files[0]);
+        handler(input.multiple ? [...e.dataTransfer.files] : e.dataTransfer.files[0]);
       }
     });
     input.addEventListener('change', e => {
-      if (e.target.files.length > 0) handler(e.target.files[0]);
+      if (e.target.files.length > 0) handler(input.multiple ? [...e.target.files] : e.target.files[0]);
     });
   }
 
@@ -1288,48 +1288,57 @@ main{flex:1;position:relative;overflow:hidden}
     }
   }
 
-  async function handleZip(file) {
-    if (!file || !file.name.toLowerCase().endsWith('.zip')) {
-      log2.log('error', 'Format invalide — un fichier .zip est attendu');
+  async function handleZip(input) {
+    // accepte un ZIP unique OU plusieurs ZIP : les affiches sont FUSIONNÉES
+    const zips = (Array.isArray(input) ? input : [input]).filter(f => f && f.name.toLowerCase().endsWith('.zip'));
+    if (!zips.length) {
+      log2.log('error', 'Format invalide — un (ou plusieurs) fichier .zip est attendu');
       return;
     }
     hideAlerts();
     setStepStatus(2, 'active');
     log2.busy('lecture en cours');
-    log2.log('info', `Archive : ${file.name} (${(file.size/1024/1024).toFixed(2)} Mo)`);
+    log2.log('info', `${zips.length} archive(s) : ${zips.map(z => z.name).join(', ')}`);
 
     try {
       const t0 = performance.now();
-      const zip = await JSZip.loadAsync(file);
-      const allEntries = Object.keys(zip.files).filter(n => !zip.files[n].dir);
-      const pdfEntries = allEntries.filter(n => n.toLowerCase().endsWith('.pdf'));
-      log2.log('info', `${allEntries.length} entrées · ${pdfEntries.length} fichiers PDF`);
-
       const files = [];
-      let withoutEan = 0;
-      let processed = 0;
-      for (const name of pdfEntries) {
-        const baseName = name.split('/').pop();
-        const eanMatch = baseName.match(/^(\d{13})/);
-        if (eanMatch) {
-          files.push({
-            ean: eanMatch[1],
-            filename: baseName,
-            fullPath: name,
-            zipObj: zip.files[name]
-          });
-        } else {
-          withoutEan++;
+      const seen = new Set();
+      let withoutEan = 0, totalPdf = 0, done = 0;
+
+      // 1er passage : compter les PDF pour la barre de progression
+      const loaded = [];
+      for (const zf of zips) {
+        const zip = await JSZip.loadAsync(zf);
+        const pdfEntries = Object.keys(zip.files).filter(n => !zip.files[n].dir && n.toLowerCase().endsWith('.pdf'));
+        totalPdf += pdfEntries.length;
+        loaded.push({ zip, pdfEntries, name: zf.name });
+      }
+      log2.log('info', `${totalPdf} fichiers PDF au total`);
+
+      for (const { zip, pdfEntries } of loaded) {
+        for (const name of pdfEntries) {
+          const baseName = name.split('/').pop();
+          const eanMatch = baseName.match(/^(\d{13})/);
+          if (eanMatch) {
+            const key = eanMatch[1] + '|' + baseName;
+            if (!seen.has(key)) { // évite les doublons si une affiche est présente dans plusieurs ZIP
+              seen.add(key);
+              files.push({ ean: eanMatch[1], filename: baseName, fullPath: name, zipObj: zip.files[name] });
+            }
+          } else {
+            withoutEan++;
+          }
+          done++;
+          setProgress(2, (done / Math.max(totalPdf, 1)) * 100);
         }
-        processed++;
-        setProgress(2, (processed / pdfEntries.length) * 100);
       }
       const dt = ((performance.now() - t0) / 1000).toFixed(2);
 
       state.zipFiles = files;
       const zone = document.getElementById('zone2');
       zone.classList.add('loaded');
-      document.getElementById('zone2-text').textContent = file.name;
+      document.getElementById('zone2-text').textContent = zips.length > 1 ? `${zips.length} ZIP` : zips[0].name;
       document.getElementById('zone2-info').textContent = `${files.length} affiches indexées`;
 
       log2.log('success', `${files.length} affiches valides en ${dt}s`);

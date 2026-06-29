@@ -421,10 +421,10 @@ table.prod tr.multi:hover td{background:#fff3df}
     <div class="drops">
       <div class="drop" id="dropPromo">
         <div class="ic">🗓️</div>
-        <div class="t">Plan promo national</div>
-        <div class="d">PDF national : catégories, marques, références, EAN, prix promo et dates d'opération</div>
-        <button class="btn small" onclick="document.getElementById('filePromo').click()">Choisir le PDF</button>
-        <input type="file" id="filePromo" accept=".pdf">
+        <div class="t">Plan(s) promo national</div>
+        <div class="d">PDF national(aux) : catégories, marques, références, EAN, prix promo et dates. Vous pouvez en charger <b>plusieurs</b> (ex. PEM + TV) — les références des deux sont fusionnées.</div>
+        <button class="btn small" onclick="document.getElementById('filePromo').click()">Choisir le(s) PDF</button>
+        <input type="file" id="filePromo" accept=".pdf" multiple>
         <div class="status" id="stPromo"></div>
       </div>
       <!-- Valorisation fournie depuis l'accueil de la suite : carte masquée, l'input reste pour l'injection -->
@@ -1038,16 +1038,36 @@ function updateMatchBtn() {
   }
 }
 
-async function handlePromoFile(file) {
-  document.getElementById('stPromo').textContent = '⏳ Analyse du PDF…';
+async function handlePromoFile(files) {
+  // accepte un seul fichier ou plusieurs (PEM + TV…) : on FUSIONNE les références
+  files = Array.isArray(files) ? files : [files];
+  if (!files.length) return;
+  document.getElementById('stPromo').textContent = files.length > 1
+    ? `⏳ Analyse de ${files.length} PDF…` : '⏳ Analyse du PDF…';
   try {
-    if (file.name && file.name === state.valoFileName)
-      toast('⚠️ Attention : c\'est le même fichier que la valorisation !', 6000);
-    const pages = await extractPdfRows(file);
-    state.promoProducts = parsePromoPdf(pages);
-    if (!state.promoProducts.length) throw new Error('Aucun code produit trouvé dans ce PDF.');
-    state.promoFileName = file.name || '';
-    setLoaded('dropPromo', 'stPromo', `✅ ${state.promoProducts.length} produit(s) en offre — ${file.name || 'PDF'}`);
+    let all = [];
+    const names = [];
+    for (const file of files) {
+      if (file.name && file.name === state.valoFileName)
+        toast('⚠️ Attention : « ' + file.name + ' » est le même fichier que la valorisation !', 6000);
+      const pages = await extractPdfRows(file);
+      all = all.concat(parsePromoPdf(pages));
+      names.push(file.name || 'PDF');
+    }
+    // dédoublonnage par référence + période (évite les doublons en cas de recouvrement)
+    const seen = new Set();
+    all = all.filter(p => {
+      const k = (p.key || '') + '|' + (p.from || '') + '|' + (p.to || '');
+      if (seen.has(k)) return false; seen.add(k); return true;
+    });
+    if (!all.length) throw new Error('Aucun code produit trouvé dans ce(s) PDF.');
+    state.promoProducts = all;
+    state.promoFileName = names.join(' + ');
+    // nouveau jeu de plan promo → on ré-autorise le croisement automatique
+    state.products = [];
+    state._autoMatched = false;
+    setLoaded('dropPromo', 'stPromo',
+      `✅ ${all.length} produit(s) en offre — ${names.length > 1 ? names.length + ' fichiers : ' : ''}${names.join(', ')}`);
   } catch (e) {
     document.getElementById('stPromo').textContent = '';
     toast('❌ Plan promo : ' + e.message);
@@ -1098,10 +1118,12 @@ async function handleBaseFile(fileOrBuffer, label) {
 function bindDrop(dropId, inputId, handler) {
   const drop = document.getElementById(dropId);
   const input = document.getElementById(inputId);
-  input.addEventListener('change', () => { if (input.files[0]) handler(input.files[0]); });
+  // input « multiple » → on transmet TOUS les fichiers ; sinon le premier seulement
+  const pick = list => input.multiple ? [...list] : list[0];
+  input.addEventListener('change', () => { if (input.files.length) handler(pick(input.files)); });
   ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handler(f); });
+  drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) handler(pick(e.dataTransfer.files)); });
 }
 bindDrop('dropPromo', 'filePromo', handlePromoFile);
 bindDrop('dropValo', 'fileValo', handleValoFile);

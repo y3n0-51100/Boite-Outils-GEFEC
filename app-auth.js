@@ -499,8 +499,8 @@
      Même bucket "shared" + table "shared_docs" pour 3 documents communs :
      plan promo (Étiquettes), affiches CETELEM, fichiers Média Centrale (Soldes). */
   const SHARED = {
-    'plan-promo':       { name: 'Plan promo national',     accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo' },
-    'affiches-cetelem': { name: 'Affiches CETELEM',        accept: '.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]',     input: 'file2' },
+    'plan-promo':       { name: 'Plan promo national',     accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true },
+    'affiches-cetelem': { name: 'Affiches CETELEM',        accept: '.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]',     input: 'file2', multi: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
   };
   const MODULE_DOC = { etiquette: 'plan-promo', match: 'affiches-cetelem', solde: 'medias-soldes' };
@@ -561,14 +561,16 @@
     if (!meta || !meta.file_path) return;
     if (sharedFiles[id] && sharedFiles[id].length && sharedLoadedAt[id] === meta.updated_at) return; // déjà à jour
     try {
-      // chemins à télécharger : dossier (multi) -> tous les fichiers ; sinon le fichier unique
-      const paths = isFolder(meta.file_path) ? await listShared(meta.file_path) : [meta.file_path];
+      // chemins à télécharger : dossier (multi) -> tous les fichiers (ordre stable) ; sinon le fichier unique
+      const paths = isFolder(meta.file_path) ? (await listShared(meta.file_path)).sort() : [meta.file_path];
       if (!paths.length) return;
       const out = [];
       for (const p of paths) {
         const { data, error } = await sb.storage.from('shared').download(p);
         if (error || !data) continue;
-        out.push(new File([data], p.split('/').pop() || meta.file_name || id, { type: data.type || '' }));
+        // nom d'affichage : on retire le préfixe d'ordre "NN_" ajouté au stockage
+        const nm = (p.split('/').pop() || id).replace(/^\d+_/, '');
+        out.push(new File([data], nm || id, { type: data.type || '' }));
       }
       if (!out.length) return;
       sharedFiles[id] = out;
