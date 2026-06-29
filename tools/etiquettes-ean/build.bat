@@ -18,6 +18,7 @@ python -m PyInstaller --noconfirm --onefile --windowed ^
   --add-data "web;web" ^
   --collect-all webview ^
   --collect-all pyautogui ^
+  --collect-all pyperclip ^
   --collect-all pymupdf ^
   --collect-all pypdf ^
   app.py

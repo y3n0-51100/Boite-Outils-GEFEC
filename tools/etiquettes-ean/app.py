@@ -109,14 +109,21 @@ class Api:
         self.progress = {
             "running": True, "done": False, "aborted": False,
             "index": 0, "total": len(codes), "current": "", "phase": "sending",
+            "ok_count": 0, "skipped": 0, "skipped_list": [],
         }
         t = threading.Thread(target=self._worker, args=(codes, opts), daemon=True)
         t.start()
         return {"ok": True}
 
     def _worker(self, codes, opts):
-        import pyautogui
+        import re as _re
         import ctypes
+        import pyautogui
+        try:
+            import pyperclip
+            _have_clip = True
+        except Exception:
+            _have_clip = False
         pyautogui.FAILSAFE = True
         pyautogui.PAUSE = 0
         user32 = ctypes.windll.user32 if os.name == "nt" else None
@@ -124,29 +131,86 @@ class Api:
         def esc():
             return bool(user32.GetAsyncKeyState(0x1B) & 0x8000) if user32 else False
 
+        def digits(s):
+            return _re.sub(r"\D", "", s or "")
+
         delay = max(0, int(opts.get("delay_ms", 400))) / 1000.0
         key_int = max(0, int(opts.get("key_int_ms", 15))) / 1000.0
         mode = opts.get("mode", "enter")
-        clear_field = bool(opts.get("clear_field", False))
         bpos = self.button_pos
+        # Saisie sécurisée : coller (presse-papier) puis relire et vérifier le
+        # contenu avant de valider. Aucun code n'est ajouté s'il n'est pas
+        # confirmé exact -> on n'envoie jamais de code corrompu à NOSICA.
+        secure = bool(opts.get("secure", True)) and _have_clip
+        retries = max(0, int(opts.get("retries", 2)))
 
+        clip_backup = ""
+        if _have_clip:
+            try:
+                clip_backup = pyperclip.paste()
+            except Exception:
+                clip_backup = ""
+
+        def put_code(code):
+            """Saisit `code` dans le champ. Renvoie True si confirmé exact."""
+            # 1) vider le champ
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.press("delete")
+            # 2) saisir
+            if secure:
+                pyperclip.copy(code)
+                time.sleep(0.03)
+                pyautogui.hotkey("ctrl", "v")
+            else:
+                pyautogui.write(code, interval=key_int)
+            time.sleep(0.06)
+            # 3) vérifier en relisant le champ (sélection -> copie -> comparaison)
+            if not secure:
+                return True
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.hotkey("ctrl", "c")
+            time.sleep(0.04)
+            try:
+                got = digits(pyperclip.paste())
+            except Exception:
+                got = ""
+            ok = (got == code) or (got.lstrip("0") == code.lstrip("0") and got != "")
+            if ok:
+                pyautogui.press("end")  # déselectionner, curseur en fin
+            return ok
+
+        ok_count = 0
+        skipped = []
         try:
             for i, code in enumerate(codes, start=1):
                 if self._stop or esc():
                     break
                 while self._pause and not self._stop:
                     time.sleep(0.08)
-                if self._stop:
+                if self._stop or esc():
                     break
-                if clear_field:
-                    pyautogui.hotkey("ctrl", "a")
-                    pyautogui.press("delete")
-                pyautogui.write(code, interval=key_int)
-                if mode == "button" and bpos:
-                    pyautogui.click(bpos[0], bpos[1])
+
+                confirmed = False
+                for _ in range(retries + 1):
+                    if self._stop or esc():
+                        break
+                    if put_code(code):
+                        confirmed = True
+                        break
+                    time.sleep(0.12)  # laisser le champ se stabiliser avant retry
+
+                if confirmed:
+                    if mode == "button" and bpos:
+                        pyautogui.click(bpos[0], bpos[1])
+                    else:
+                        pyautogui.press("enter")
+                    ok_count += 1
                 else:
-                    pyautogui.press("enter")
-                self.progress.update(index=i, current=code)
+                    # On NE valide PAS : pas de code douteux envoyé à NOSICA.
+                    skipped.append(code)
+
+                self.progress.update(index=i, current=code, ok_count=ok_count,
+                                     skipped=len(skipped), skipped_list=skipped[-50:])
                 waited = 0.0
                 while waited < delay:
                     if self._stop or esc():
@@ -154,10 +218,16 @@ class Api:
                     time.sleep(0.04)
                     waited += 0.04
         finally:
+            if _have_clip:
+                try:
+                    pyperclip.copy(clip_backup)
+                except Exception:
+                    pass
             aborted = self._stop or esc()
             self._sending = False
-            self.progress.update(running=False, done=not aborted,
-                                 aborted=aborted, phase="done")
+            self.progress.update(running=False, done=not aborted, aborted=aborted,
+                                 phase="done", ok_count=ok_count,
+                                 skipped=len(skipped), skipped_list=skipped)
 
     def poll(self):
         return self.progress

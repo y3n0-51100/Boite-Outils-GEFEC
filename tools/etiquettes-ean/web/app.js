@@ -209,7 +209,7 @@ async function startRun(){
   await overlayCountdown(cd,'Clique dans la case « code » de NOSICA ! Saisie imminente…');
   const opts={ mode:state.mode,
     delay_ms:+$('#delay').value, key_int_ms:+$('#keyint').value,
-    clear_field:$('#opt-clear').checked };
+    secure:$('#opt-secure').checked };
   const r=await call('start',opts);
   if(!r || !r.ok){ toast((r&&r.msg)||'Démarrage impossible.',true); return; }
   $('#btn-start').hidden=true; $('#btn-pause').hidden=false; $('#btn-stop').hidden=false;
@@ -236,17 +236,38 @@ async function pollLoop(){
 }
 function finishRun(p){
   $('#btn-pause').hidden=true; $('#btn-stop').hidden=true; $('#btn-restart').hidden=false;
+  const ok=p.ok_count||0, skipped=p.skipped||0;
   if(p.aborted){
     $('#run-title').textContent='Saisie arrêtée';
-    $('#ring-small').textContent=`${p.index} / ${p.total} (arrêté)`;
+    $('#ring-small').textContent=`${ok} ajouté(s) · arrêté`;
     toast('Saisie arrêtée.',true);
+  }else if(skipped>0){
+    setRing(100);
+    $('#run-title').textContent='Terminé — avec des codes ignorés';
+    $('#ring-small').textContent=`${ok} ajouté(s) · ${skipped} ignoré(s)`;
+    $('#run-current').textContent='';
+    showSkipReport(p);
+    confettiBurst(.5);
   }else{
     setRing(100);
     $('#run-title').textContent='Terminé 🎉';
-    $('#ring-small').textContent=`${p.total} / ${p.total}`;
-    $('#run-current').textContent='Toutes les étiquettes sont saisies !';
+    $('#ring-small').textContent=`${ok} / ${p.total}`;
+    $('#run-current').textContent='Tous les codes ont été ajoutés et vérifiés !';
     confettiBurst(1);
   }
+}
+function showSkipReport(p){
+  const list=(p.skipped_list||[]);
+  const box=document.createElement('div');
+  box.className='skip-report';
+  box.innerHTML=`<div class="skip-h">⚠ ${p.skipped} code(s) non confirmé(s) — donc <b>volontairement non saisis</b>
+    pour ne rien envoyer de faux à NOSICA :</div>
+    <textarea readonly class="skip-codes">${list.join('\n')}</textarea>
+    <div class="skip-note">Causes possibles : NOSICA a ouvert un message d'erreur qui a pris le focus,
+    ou le champ « code » a perdu le focus. Reprends ces codes manuellement, ou relance l'outil sur eux.</div>`;
+  const host=$('#run-current').parentElement;
+  const old=host.querySelector('.skip-report'); if(old) old.remove();
+  host.insertBefore(box,$('.run-actions'));
 }
 function resetRun(){
   setRing(0); $('#ring-small').textContent='—'; $('#run-current').textContent='';
