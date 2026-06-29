@@ -1,4 +1,7 @@
 # Dépendances de l'outil « Étiquettes EAN — Douchette virtuelle »
+# Moteur d'extraction PDF principal (robuste, s'embarque proprement dans le .exe)
+pymupdf>=1.24
+# Repli si PyMuPDF est indisponible
 pypdf>=4.0
 pyautogui>=0.9.54
 # Construction du .exe (uniquement pour générer l'exécutable) :

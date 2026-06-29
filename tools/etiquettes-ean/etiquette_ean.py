@@ -131,17 +131,54 @@ def _match_candidate(candidate, lengths, validate_checksum):
     return out
 
 
-def read_pdf_text(path: str) -> str:
-    """Extrait tout le texte d'un PDF avec pypdf."""
+def _read_pdf_text_pymupdf(path: str):
+    """Extraction via PyMuPDF (fitz). Renvoie (texte, nb_pages, nb_pages_vides).
+
+    PyMuPDF est privilégié : c'est un module binaire autonome qui s'embarque
+    proprement dans le .exe (contrairement à pypdf, dont les fichiers de
+    ressources peuvent manquer dans un build PyInstaller « onefile » et faire
+    échouer l'extraction de la plupart des pages)."""
+    import fitz
+    doc = fitz.open(path)
+    parts, empty = [], 0
+    for page in doc:
+        t = page.get_text() or ""
+        if not t.strip():
+            empty += 1
+        parts.append(t)
+    n = doc.page_count
+    doc.close()
+    return "\n".join(parts), n, empty
+
+
+def _read_pdf_text_pypdf(path: str):
+    """Repli via pypdf si PyMuPDF est indisponible."""
     from pypdf import PdfReader
     reader = PdfReader(path)
-    parts = []
+    parts, empty = [], 0
     for page in reader.pages:
         try:
-            parts.append(page.extract_text() or "")
+            t = page.extract_text() or ""
         except Exception:
-            parts.append("")
-    return "\n".join(parts)
+            t = ""
+        if not t.strip():
+            empty += 1
+        parts.append(t)
+    return "\n".join(parts), len(reader.pages), empty
+
+
+def read_pdf_text_ex(path: str):
+    """Extrait le texte d'un PDF. Renvoie (texte, nb_pages, nb_pages_vides).
+
+    Essaie PyMuPDF puis, à défaut, pypdf."""
+    try:
+        return _read_pdf_text_pymupdf(path)
+    except ImportError:
+        return _read_pdf_text_pypdf(path)
+
+
+def read_pdf_text(path: str) -> str:
+    return read_pdf_text_ex(path)[0]
 
 
 def extract_eans_from_pdf(path: str, **kwargs):
@@ -316,15 +353,20 @@ def run_gui():
         all_codes = []
         seen = set()
         errors = []
+        empty_pages = 0
+        total_pages = 0
         for p in state["files"]:
             try:
-                codes = extract_eans_from_pdf(
-                    p, lengths=DEFAULT_LENGTHS,
+                text, n_pages, n_empty = read_pdf_text_ex(p)
+                codes = extract_eans_from_text(
+                    text, lengths=DEFAULT_LENGTHS,
                     validate_checksum=chk_checksum.get(),
                     dedupe=False)
             except Exception as e:
                 errors.append(f"{os.path.basename(p)} : {e}")
                 continue
+            total_pages += n_pages
+            empty_pages += n_empty
             for code in codes:
                 if chk_dedupe.get() and code in seen:
                     continue
@@ -341,6 +383,13 @@ def run_gui():
                 "il faudrait un PDF contenant du texte sélectionnable.\n\n"
                 "Vous pouvez aussi décocher « Valider la clé EAN » si vos codes "
                 "ne sont pas des EAN standard.")
+        elif empty_pages:
+            messagebox.showwarning(APP_NAME,
+                f"Attention : {empty_pages} page(s) sur {total_pages} n'ont "
+                "donné aucun texte (probablement scannées en image).\n\n"
+                f"{len(all_codes)} code(s) ont quand même été extraits des "
+                "autres pages. Si le compte vous paraît trop faible, ces pages "
+                "scannées en sont la cause.")
 
     # --------------------------------------------- 3. Réglages d'envoi
     c3, b3 = card(container, "3 · Réglages de saisie")

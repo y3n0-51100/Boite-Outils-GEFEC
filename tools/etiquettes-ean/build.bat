@@ -16,6 +16,7 @@ echo [2/3] Construction de l'executable...
 python -m PyInstaller --noconfirm --onefile --windowed ^
   --name EtiquettesEAN ^
   --collect-all pyautogui ^
+  --collect-all pymupdf ^
   --collect-all pypdf ^
   etiquette_ean.py
 if errorlevel 1 goto :err
