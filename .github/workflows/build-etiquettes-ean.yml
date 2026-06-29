@@ -75,3 +75,18 @@ jobs:
         with:
           name: EtiquettesEAN
           path: tools/etiquettes-ean/dist/EtiquettesEAN.exe
+
+      - name: Publication d'une Release (lien de téléchargement stable)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: etiquettes-ean
+          name: Étiquettes EAN — Douchette virtuelle
+          body: |
+            Outil Windows autonome qui saisit automatiquement les codes EAN
+            d'un PDF dans NOSICA (douchette virtuelle).
+
+            **Téléchargement :** le fichier `EtiquettesEAN.exe` ci-dessous.
+            À l'ouverture, si Windows affiche « Windows a protégé votre
+            ordinateur » : Informations complémentaires → Exécuter quand même.
+          files: tools/etiquettes-ean/dist/EtiquettesEAN.exe
+          make_latest: "true"
