@@ -1,0 +1,5 @@
+# Dépendances de l'outil « Étiquettes EAN — Douchette virtuelle »
+pypdf>=4.0
+pyautogui>=0.9.54
+# Construction du .exe (uniquement pour générer l'exécutable) :
+pyinstaller>=6.0

@@ -1,1 +1,7 @@
 node_modules/
+
+# Artefacts de build PyInstaller
+tools/**/build/
+tools/**/dist/
+tools/**/__pycache__/
+tools/**/*.spec
