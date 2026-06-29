@@ -80,55 +80,47 @@ def ean_checksum_ok(code: str) -> bool:
 
 def extract_eans_from_text(text: str, lengths=DEFAULT_LENGTHS,
                            validate_checksum=True, dedupe=True):
-    """Extrait les codes EAN d'un texte brut.
+    """Extrait les codes EAN d'un texte brut, en privilégiant la PRÉCISION.
 
-    On repère toutes les suites de chiffres, puis on garde celles dont la
-    longueur est acceptée et (option) dont la clé de contrôle est valide.
+    Règle d'or : on ne recolle JAMAIS des chiffres à travers un espace, une
+    tabulation ou un retour à la ligne — sinon un EAN peut fusionner avec le
+    nombre voisin (prix, quantité, éco-participation) et produire un code
+    « fantôme » de 13 chiffres dont la clé passe par hasard, que NOSICA
+    refusera. On accepte donc :
+
+      1. tout JETON de chiffres isolé (borné par des non-chiffres) dont la
+         longueur est acceptée et la clé valide — c'est le cas normal, un EAN
+         par cellule/ligne ;
+      2. une LIGNE entière dont les chiffres (espaces/tirets retirés) forment
+         exactement un code accepté — couvre l'EAN écrit espacé
+         « 3 660970 010203 » quand il est seul sur sa ligne.
+
     L'ordre d'apparition dans le document est conservé.
     """
+    accepted = set(lengths)
     found = []
     seen = set()
-    # On capture les suites de chiffres pouvant être séparées par espaces/tirets
-    # dans le PDF (ex : "3 660970 123456"), puis on recolle.
-    for raw in re.findall(r"\d[\d\s\-\.]{6,}\d", text):
-        candidate = re.sub(r"[\s\-\.]", "", raw)
-        # Une même suite « collée » peut contenir un EAN-13 et déborder ;
-        # on teste plusieurs longueurs en partant de la plus longue.
-        if not candidate.isdigit():
-            continue
-        matched = _match_candidate(candidate, lengths, validate_checksum)
-        for code in matched:
-            if dedupe and code in seen:
-                continue
-            seen.add(code)
-            found.append(code)
+
+    def keep(code):
+        if not code or (validate_checksum and not ean_checksum_ok(code)):
+            return
+        if dedupe and code in seen:
+            return
+        seen.add(code)
+        found.append(code)
+
+    # 1) Jetons de chiffres isolés (aucun chiffre adjacent, aucun recollage).
+    for tok in re.findall(r"(?<!\d)\d+(?!\d)", text):
+        if len(tok) in accepted:
+            keep(tok)
+
+    # 2) Lignes ne contenant qu'un seul code, éventuellement espacé/tireté.
+    for line in text.splitlines():
+        digits = re.sub(r"[\s\-.]", "", line)
+        if digits.isdigit() and len(digits) in accepted:
+            keep(digits)
+
     return found
-
-
-def _match_candidate(candidate, lengths, validate_checksum):
-    """Retourne le(s) code(s) valides extraits d'une longue suite de chiffres."""
-    out = []
-    sorted_lengths = sorted(set(lengths), reverse=True)
-    # Cas simple : la suite a exactement une longueur acceptée.
-    if len(candidate) in sorted_lengths:
-        if (not validate_checksum) or ean_checksum_ok(candidate):
-            return [candidate]
-    # Cas « collé » : on glisse une fenêtre pour retrouver des EAN valides.
-    if validate_checksum:
-        i = 0
-        n = len(candidate)
-        while i < n:
-            hit = None
-            for L in sorted_lengths:
-                if i + L <= n and ean_checksum_ok(candidate[i:i + L]):
-                    hit = L
-                    break
-            if hit:
-                out.append(candidate[i:i + hit])
-                i += hit
-            else:
-                i += 1
-    return out
 
 
 def _read_pdf_text_pymupdf(path: str):
@@ -631,6 +623,9 @@ def _selftest():
     assert a in codes, f"EAN-13 {a} non detecte"
     assert b in codes, f"EAN-13 {b} non detecte"
     assert codes.count(a) == 1, "deduplication KO"
+    # Verrou anti-fantome : deux EAN colles ou des nombres voisins ne doivent
+    # JAMAIS produire de code supplementaire.
+    assert set(codes) == {a, b}, f"code(s) fantome(s) detecte(s) : {codes}"
     assert ean_checksum_ok(a) and ean_checksum_ok(b)
     assert not ean_checksum_ok(a[:-1] + str((int(a[-1]) + 1) % 10))
     print(f"{len(codes)} codes uniques - Self-test OK")
