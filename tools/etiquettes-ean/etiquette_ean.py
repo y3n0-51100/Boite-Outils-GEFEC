@@ -562,6 +562,12 @@ def run_gui():
 
 def _selftest():
     """Test rapide de l'extraction, exécutable n'importe où (sans Windows)."""
+    # La console Windows (cp1252) ne sait pas afficher tous les caractères :
+    # on bascule la sortie en UTF-8 quand c'est possible.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     a = make_ean13("366097001020")   # EAN-13 valide
     b = make_ean13("400638133393")   # EAN-13 valide
     sample = (
@@ -572,13 +578,13 @@ def _selftest():
         f"Doublon {a}\n"
     )
     codes = extract_eans_from_text(sample, validate_checksum=True, dedupe=True)
-    print("Codes détectés :", codes)
-    assert a in codes, f"EAN-13 {a} non détecté"
-    assert b in codes, f"EAN-13 {b} non détecté"
-    assert codes.count(a) == 1, "déduplication KO"
+    print("Codes detectes :", codes)
+    assert a in codes, f"EAN-13 {a} non detecte"
+    assert b in codes, f"EAN-13 {b} non detecte"
+    assert codes.count(a) == 1, "deduplication KO"
     assert ean_checksum_ok(a) and ean_checksum_ok(b)
     assert not ean_checksum_ok(a[:-1] + str((int(a[-1]) + 1) % 10))
-    print(f"{len(codes)} codes uniques · Self-test OK ✔")
+    print(f"{len(codes)} codes uniques - Self-test OK")
 
 
 if __name__ == "__main__":
