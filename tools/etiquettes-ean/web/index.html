@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Étiquettes EAN — Douchette virtuelle</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Fond animé -->
+<canvas id="bg-gl"></canvas>
+<canvas id="bg-particles"></canvas>
+<canvas id="confetti"></canvas>
+
+<div class="app">
+
+  <!-- En-tête -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo3d" aria-hidden="true">
+        <div class="cube">
+          <span class="face f-front"></span><span class="face f-back"></span>
+          <span class="face f-right"></span><span class="face f-left"></span>
+          <span class="face f-top"></span><span class="face f-bottom"></span>
+        </div>
+      </div>
+      <div class="brand-txt">
+        <div class="brand-title">Étiquettes EAN</div>
+        <div class="brand-sub">Douchette virtuelle · NOSICA</div>
+      </div>
+    </div>
+    <div class="steps-dots">
+      <span class="dot active" data-dot="0"></span>
+      <span class="dot" data-dot="1"></span>
+      <span class="dot" data-dot="2"></span>
+      <span class="dot" data-dot="3"></span>
+    </div>
+  </header>
+
+  <!-- Piste des étapes -->
+  <main class="stage">
+    <div class="track" id="track">
+
+      <!-- ÉTAPE 0 — Accueil -->
+      <section class="step" data-step="0">
+        <div class="hero">
+          <div class="hero-3d">
+            <div class="scanner">
+              <div class="barcode">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                <i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="scan-beam"></div>
+            </div>
+          </div>
+          <h1 class="hero-title">Crée tes étiquettes <span>sans rien taper</span></h1>
+          <p class="hero-sub">Dépose un PDF plein de codes EAN. L'outil les saisit
+            tout seul dans NOSICA, l'un après l'autre, comme une vraie douchette.</p>
+          <button class="btn-primary big" id="go-start">
+            <span>Commencer</span>
+            <svg viewBox="0 0 24 24"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+          </button>
+          <div class="hero-foot">100 % local · aucune donnée n'est envoyée</div>
+        </div>
+      </section>
+
+      <!-- ÉTAPE 1 — PDF -->
+      <section class="step" data-step="1">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="badge">Étape 1</span>
+            <h2>Dépose tes PDF de codes EAN</h2>
+          </div>
+
+          <div class="drop" id="drop">
+            <div class="drop-ico">
+              <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>
+            </div>
+            <div class="drop-title">Choisir des fichiers PDF</div>
+            <div class="drop-note">valorisation, listings… plusieurs fichiers possibles</div>
+          </div>
+
+          <div class="files" id="files"></div>
+
+          <div class="result" id="result" hidden>
+            <div class="counter-wrap">
+              <div class="counter" id="counter">0</div>
+              <div class="counter-label">codes EAN détectés</div>
+            </div>
+            <div class="stats" id="stats"></div>
+            <div class="opts">
+              <label class="switch">
+                <input type="checkbox" id="opt-checksum" checked>
+                <span class="track-sw"></span><em>Valider la clé EAN-13</em>
+              </label>
+              <label class="switch">
+                <input type="checkbox" id="opt-dedupe" checked>
+                <span class="track-sw"></span><em>Supprimer les doublons</em>
+              </label>
+              <button class="btn-ghost" id="toggle-list">Voir / corriger la liste</button>
+            </div>
+            <textarea class="codes" id="codes" spellcheck="false" hidden></textarea>
+          </div>
+
+          <div class="nav">
+            <button class="btn-ghost" data-back>Retour</button>
+            <button class="btn-primary" id="to-settings" disabled>Continuer</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ÉTAPE 2 — Réglages -->
+      <section class="step" data-step="2">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="badge">Étape 2</span>
+            <h2>Comment valider chaque code ?</h2>
+          </div>
+
+          <div class="modes">
+            <button class="mode active" data-mode="enter">
+              <div class="mode-ico">⏎</div>
+              <div class="mode-t">Touche Entrée</div>
+              <div class="mode-d">Comme une douchette : le code est tapé puis validé
+                par « Entrée ». Recommandé.</div>
+            </button>
+            <button class="mode" data-mode="button">
+              <div class="mode-ico">🎯</div>
+              <div class="mode-t">Clic sur le bouton</div>
+              <div class="mode-d">Si « Entrée » ne suffit pas : on enregistre la
+                position du bouton « Ajouter dans la liste ».</div>
+            </button>
+          </div>
+
+          <div class="capture" id="capture" hidden>
+            <button class="btn-ghost" id="btn-capture">Enregistrer la position du bouton</button>
+            <span class="capture-state" id="capture-state">Non enregistrée</span>
+          </div>
+
+          <div class="sliders">
+            <div class="slider">
+              <div class="slider-top"><span>Délai entre 2 codes</span><b id="v-delay">400 ms</b></div>
+              <input type="range" id="delay" min="0" max="2000" step="50" value="400">
+            </div>
+            <div class="slider">
+              <div class="slider-top"><span>Vitesse de frappe</span><b id="v-key">15 ms/car.</b></div>
+              <input type="range" id="keyint" min="0" max="120" step="5" value="15">
+            </div>
+            <div class="slider">
+              <div class="slider-top"><span>Compte à rebours avant départ</span><b id="v-cd">5 s</b></div>
+              <input type="range" id="countdown" min="0" max="12" step="1" value="5">
+            </div>
+          </div>
+
+          <label class="switch wide">
+            <input type="checkbox" id="opt-clear">
+            <span class="track-sw"></span><em>Vider la case avant chaque code (si elle ne se vide pas seule)</em>
+          </label>
+
+          <div class="nav">
+            <button class="btn-ghost" data-back>Retour</button>
+            <button class="btn-primary" id="to-run">Continuer</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ÉTAPE 3 — Lancement -->
+      <section class="step" data-step="3">
+        <div class="panel center">
+          <div class="panel-head center">
+            <span class="badge">Étape 3</span>
+            <h2 id="run-title">Prêt à saisir dans NOSICA</h2>
+          </div>
+
+          <p class="run-help" id="run-help">
+            Ouvre NOSICA, clique une fois dans la case « code », puis appuie sur
+            Démarrer. Le compte à rebours te laisse le temps de recliquer dedans.
+            <br><b>Arrêt d'urgence : touche Échap.</b>
+          </p>
+
+          <div class="ring-wrap">
+            <svg class="ring" viewBox="0 0 220 220">
+              <defs>
+                <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#ff2d55"/>
+                  <stop offset="1" stop-color="#ffd60a"/>
+                </linearGradient>
+              </defs>
+              <circle class="ring-bg" cx="110" cy="110" r="96"/>
+              <circle class="ring-fg" id="ring-fg" cx="110" cy="110" r="96"/>
+            </svg>
+            <div class="ring-center">
+              <div class="ring-big" id="ring-big">0%</div>
+              <div class="ring-small" id="ring-small">—</div>
+            </div>
+          </div>
+
+          <div class="run-current" id="run-current"></div>
+
+          <div class="run-actions">
+            <button class="btn-primary big" id="btn-start">
+              <span>Démarrer la saisie</span>
+            </button>
+            <button class="btn-ghost" id="btn-pause" hidden>Pause</button>
+            <button class="btn-stop" id="btn-stop" hidden>Stop</button>
+          </div>
+
+          <div class="nav center">
+            <button class="btn-ghost" data-back id="run-back">Retour</button>
+            <button class="btn-ghost" id="btn-restart" hidden>Recommencer</button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Overlay compte à rebours / capture -->
+<div class="overlay" id="overlay" hidden>
+  <div class="overlay-num" id="overlay-num">5</div>
+  <div class="overlay-txt" id="overlay-txt"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

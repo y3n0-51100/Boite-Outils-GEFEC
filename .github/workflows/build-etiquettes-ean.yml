@@ -48,10 +48,12 @@ jobs:
         run: >
           python -m PyInstaller --noconfirm --onefile --windowed
           --name EtiquettesEAN
+          --add-data "web;web"
+          --collect-all webview
           --collect-all pyautogui
           --collect-all pymupdf
           --collect-all pypdf
-          etiquette_ean.py
+          app.py
 
       - name: Copie de l'exécutable à la racine
         run: copy /Y tools\etiquettes-ean\dist\EtiquettesEAN.exe EtiquettesEAN.exe

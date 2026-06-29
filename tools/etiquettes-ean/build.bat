@@ -15,10 +15,12 @@ if errorlevel 1 goto :err
 echo [2/3] Construction de l'executable...
 python -m PyInstaller --noconfirm --onefile --windowed ^
   --name EtiquettesEAN ^
+  --add-data "web;web" ^
+  --collect-all webview ^
   --collect-all pyautogui ^
   --collect-all pymupdf ^
   --collect-all pypdf ^
-  etiquette_ean.py
+  app.py
 if errorlevel 1 goto :err
 
 echo [3/3] Copie de l'executable a la racine du depot...
