@@ -788,41 +788,79 @@ const PRICE_ITEM_RE = /^\d{1,5},\d{2}$/;
 const DATES_RE = /(\d{2}\/\d{2}\/\d{4})\s*au\s*(\d{2}\/\d{2}\/\d{4})/;
 
 /* Plan promo national : tableau CATEGORIE | MARQUE | REFERENCES | EAN | …
-   | PRIX PROMO | AVOIR | DATES. Extraction par colonnes à partir des
-   positions X de la ligne d'en-tête, avec repli heuristique. */
+   | PRIX PROMO | AVOIR HT MAGASIN A RECEVOIR | DATES. Extraction par colonnes
+   à partir des positions X de la ligne d'en-tête.
+   ⚠️ Le prix imprimé doit être le « PRIX PROMO », JAMAIS le montant de la
+   colonne voisine « AVOIR HT MAGASIN A RECEVOIR » (avoir fournisseur, sans
+   rapport avec le prix de vente). */
 function parsePromoPdf(pages) {
   const products = [];
   const seen = new Set();
   for (const rows of pages) {
-    // 1. ligne d'en-tête -> ancres X des colonnes
+    // 1. Bande d'en-tête -> ancres X des colonnes.
+    //    Les libellés multi-mots (« PRIX / PROMO », « AVOIR HT / MAGASIN /
+    //    A RECEVOIR ») sont éclatés par le PDF sur plusieurs items ET souvent
+    //    sur plusieurs lignes (Y différents) : on rassemble donc la ligne
+    //    EAN+MARQUE et ses lignes de libellé voisines avant de repérer les X.
     let cols = null;
-    for (const row of rows) {
-      const t = rowText(row).toUpperCase();
+    for (let hi = 0; hi < rows.length; hi++) {
+      const t = rowText(rows[hi]).toUpperCase();
       if (t.includes('EAN') && t.includes('MARQUE')) {
+        const band = [...rows[hi].items];
+        for (const j of [hi - 2, hi - 1, hi + 1, hi + 2]) {
+          if (j < 0 || j >= rows.length) continue;
+          const rt = rowText(rows[j]);
+          if (/\d{6,}/.test(rt)) continue;                          // ligne produit, pas d'en-tête
+          if (rows[j].items.some(i => PRICE_ITEM_RE.test(i.s))) continue;
+          if (!/[A-Za-zÀ-ÿ]/.test(rt)) continue;
+          band.push(...rows[j].items);
+        }
+        // EAN, toujours sur la ligne d'ancrage, sépare le bloc de gauche
+        // (catégorie/marque/réf) des colonnes de droite (prix/avoir/dates).
+        const eanIt = rows[hi].items.find(i => i.s.toUpperCase() === 'EAN');
+        const eanX = eanIt ? eanIt.x : -Infinity;
         cols = {};
-        for (const it of row.items) {
+        for (const it of band) {
           const s = it.s.toUpperCase();
-          if (s.includes('CATEGORIE')) cols.cat = it.x;
-          else if (s.includes('MARQUE')) cols.marque = it.x;
-          else if (s.includes('REFERENCE')) cols.ref = it.x;
+          if (s.includes('CATEGORIE')) cols.cat = Math.min(cols.cat ?? Infinity, it.x);
+          else if (s.includes('MARQUE') && it.x < eanX) cols.marque = Math.min(cols.marque ?? Infinity, it.x);
+          else if (s.includes('REFERENCE') && it.x < eanX) cols.ref = Math.min(cols.ref ?? Infinity, it.x);
           else if (s === 'EAN') cols.ean = it.x;
-          else if (s.includes('PRIX PROMO')) cols.promo = it.x;
-          else if (s.includes('DATES')) cols.dates = it.x;
+          else if (s.includes('PROMO') && it.x > eanX) cols.promo = Math.min(cols.promo ?? Infinity, it.x);
+          else if ((s.includes('AVOIR') || s.includes('RECEVOIR')) && it.x > eanX) cols.avoir = Math.min(cols.avoir ?? Infinity, it.x);
+          else if (s.includes('DATES') && it.x > eanX) cols.dates = Math.min(cols.dates ?? Infinity, it.x);
         }
         break;
       }
     }
-    // bornes de colonnes = points médians entre ancres adjacentes
+    // bornes des colonnes de gauche = points médians entre ancres adjacentes
     let b = null;
     if (cols && cols.marque != null && cols.ref != null && cols.ean != null) {
       b = {
         catEnd: ((cols.cat ?? cols.marque - 120) + cols.marque) / 2,
         marqueEnd: (cols.marque + cols.ref) / 2,
         refEnd: (cols.ref + cols.ean) / 2,
-        promoStart: cols.promo != null ? cols.promo - 30 : null,
-        promoEnd: cols.promo != null ? cols.promo + 25 : null,
       };
     }
+
+    // Prix promo d'une ligne = le montant de la COLONNE « PRIX PROMO » :
+    // celui dont le X est le plus proche de l'ancre PROMO, et toujours à
+    // GAUCHE de la frontière avec la colonne AVOIR (jamais l'avoir fournisseur).
+    const promoPrice = (row) => {
+      if (!cols || cols.promo == null) return null;
+      const nums = row.items.filter(i => PRICE_ITEM_RE.test(i.s));
+      if (!nums.length) return null;
+      const rightLimit = cols.avoir != null ? (cols.promo + cols.avoir) / 2 : Infinity;
+      // uniquement les montants situés dans/à gauche de la colonne PRIX PROMO :
+      // si la cellule promo est vide on renvoie null, JAMAIS le montant de l'AVOIR.
+      const cand = nums.filter(i => i.x < rightLimit);
+      let best = null, bestD = Infinity;
+      for (const i of cand) {
+        const d = Math.abs(i.x - cols.promo);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return best ? parsePrice(best.s) : null;
+    };
 
     // extraction des champs d'une ligne selon les bornes de colonnes
     const extractFields = (row) => {
@@ -832,10 +870,7 @@ function parsePromoPdf(pages) {
       f.cat = it.filter(i => !CODE_ITEM_RE.test(i.s) && i.x < b.catEnd && /[A-Za-zÀ-ÿ]/.test(i.s)).map(i => i.s).join(' ').trim();
       f.brand = it.filter(i => i.x >= b.catEnd && i.x < b.marqueEnd && /[A-Za-zÀ-ÿ]/.test(i.s)).map(i => i.s).join(' ').trim();
       f.refs = it.filter(i => !CODE_ITEM_RE.test(i.s) && i.x >= b.marqueEnd && i.x < b.refEnd).map(i => i.s).join(' ').trim();
-      if (b.promoStart != null) {
-        const pi = it.find(i => i.x >= b.promoStart && i.x <= b.promoEnd && PRICE_ITEM_RE.test(i.s));
-        if (pi) f.price = parsePrice(pi.s);
-      }
+      f.price = promoPrice(row);
       return f;
     };
 
@@ -871,17 +906,12 @@ function parsePromoPdf(pages) {
       let name = cleanRef(f.refs);   // référence nettoyée (sans préfixe de famille)
       let brand = f.brand, price = f.price;
 
-      // replis génériques
+      // replis génériques (nom/dates). PAS de repli sur le prix par magnitude :
+      // prendre « le plus petit montant de la ligne » captait l'AVOIR fournisseur
+      // (ex. 42 € au lieu du vrai prix promo). Si la colonne PRIX PROMO n'a pas
+      // pu être lue, on laisse le prix vide (affiché « – ») plutôt que d'imprimer
+      // un montant erroné.
       const full = [rowText(rec.row), ...rec.orphans.map(rowText)].join(' ');
-      if (price == null) {
-        // prix promo = montant qui suit immédiatement le dernier pourcentage
-        const m = full.match(/%\s+(\d{1,5},\d{2})\s*€(?!.*%\s+\d{1,5},\d{2}\s*€)/);
-        if (m) price = parsePrice(m[1]);
-        else {
-          const all = [...full.matchAll(/(\d{1,5},\d{2})\s*€/g)].map(x => parsePrice(x[1]));
-          if (all.length) price = Math.min(...all);
-        }
-      }
       if (!name) {
         name = full.split(codeItem.s)[0]
           .replace(/\d{1,5},\d{2}\s*€?/g, '').replace(/-?\d+,\d+%/g, '')
