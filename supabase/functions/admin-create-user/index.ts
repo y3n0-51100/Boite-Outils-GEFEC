@@ -89,8 +89,16 @@ Deno.serve(async (req) => {
     if (action === "delete") {
       const { user_id } = body;
       if (!user_id) return json(400, { error: "user_id requis." });
+      // Supprimer d'abord la ligne profiles explicitement : on ne dépend pas
+      // du "on delete cascade" (peut être absent sur une base créée avant son
+      // ajout au schéma), sans quoi le compte reste visible dans la liste
+      // même après suppression de l'utilisateur Auth.
+      const { error: perr } = await admin.from("profiles").delete().eq("user_id", user_id);
+      if (perr) return json(400, { error: "Profil : " + perr.message });
       const { error } = await admin.auth.admin.deleteUser(user_id);
-      if (error) return json(400, { error: error.message });
+      // utilisateur Auth déjà absent (ex: doublon de clic) -> pas bloquant,
+      // le profil est de toute façon supprimé.
+      if (error && !/not.*found/i.test(error.message || "")) return json(400, { error: error.message });
       return json(200, { ok: true });
     }
 
