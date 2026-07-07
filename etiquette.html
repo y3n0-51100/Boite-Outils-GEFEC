@@ -76,6 +76,35 @@ nav.steps button.active{border-color:var(--but-red);color:var(--but-red)}
 nav.steps button.active .n{background:var(--but-red);color:#fff}
 nav.steps button.done .n{background:var(--ok);color:#fff}
 
+/* Onglets Plan Promo TV / Plan Promo PEM : deux espaces de travail
+   indépendants (fichier plan promo + produits), même outil d'étiquettes */
+nav.plans{
+  display:flex;justify-content:center;gap:0;
+  padding:16px 16px 0;
+}
+nav.plans button{
+  border:2px solid var(--grey-2);border-bottom:none;
+  background:#f3f3f3;color:#666;
+  padding:13px 30px 11px;font-weight:900;font-size:15px;
+  display:flex;align-items:center;gap:10px;
+  border-radius:14px 14px 0 0;transition:.15s;
+  position:relative;top:2px;
+}
+nav.plans button+button{margin-left:6px}
+nav.plans button.active{
+  background:#fff;color:var(--but-red);border-color:var(--but-red);
+  box-shadow:0 -2px 6px rgba(0,0,0,.06);top:0;
+}
+nav.plans button .badge{
+  background:var(--grey-2);color:#555;border-radius:999px;
+  min-width:26px;height:22px;padding:0 8px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;
+}
+nav.plans button.active .badge{background:var(--but-red);color:#fff}
+nav.plans button.has-data:not(.active) .badge{background:var(--ok);color:#fff}
+.plansep{border-bottom:2px solid var(--grey-2);max-width:1280px;margin:0 auto}
+
 main{max-width:1280px;margin:0 auto;padding:18px 16px 80px}
 section.panel{display:none}
 section.panel.active{display:block}
@@ -399,10 +428,18 @@ table.prod tr.multi:hover td{background:#fff3df}
 <header class="app">
   <div class="logo">BUT</div>
   <div>
-    <h1>Étiquettes 2.0 — Promos &amp; Bons Plans</h1>
-    <div class="sub">Croisement plan promo national × stock magasin → impression des affiches prix</div>
+    <h1>Étiquettes 2.0 — Plans Promo TV &amp; PEM</h1>
+    <div class="sub">Croisement des plans promo nationaux × stock magasin → impression des affiches prix</div>
   </div>
 </header>
+
+<!-- Onglets : un espace de travail par plan promo (TV / PEM). L'outil de
+     création d'étiquettes (étapes 1 à 4) est exactement le même dans les deux. -->
+<nav class="plans" role="tablist">
+  <button id="tabTv" class="active" role="tab" onclick="setPlan('tv')">📺 Plan Promo TV <span class="badge" id="badgeTv">0</span></button>
+  <button id="tabPem" role="tab" onclick="setPlan('pem')">🍳 Plan Promo PEM <span class="badge" id="badgePem">0</span></button>
+</nav>
+<div class="plansep"></div>
 
 <nav class="steps">
   <button id="navStep1" class="active" onclick="goStep(1)"><span class="n">1</span> Fichiers</button>
@@ -417,15 +454,20 @@ table.prod tr.multi:hover td{background:#fff3df}
 <section class="panel active" id="step1">
   <div class="card">
     <h2>📂 Chargez vos fichiers</h2>
-    <p class="hint">Le <b>plan promo national</b> (publié par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b>. L'outil croise automatiquement les références pour ne garder que les produits exposés chez vous et concernés par une offre.</p>
+    <p class="hint">Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.</p>
     <div class="drops">
       <div class="drop" id="dropPromo">
         <div class="ic">🗓️</div>
-        <div class="t">Plan(s) promo national</div>
-        <div class="d">PDF national(aux) : catégories, marques, références, EAN, prix promo et dates. Vous pouvez en charger <b>plusieurs</b> (ex. PEM + TV) — les références des deux sont fusionnées.</div>
+        <div class="t" id="dropPromoTitle">Plan promo TV / PEM</div>
+        <div class="d">PDF national : marques, références, EAN, prix promo et dates. Déposez un ou plusieurs fichiers — chacun est reconnu (TV ou PEM) et affecté à son onglet.</div>
         <button class="btn small" onclick="document.getElementById('filePromo').click()">Choisir le(s) PDF</button>
         <input type="file" id="filePromo" accept=".pdf" multiple>
+        <!-- entrées dédiées à l'injection des documents partagés par l'admin -->
+        <input type="file" id="filePromoTv" accept=".pdf" multiple hidden>
+        <input type="file" id="filePromoPem" accept=".pdf" multiple hidden>
         <div class="status" id="stPromo"></div>
+        <div class="status" id="stPromoTv"></div>
+        <div class="status" id="stPromoPem"></div>
       </div>
       <!-- Valorisation fournie depuis l'accueil de la suite : carte masquée, l'input reste pour l'injection -->
       <div class="drop" id="dropValo" style="display:none" aria-hidden="true">
@@ -455,7 +497,7 @@ table.prod tr.multi:hover td{background:#fff3df}
   <div class="card">
     <div class="step2head">
       <div>
-        <h2>🛒 Produits de votre magasin concernés par une offre</h2>
+        <h2 id="step2Title">🛒 Produits de votre magasin concernés par une offre</h2>
         <p class="hint">Cochez les produits à imprimer. Libellé, marque, prix et éco-participation sont modifiables directement dans le tableau.</p>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -619,22 +661,42 @@ const DEFAULT_MASKS = {"bonplan-a4":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEA
    ÉTAT GLOBAL
    ============================================================ */
 const state = {
-  promoProducts: [],   // produits du plan promo {key, ean, name, brand, price, from, to}
+  // deux espaces de travail indépendants : Plan Promo TV et Plan Promo PEM.
+  // Chacun a son plan promo, ses produits croisés et sa sélection ; la
+  // valorisation, la base article et les réglages d'impression sont communs.
+  plan: 'tv',          // onglet actif
+  plans: {
+    tv:  { label: 'Plan Promo TV',  icon: '📺', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
+    pem: { label: 'Plan Promo PEM', icon: '🍳', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
+  },
   storeKeys: new Set(),// codes (normalisés) présents dans la valorisation magasin
   storeNames: new Map(),// code normalisé -> libellé valorisation
   ecoMap: new Map(),   // code normalisé -> montant éco-participation
   baseInfo: new Map(), // code normalisé -> { name, price } (libellé + prix de vente de la base article)
-  products: [],        // produits croisés {id, ean, name, brand, price, oldPrice, eco, from, to, selected}
   tpl: 'bonplan',
   fmt: 'a4',
   printBg: true,       // false = papier pré-imprimé, on n'imprime que le contenu
   masks: {},           // fonds importés par l'utilisateur (priorité sur DEFAULT_MASKS)
   customMasks: [],     // masques additionnels publiés par l'admin {id,name,calage}
   useMaskImages: true,
-  promoFileName: '',
   valoFileName: '',
   adminOk: false,
 };
+/* Les champs « par plan » restent accessibles via state.xxx : ils pointent
+   vers l'onglet ACTIF. Tout le flux de création d'étiquettes (croisement,
+   tableau, impression) est ainsi strictement identique pour les deux plans. */
+for (const k of ['promoProducts', 'products', 'promoFileName', '_autoMatched']) {
+  Object.defineProperty(state, k, {
+    get() { return state.plans[state.plan][k]; },
+    set(v) { state.plans[state.plan][k] = v; },
+  });
+}
+/* Exécute fn dans le contexte d'un plan donné (pour traiter l'onglet non
+   affiché, ex. croisement automatique en arrière-plan), puis restaure. */
+function withPlan(t, fn) {
+  const prev = state.plan; state.plan = t;
+  try { return fn(); } finally { state.plan = prev; }
+}
 const ADMIN_PASSWORD = 'admin123';
 let nextId = 1;
 
@@ -711,7 +773,11 @@ function cleanRef(refs) {
   const tokens = s.split(' ');
   const i = tokens.findIndex(t => /\d/.test(t));
   if (i <= 0) return s;            // aucun chiffre, ou code déjà en tête -> inchangé
-  return tokens.slice(i).join(' ');
+  const rest = tokens.slice(i);
+  // si ce qui reste n'est qu'un simple numéro (ex. « VERTUO PLUS NOIRE 11399 »),
+  // le libellé complet est plus parlant que le numéro seul
+  if (rest.every(t => /^\d+$/.test(t))) return s;
+  return rest.join(' ');
 }
 function parsePrice(s) {
   if (s == null) return null;
@@ -784,30 +850,51 @@ async function extractPdfRows(file) {
 function rowText(row) { return row.items.map(i => i.s).join(' '); }
 
 const CODE_ITEM_RE = /^\d{11,13}$/;   // EAN, éventuellement amputé de ses zéros de tête
-const PRICE_ITEM_RE = /^\d{1,5},\d{2}$/;
+/* Montant tel qu'il sort du PDF : le « € » et le séparateur de milliers
+   (espace, insécable ou fine) font souvent partie du MÊME item de texte,
+   ex. « 1 699,99 € », « 42,00 € » — ou « 2999,00 » nu dans d'anciens formats. */
+const PRICE_ITEM_RE = /^\d{1,3}(?:\s\d{3})*,\d{2}(?:\s*€)?$/;
 const DATES_RE = /(\d{2}\/\d{2}\/\d{4})\s*au\s*(\d{2}\/\d{2}\/\d{4})/;
 
-/* Plan promo national : tableau CATEGORIE | MARQUE | REFERENCES | EAN | …
-   | PRIX PROMO | AVOIR HT MAGASIN A RECEVOIR | DATES. Extraction par colonnes
-   à partir des positions X de la ligne d'en-tête.
-   ⚠️ Le prix imprimé doit être le « PRIX PROMO », JAMAIS le montant de la
-   colonne voisine « AVOIR HT MAGASIN A RECEVOIR » (avoir fournisseur, sans
-   rapport avec le prix de vente). */
+/* Type d'un plan promo : chaque page porte un titre « PLAN PROMO TV … » ou
+   « PLAN PROMO PEM … » ; repli sur les en-têtes de colonnes propres à chaque
+   format (TECHNO = TV, CATEGORIE = PEM). */
+function detectPlanType(pages) {
+  let sawTechno = false, sawCategorie = false;
+  for (const rows of pages) {
+    for (const row of rows.slice(0, 12)) {
+      const t = rowText(row).toUpperCase();
+      if (/PLAN\s*PROMO\s*TV/.test(t)) return 'tv';
+      if (/PLAN\s*PROMO\s*PEM/.test(t)) return 'pem';
+      if (t.includes('TECHNO')) sawTechno = true;
+      if (t.includes('CATEGORIE')) sawCategorie = true;
+    }
+  }
+  return sawTechno ? 'tv' : (sawCategorie ? 'pem' : null);
+}
+
+/* Plan promo national (TV ou PEM) : tableau à colonnes
+   [DATE D'ENVOI] | CATEGORIE / TECHNO | MARQUE | REFERENCES | EAN | GAMME |
+   Prix de cession HT | taux de marge | PRIX PROMO | AVOIR HT MAGASIN A
+   RECEVOIR | DATES | … Extraction par colonnes à partir des positions X des
+   libellés d'en-tête, qui sont ÉCLATÉS sur plusieurs items et plusieurs
+   lignes du PDF (« PRIX » / « PROMO », « AVOIR HT » / « MAGASIN A » /
+   « RECEVOIR »).
+   ⚠️ Le prix imprimé doit être celui de la colonne « PRIX PROMO », JAMAIS le
+   « Prix de cession HT » ni l'« AVOIR HT MAGASIN A RECEVOIR » (avoir
+   fournisseur, sans rapport avec le prix de vente public). */
 function parsePromoPdf(pages) {
   const products = [];
   const seen = new Set();
   for (const rows of pages) {
-    // 1. Bande d'en-tête -> ancres X des colonnes.
-    //    Les libellés multi-mots (« PRIX / PROMO », « AVOIR HT / MAGASIN /
-    //    A RECEVOIR ») sont éclatés par le PDF sur plusieurs items ET souvent
-    //    sur plusieurs lignes (Y différents) : on rassemble donc la ligne
-    //    EAN+MARQUE et ses lignes de libellé voisines avant de repérer les X.
+    // 1. Bande d'en-tête -> ancres X des colonnes : la ligne d'ancrage
+    //    (EAN+MARQUE) et ses lignes de libellés voisines.
     let cols = null;
     for (let hi = 0; hi < rows.length; hi++) {
       const t = rowText(rows[hi]).toUpperCase();
       if (t.includes('EAN') && t.includes('MARQUE')) {
         const band = [...rows[hi].items];
-        for (const j of [hi - 2, hi - 1, hi + 1, hi + 2]) {
+        for (const j of [hi - 3, hi - 2, hi - 1, hi + 1, hi + 2, hi + 3]) {
           if (j < 0 || j >= rows.length) continue;
           const rt = rowText(rows[j]);
           if (/\d{6,}/.test(rt)) continue;                          // ligne produit, pas d'en-tête
@@ -819,43 +906,49 @@ function parsePromoPdf(pages) {
         // (catégorie/marque/réf) des colonnes de droite (prix/avoir/dates).
         const eanIt = rows[hi].items.find(i => i.s.toUpperCase() === 'EAN');
         const eanX = eanIt ? eanIt.x : -Infinity;
+        const min = (cur, x) => Math.min(cur ?? Infinity, x);
         cols = {};
         for (const it of band) {
           const s = it.s.toUpperCase();
-          if (s.includes('CATEGORIE')) cols.cat = Math.min(cols.cat ?? Infinity, it.x);
-          else if (s.includes('MARQUE') && it.x < eanX) cols.marque = Math.min(cols.marque ?? Infinity, it.x);
-          else if (s.includes('REFERENCE') && it.x < eanX) cols.ref = Math.min(cols.ref ?? Infinity, it.x);
+          if (s.includes('ENVOI')) cols.envoi = min(cols.envoi, it.x);                      // DATE D'ENVOI DU PLAN D'ACTION (TV)
+          else if (s.includes('CATEGORIE') || s.includes('TECHNO')) cols.cat = min(cols.cat, it.x);
+          else if (s.includes('MARQUE') && it.x < eanX) cols.marque = min(cols.marque, it.x);
+          else if (s.includes('REFERENCE') && it.x < eanX) cols.ref = min(cols.ref, it.x);
           else if (s === 'EAN') cols.ean = it.x;
-          else if (s.includes('PROMO') && it.x > eanX) cols.promo = Math.min(cols.promo ?? Infinity, it.x);
-          else if ((s.includes('AVOIR') || s.includes('RECEVOIR')) && it.x > eanX) cols.avoir = Math.min(cols.avoir ?? Infinity, it.x);
-          else if (s.includes('DATES') && it.x > eanX) cols.dates = Math.min(cols.dates ?? Infinity, it.x);
+          else if (s.includes('CESSION') && it.x > eanX) cols.cession = min(cols.cession, it.x); // Prix de cession HT
+          else if (s.includes('PROMO') && !s.includes('PLAN') && it.x > eanX) cols.promo = min(cols.promo, it.x);
+          else if ((s.includes('AVOIR') || s.includes('RECEVOIR')) && it.x > eanX) cols.avoir = min(cols.avoir, it.x);
+          else if (s.includes('DATES') && it.x > eanX) cols.dates = min(cols.dates, it.x);
         }
         break;
       }
     }
-    // bornes des colonnes de gauche = points médians entre ancres adjacentes
+    // bornes des colonnes de gauche = points médians entre ancres adjacentes.
+    // La colonne MARQUE est étroite et ses valeurs collées à l'ancre : on la
+    // borne aussi à ancre+30 pour ne pas y aspirer des références longues
+    // alignées à gauche dans la cellule REFERENCES voisine.
     let b = null;
     if (cols && cols.marque != null && cols.ref != null && cols.ean != null) {
       b = {
+        catStart: cols.envoi != null && cols.cat != null ? (cols.envoi + cols.cat) / 2 : -Infinity,
         catEnd: ((cols.cat ?? cols.marque - 120) + cols.marque) / 2,
-        marqueEnd: (cols.marque + cols.ref) / 2,
+        marqueEnd: Math.min((cols.marque + cols.ref) / 2, cols.marque + 30),
         refEnd: (cols.ref + cols.ean) / 2,
       };
     }
 
     // Prix promo d'une ligne = le montant de la COLONNE « PRIX PROMO » :
-    // celui dont le X est le plus proche de l'ancre PROMO, et toujours à
-    // GAUCHE de la frontière avec la colonne AVOIR (jamais l'avoir fournisseur).
+    // le plus proche de l'ancre PROMO, strictement entre la frontière avec le
+    // prix de cession (à gauche) et celle avec l'AVOIR (à droite). Cellule
+    // promo vide -> null : on n'imprime JAMAIS un montant d'une autre colonne.
     const promoPrice = (row) => {
       if (!cols || cols.promo == null) return null;
-      const nums = row.items.filter(i => PRICE_ITEM_RE.test(i.s));
-      if (!nums.length) return null;
-      const rightLimit = cols.avoir != null ? (cols.promo + cols.avoir) / 2 : Infinity;
-      // uniquement les montants situés dans/à gauche de la colonne PRIX PROMO :
-      // si la cellule promo est vide on renvoie null, JAMAIS le montant de l'AVOIR.
-      const cand = nums.filter(i => i.x < rightLimit);
+      const leftLimit = cols.cession != null ? (cols.cession + cols.promo) / 2 : cols.promo - 45;
+      const rightLimit = cols.avoir != null ? (cols.promo + cols.avoir) / 2 : cols.promo + 45;
       let best = null, bestD = Infinity;
-      for (const i of cand) {
+      for (const i of row.items) {
+        if (!PRICE_ITEM_RE.test(i.s)) continue;
+        if (i.x <= leftLimit || i.x >= rightLimit) continue;
         const d = Math.abs(i.x - cols.promo);
         if (d < bestD) { bestD = d; best = i; }
       }
@@ -867,7 +960,7 @@ function parsePromoPdf(pages) {
       const f = { cat: '', brand: '', refs: '', price: null };
       if (!b) return f;
       const it = row.items;
-      f.cat = it.filter(i => !CODE_ITEM_RE.test(i.s) && i.x < b.catEnd && /[A-Za-zÀ-ÿ]/.test(i.s)).map(i => i.s).join(' ').trim();
+      f.cat = it.filter(i => !CODE_ITEM_RE.test(i.s) && i.x >= b.catStart && i.x < b.catEnd && /[A-Za-zÀ-ÿ]/.test(i.s)).map(i => i.s).join(' ').trim();
       f.brand = it.filter(i => i.x >= b.catEnd && i.x < b.marqueEnd && /[A-Za-zÀ-ÿ]/.test(i.s)).map(i => i.s).join(' ').trim();
       f.refs = it.filter(i => !CODE_ITEM_RE.test(i.s) && i.x >= b.marqueEnd && i.x < b.refEnd).map(i => i.s).join(' ').trim();
       f.price = promoPrice(row);
@@ -1057,57 +1150,113 @@ function setLoaded(dropId, statusId, msg) {
   document.getElementById(statusId).textContent = msg;
   updateMatchBtn();
 }
+/* Statuts de chargement des deux plans (affichés dans la zone de dépôt) + badges d'onglets */
+function renderPlanStatus() {
+  for (const t of ['tv', 'pem']) {
+    const pl = state.plans[t];
+    const stEl = document.getElementById(t === 'tv' ? 'stPromoTv' : 'stPromoPem');
+    if (stEl) stEl.textContent = pl.promoProducts.length
+      ? `${pl.icon} ${pl.label} : ✅ ${pl.promoProducts.length} produit(s) — ${pl.promoFileName}`
+      : `${pl.icon} ${pl.label} : aucun fichier chargé`;
+    const tab = document.getElementById(t === 'tv' ? 'tabTv' : 'tabPem');
+    const badge = document.getElementById(t === 'tv' ? 'badgeTv' : 'badgePem');
+    if (badge) badge.textContent = pl.products.length || pl.promoProducts.length || 0;
+    if (tab) tab.classList.toggle('has-data', !!pl.promoProducts.length);
+  }
+  if (state.plans.tv.promoProducts.length || state.plans.pem.promoProducts.length)
+    document.getElementById('dropPromo').classList.add('loaded');
+  const pl = state.plans[state.plan];
+  const t2 = document.getElementById('step2Title');
+  if (t2) t2.textContent = `🛒 ${pl.icon} ${pl.label} — produits de votre magasin en offre`;
+}
+/* Changement d'onglet : tout le flux (étapes 1 à 4) bascule sur le plan choisi */
+function setPlan(t) {
+  if (!state.plans[t] || state.plan === t) return;
+  state.plan = t;
+  document.getElementById('tabTv').classList.toggle('active', t === 'tv');
+  document.getElementById('tabPem').classList.toggle('active', t === 'pem');
+  renderPlanStatus();
+  updateMatchBtn();
+  updateCoverage();
+  renderTable();
+}
 function updateMatchBtn() {
   const ready = state.promoProducts.length && state.storeKeys.size;
   document.getElementById('btnMatch').disabled = !ready;
-  // auto-croisement : dès que plan promo + valorisation sont prêts, on croise
-  // automatiquement (une seule fois, et seulement si rien n'a encore été généré)
-  if (ready && !state._autoMatched && !state.products.length) {
-    state._autoMatched = true;
-    runMatch();
+  autoMatchPlans();
+}
+/* Auto-croisement : dès qu'un plan promo + la valorisation sont prêts, on
+   croise automatiquement (une seule fois par jeu de fichiers). L'onglet actif
+   ouvre l'étape 2 ; l'autre onglet est croisé silencieusement en arrière-plan. */
+function autoMatchPlans() {
+  if (!state.storeKeys.size) return;
+  for (const t of ['tv', 'pem']) {
+    const pl = state.plans[t];
+    if (!pl.promoProducts.length || pl._autoMatched || pl.products.length) continue;
+    pl._autoMatched = true;
+    if (t === state.plan) runMatch();
+    else withPlan(t, doMatch);
   }
+  renderPlanStatus();
 }
 
-async function handlePromoFile(files) {
-  // accepte un seul fichier ou plusieurs (PEM + TV…) : on FUSIONNE les références
+async function handlePromoFile(files, forcedType) {
+  // accepte un ou plusieurs fichiers ; chaque PDF est reconnu (TV ou PEM)
+  // par son titre / ses en-têtes et rangé dans l'onglet correspondant
   files = Array.isArray(files) ? files : [files];
   if (!files.length) return;
-  document.getElementById('stPromo').textContent = files.length > 1
-    ? `⏳ Analyse de ${files.length} PDF…` : '⏳ Analyse du PDF…';
+  const stP = document.getElementById('stPromo');
+  stP.textContent = files.length > 1 ? `⏳ Analyse de ${files.length} PDF…` : '⏳ Analyse du PDF…';
   try {
-    let all = [];
-    const names = [];
+    const byType = { tv: { prods: [], names: [] }, pem: { prods: [], names: [] } };
     for (const file of files) {
       if (file.name && file.name === state.valoFileName)
         toast('⚠️ Attention : « ' + file.name + ' » est le même fichier que la valorisation !', 6000);
       const pages = await extractPdfRows(file);
-      all = all.concat(parsePromoPdf(pages));
-      names.push(file.name || 'PDF');
+      const type = forcedType || detectPlanType(pages) || state.plan;
+      byType[type].prods = byType[type].prods.concat(parsePromoPdf(pages));
+      byType[type].names.push(file.name || 'PDF');
     }
-    // dédoublonnage par référence + période (évite les doublons en cas de recouvrement)
-    const seen = new Set();
-    all = all.filter(p => {
-      const k = (p.key || '') + '|' + (p.from || '') + '|' + (p.to || '');
-      if (seen.has(k)) return false; seen.add(k); return true;
-    });
-    if (!all.length) throw new Error('Aucun code produit trouvé dans ce(s) PDF.');
-    state.promoProducts = all;
-    state.promoFileName = names.join(' + ');
-    // nouveau jeu de plan promo → on ré-autorise le croisement automatique
-    state.products = [];
-    state._autoMatched = false;
-    setLoaded('dropPromo', 'stPromo',
-      `✅ ${all.length} produit(s) en offre — ${names.length > 1 ? names.length + ' fichiers : ' : ''}${names.join(', ')}`);
+    let total = 0;
+    const routed = [];
+    for (const t of ['tv', 'pem']) {
+      if (!byType[t].names.length) continue;
+      // dédoublonnage par référence + période (recouvrement entre fichiers)
+      const seen = new Set();
+      const prods = byType[t].prods.filter(p => {
+        const k = (p.key || '') + '|' + (p.from || '') + '|' + (p.to || '');
+        if (seen.has(k)) return false; seen.add(k); return true;
+      });
+      if (!prods.length) continue;
+      const pl = state.plans[t];
+      pl.promoProducts = prods;
+      pl.promoFileName = byType[t].names.join(' + ');
+      // nouveau jeu de plan promo → on ré-autorise le croisement automatique
+      pl.products = [];
+      pl._autoMatched = false;
+      total += prods.length;
+      routed.push(t);
+    }
+    if (!total) throw new Error('Aucun code produit trouvé dans ce(s) PDF.');
+    // dépôt manuel : si tous les fichiers concernent l'AUTRE onglet, on y
+    // bascule (jamais lors des injections automatiques de l'administrateur)
+    if (!forcedType && routed.length === 1 && routed[0] !== state.plan) {
+      toast(`ℹ️ Fichier reconnu comme ${state.plans[routed[0]].label} — onglet basculé automatiquement.`, 5000);
+      setPlan(routed[0]);
+    }
+    stP.textContent = '';
+    renderPlanStatus();
+    setLoaded('dropPromo', 'stPromo', '');
   } catch (e) {
-    document.getElementById('stPromo').textContent = '';
+    stP.textContent = '';
     toast('❌ Plan promo : ' + e.message);
   }
 }
 async function handleValoFile(file) {
   document.getElementById('stValo').textContent = '⏳ Analyse du PDF…';
   try {
-    if (file.name && file.name === state.promoFileName)
-      toast('⚠️ Attention : c\'est le même fichier que le plan promo !', 6000);
+    if (file.name && (state.plans.tv.promoFileName.includes(file.name) || state.plans.pem.promoFileName.includes(file.name)))
+      toast('⚠️ Attention : c\'est le même fichier qu\'un plan promo !', 6000);
     const pages = await extractPdfRows(file);
     const { keys, names } = parseValoPdf(pages);
     state.storeKeys = keys;
@@ -1137,7 +1286,8 @@ async function handleBaseFile(fileOrBuffer, label) {
     setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s)${withInfo}${label ? ' — ' + label : ''}`);
     await kvSet('baseEco', [...state.ecoMap.entries()]);
     await kvSet('baseInfo', [...state.baseInfo.entries()]);
-    state.products.forEach(p => { if (p.eco == null && state.ecoMap.has(normCode(p.ean))) p.eco = state.ecoMap.get(normCode(p.ean)); });
+    for (const t of Object.keys(state.plans))
+      state.plans[t].products.forEach(p => { if (p.eco == null && state.ecoMap.has(normCode(p.ean))) p.eco = state.ecoMap.get(normCode(p.ean)); });
     renderTable();
   } catch (e) {
     document.getElementById('stBase').textContent = '';
@@ -1157,6 +1307,14 @@ function bindDrop(dropId, inputId, handler) {
 }
 bindDrop('dropPromo', 'filePromo', handlePromoFile);
 bindDrop('dropValo', 'fileValo', handleValoFile);
+// entrées dédiées aux plans partagés publiés par l'admin : type imposé,
+// pas d'ambiguïté de détection (l'admin publie TV et PEM séparément)
+document.getElementById('filePromoTv').addEventListener('change', e => {
+  if (e.target.files.length) handlePromoFile([...e.target.files], 'tv');
+});
+document.getElementById('filePromoPem').addEventListener('change', e => {
+  if (e.target.files.length) handlePromoFile([...e.target.files], 'pem');
+});
 document.getElementById('adminBaseFile').addEventListener('change', e => {
   if (e.target.files[0]) handleBaseFile(e.target.files[0], e.target.files[0].name);
   e.target.value = '';
@@ -1195,7 +1353,8 @@ function logicalSort(arr) {
   return out;
 }
 
-function runMatch() {
+/* Croisement pur (plan actif) : plan promo × valorisation -> produits imprimables */
+function doMatch() {
   state.products = state.promoProducts
     .filter(p => state.storeKeys.has(p.key))
     .map(p => ({
@@ -1211,13 +1370,17 @@ function runMatch() {
       selected: true,
     }));
   state.products = logicalSort(state.products);
+}
+function runMatch() {
+  doMatch();
   document.getElementById('navStep1').classList.add('done');
   goStep(2);
   updateCoverage();
   renderTable();
+  renderPlanStatus();
   toast(state.products.length
-    ? `✅ ${state.products.length} produit(s) de votre magasin sont en offre`
-    : '⚠️ Aucune correspondance entre le plan promo et votre magasin');
+    ? `✅ ${state.plans[state.plan].label} : ${state.products.length} produit(s) de votre magasin sont en offre`
+    : `⚠️ ${state.plans[state.plan].label} : aucune correspondance avec votre magasin`);
 }
 
 /* Taux de couverture : part des produits du plan promo réellement
@@ -1830,6 +1993,7 @@ function goStep(n) {
   const plus4w = new Date(today.getTime() + 28 * 864e5);
   document.getElementById('dateFrom').value = today.toISOString().slice(0, 10);
   document.getElementById('dateTo').value = plus4w.toISOString().slice(0, 10);
+  renderPlanStatus();
   renderTable();
   // base éco : 1) base-eco.js publiée dans le dépôt, 2) copie mémorisée localement
   if (window.BASE_ECO && BASE_ECO.data && Object.keys(BASE_ECO.data).length) {

@@ -157,7 +157,7 @@
         <div class="gmodal-head"><h2>⚙️ Réglages</h2><button class="gmodal-close" data-close>✕</button></div>
 
         <div class="gpromo-sub" style="margin-top:0">Documents communs (centrale) — publiés une fois, chargés automatiquement chez tous les magasins :</div>
-        ${Object.keys(SHARED).map(id => `
+        ${Object.keys(SHARED).filter(id => !SHARED[id].legacy).map(id => `
         <div class="gpromo">
           <div class="gpromo-title">${esc(SHARED[id].name)}${SHARED[id].multi ? ' <span style="font-weight:600;font-size:11px;opacity:.7">· plusieurs fichiers possibles</span>' : ''}</div>
           <div class="gmsg" id="ds-status-${id}">Chargement…</div>
@@ -387,8 +387,9 @@
       chips.push({ st, name: 'Valorisation', val });
     }
 
-    const labels = { 'plan-promo': 'Plan promo', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
+    const labels = { 'plan-promo-tv': 'Plan promo TV', 'plan-promo-pem': 'Plan promo PEM', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
     for (const id of Object.keys(SHARED)) {
+      if (!labels[id]) continue; // document hérité : pas de pastille dédiée
       const meta = await fetchSharedMeta(id);
       if (meta && meta.file_path && meta.updated_at) chips.push({ st: 'ok', name: labels[id], val: new Date(meta.updated_at).toLocaleDateString('fr-FR') });
       else chips.push({ st: 'none', name: labels[id], val: 'non publié' });
@@ -496,14 +497,21 @@
   };
 
   /* ---------- Documents partagés publiés par l'admin ----------
-     Même bucket "shared" + table "shared_docs" pour 3 documents communs :
-     plan promo (Étiquettes), affiches CETELEM, fichiers Média Centrale (Soldes). */
+     Même bucket "shared" + table "shared_docs" pour les documents communs :
+     plans promo TV et PEM (Étiquettes), affiches CETELEM, fichiers Média
+     Centrale (Soldes). L'ancien document unique 'plan-promo' (avant la
+     séparation TV/PEM) est conservé en lecture seule pour la transition :
+     il n'apparaît plus dans le panneau admin et n'est chargé que si aucun
+     des deux nouveaux plans n'est publié (l'outil Étiquettes reconnaît
+     alors lui-même le type TV/PEM de chaque PDF). */
   const SHARED = {
-    'plan-promo':       { name: 'Plan promo national',     accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true },
+    'plan-promo-tv':    { name: 'Plan promo TV',           accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoTv', multi: true },
+    'plan-promo-pem':   { name: 'Plan promo PEM',          accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoPem', multi: true },
+    'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
     'affiches-cetelem': { name: 'Affiches CETELEM',        accept: '.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]',     input: 'file2', multi: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
   };
-  const MODULE_DOC = { etiquette: 'plan-promo', match: 'affiches-cetelem', solde: 'medias-soldes' };
+  const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem'], match: 'affiches-cetelem', solde: 'medias-soldes' };
   const sharedFiles = {};      // id -> [File, ...] chargés (1 pour les docs simples, N pour multi)
   const sharedLoadedAt = {};   // id -> updated_at injecté
   let modOkAction = null;
@@ -580,9 +588,14 @@
     } catch (e) {}
   }
   async function loadAllSharedDocs() {
+    const metas = {};
+    for (const id of Object.keys(SHARED)) metas[id] = await fetchSharedMeta(id);
+    // migration : l'ancien plan promo unique n'est chargé que si NI le plan TV
+    // NI le plan PEM n'est publié — sinon il ferait doublon dans l'outil
+    const hasNewPlans = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
     for (const id of Object.keys(SHARED)) {
-      const meta = await fetchSharedMeta(id);
-      if (meta) await ensureSharedLoaded(id, meta);
+      if (SHARED[id].legacy && hasNewPlans) continue;
+      if (metas[id]) await ensureSharedLoaded(id, metas[id]);
     }
   }
 
@@ -595,52 +608,61 @@
     return w === 1 ? 'il y a 1 semaine' : `il y a ${w} semaines`;
   }
   const MODULE_TITLE = {
-    etiquette: '🏷️ Étiquettes — Plan promo',
+    etiquette: '🏷️ Plans Promo TV & PEM',
     match: '📄 Affiches CETELEM',
     solde: '🧮 Soldes — Média Centrale',
   };
   const MODULE_NOTE = {
-    etiquette: "Il est déjà chargé dans l'outil avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers ».",
+    etiquette: "Chaque plan publié est déjà chargé dans son onglet (TV / PEM) avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers » : elle sera reconnue et rangée dans le bon onglet.",
     match: "Les affiches publiées par la centrale sont déjà chargées dans l'outil : vous pouvez générer vos affiches directement. Déposez votre propre ZIP si vous en avez un plus récent.",
     solde: "Les fichiers Média Centrale sont déjà chargés. Ajoutez vos fichiers de regroupement magasin, puis lancez « Analyser et générer ».",
   };
   const MODULE_NOTE_EMPTY = {
-    etiquette: "Aucun plan promo publié pour le moment. Vous pouvez déposer votre propre plan promo dans l'outil.",
+    etiquette: "Aucun plan promo publié pour le moment. Vous pouvez déposer vos propres plans promo TV et PEM dans l'outil.",
     match: "Aucune affiche publiée par l'administrateur. Vous pouvez déposer votre propre ZIP d'affiches dans l'outil.",
     solde: "Aucun fichier Média Centrale publié. Vous pouvez déposer vos propres fichiers dans l'outil.",
   };
 
   // Pop-up affiché UNE fois (par session, par module) à l'ouverture d'un outil
   let moduleSeen = {};
-  async function showModulePopup(name, id) {
-    const cfg = SHARED[id];
-    el('modTitle').textContent = MODULE_TITLE[name] || cfg.name;
+  async function showModulePopup(name, ids) {
+    ids = [].concat(ids);
+    el('modTitle').textContent = MODULE_TITLE[name] || SHARED[ids[0]].name;
     el('modBody').innerHTML = '<div class="gempty">Vérification…</div>';
     modOkAction = () => { moduleSeen[name] = true; if (window.switchView) window.switchView(name); };
     el('modModal').classList.add('show');
-    const meta = await fetchSharedMeta(id);
-    if (meta) await ensureSharedLoaded(id, meta); // récupère la dernière version éventuelle
-    const body = el('modBody');
-    if (meta && meta.file_path && meta.updated_at) {
-      const dt = new Date(meta.updated_at);
-      const dateStr = dt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
-      body.innerHTML = `
-        <div class="promo-ok">✅ ${esc(cfg.name)} disponible et chargé</div>
-        <div class="promo-info"><b>Fichier :</b> ${esc(meta.file_name || '')}</div>
-        <div class="promo-info"><b>Mis en ligne le :</b> ${esc(dateStr)} <span class="promo-age">(${esc(relAge(dt))})</span></div>
-        <div class="promo-note">${MODULE_NOTE[name] || ''}</div>`;
-    } else {
-      body.innerHTML = `
-        <div class="promo-warn">⚠️ Aucun document publié par l'administrateur pour cet outil.</div>
-        <div class="promo-note">${MODULE_NOTE_EMPTY[name] || ''}</div>`;
+    const lines = [];
+    let published = 0;
+    for (const id of ids) {
+      const meta = await fetchSharedMeta(id);
+      if (meta) await ensureSharedLoaded(id, meta); // récupère la dernière version éventuelle
+      if (meta && meta.file_path && meta.updated_at) {
+        published++;
+        const dt = new Date(meta.updated_at);
+        const dateStr = dt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
+        lines.push(`<div class="promo-ok">✅ ${esc(SHARED[id].name)} — chargé</div>
+          <div class="promo-info"><b>Mis en ligne le :</b> ${esc(dateStr)} <span class="promo-age">(${esc(relAge(dt))})</span></div>`);
+      } else {
+        lines.push(`<div class="promo-warn">⚠️ ${esc(SHARED[id].name)} — non publié par l'administrateur</div>`);
+      }
     }
+    // transition : ancien plan promo unique encore publié à la place des deux nouveaux
+    if (name === 'etiquette' && !published) {
+      const legacy = await fetchSharedMeta('plan-promo');
+      if (legacy && legacy.file_path) {
+        published++;
+        lines.push(`<div class="promo-info">ℹ️ L'ancien plan promo (format unique) est chargé : chaque PDF est reconnu (TV ou PEM) et rangé dans son onglet.</div>`);
+      }
+    }
+    el('modBody').innerHTML = lines.join('') +
+      `<div class="promo-note">${(published ? MODULE_NOTE[name] : MODULE_NOTE_EMPTY[name]) || ''}</div>`;
   }
   // Portail consulté par le moteur avant d'ouvrir un outil
   window.moduleGate = function (name) {
-    const id = MODULE_DOC[name];
-    if (!id) return true;                 // module sans document partagé
+    const ids = MODULE_DOC[name];
+    if (!ids) return true;                // module sans document partagé
     if (moduleSeen[name]) return true;    // déjà vu cette session
-    showModulePopup(name, id);
+    showModulePopup(name, ids);
     return false;
   };
 
