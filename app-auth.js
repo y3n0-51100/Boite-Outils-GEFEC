@@ -508,7 +508,7 @@
     'plan-promo-tv':    { name: 'Plan promo TV',           accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoTv', multi: true },
     'plan-promo-pem':   { name: 'Plan promo PEM',          accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoPem', multi: true },
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
-    'affiches-cetelem': { name: 'Affiches CETELEM',        accept: '.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]',     input: 'file2', multi: true },
+    'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
   };
   const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem'], match: 'affiches-cetelem', solde: 'medias-soldes' };
@@ -614,12 +614,12 @@
   };
   const MODULE_NOTE = {
     etiquette: "Chaque plan publié est déjà chargé dans son onglet (TV / PEM) avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers » : elle sera reconnue et rangée dans le bon onglet.",
-    match: "Les affiches publiées par la centrale sont déjà chargées dans l'outil : vous pouvez générer vos affiches directement. Déposez votre propre ZIP si vous en avez un plus récent.",
+    match: "Le dépliant CETELEM publié par la centrale est déjà chargé dans l'outil : vous pouvez générer vos affiches directement. Déposez votre propre dépliant (PDF ou ZIP) si vous en avez un plus récent.",
     solde: "Les fichiers Média Centrale sont déjà chargés. Ajoutez vos fichiers de regroupement magasin, puis lancez « Analyser et générer ».",
   };
   const MODULE_NOTE_EMPTY = {
     etiquette: "Aucun plan promo publié pour le moment. Vous pouvez déposer vos propres plans promo TV et PEM dans l'outil.",
-    match: "Aucune affiche publiée par l'administrateur. Vous pouvez déposer votre propre ZIP d'affiches dans l'outil.",
+    match: "Aucun dépliant CETELEM publié par l'administrateur. Vous pouvez déposer votre propre dépliant (PDF de la centrale ou ZIP) dans l'outil.",
     solde: "Aucun fichier Média Centrale publié. Vous pouvez déposer vos propres fichiers dans l'outil.",
   };
 

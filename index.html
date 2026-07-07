@@ -359,8 +359,8 @@ main{flex:1;position:relative;overflow:hidden}
               </div>
             </div>
             <div class="tc-title">Affiches CETELEM</div>
-            <div class="tc-sub">EAN_*.PDF · A5 / A4</div>
-            <div class="tc-desc">Sélectionne et imprime les affiches de financement, uniquement sur vos produits réellement en exposition.</div>
+            <div class="tc-sub">Dépliant PDF · A5 / A4</div>
+            <div class="tc-desc">Lit le dépliant unique de la centrale, croise chaque affiche de financement avec vos produits en exposition, et imprime celles qui vous concernent.</div>
             <div class="tc-footer"><span class="tc-cta">Ouvrir l'outil</span>
               <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
           </button>
@@ -1043,16 +1043,16 @@ main{flex:1;position:relative;overflow:hidden}
       <section class="section">
         <div class="section-header">
           <div class="step-badge" id="badge2"><span>1</span></div>
-          <div class="section-title">ZIP des affiches</div>
-          <div class="section-hint">EAN_*.PDF</div>
+          <div class="section-title">Dépliant CETELEM</div>
+          <div class="section-hint">PDF unique · 1 affiche / page</div>
         </div>
         <label class="dropzone" id="zone2">
-          <input type="file" id="file2" accept=".zip,application/zip,application/x-zip-compressed" multiple>
+          <input type="file" id="file2" accept=".pdf,application/pdf,.zip,application/zip,application/x-zip-compressed" multiple>
           <div class="dropzone-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
-          <div class="dropzone-text" id="zone2-text">Déposer le(s) ZIP</div>
-          <div class="dropzone-info" id="zone2-info">.zip · plusieurs possibles · EAN en début de nom de fichier</div>
+          <div class="dropzone-text" id="zone2-text">Déposer le dépliant PDF</div>
+          <div class="dropzone-info" id="zone2-info">PDF de la centrale (ou ZIP le contenant) — EAN lu sur chaque page</div>
         </label>
         <div class="progress hidden" id="prog2"><div class="progress-fill" id="progFill2"></div></div>
         <div class="console">
@@ -1084,7 +1084,7 @@ main{flex:1;position:relative;overflow:hidden}
           <div class="stat-value" id="statValo">0</div>
         </div>
         <div class="stat">
-          <div class="stat-label">Affiches dans le ZIP</div>
+          <div class="stat-label">Affiches du dépliant</div>
           <div class="stat-value" id="statZip">0</div>
         </div>
         <div class="stat accent">
@@ -1129,8 +1129,8 @@ main{flex:1;position:relative;overflow:hidden}
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
           <div class="empty-text">
-            Importer le <code>ZIP des affiches</code>.
-            L'outil croisera automatiquement les EANs avec la valorisation (importée depuis l'accueil) et préparera la liste des affiches à imprimer.
+            Importer le <code>dépliant CETELEM</code> (PDF de la centrale).
+            L'outil lit l'EAN de chaque affiche, les croise automatiquement avec la valorisation (importée depuis l'accueil) et prépare la liste des affiches à imprimer.
           </div>
         </div>
 
@@ -1155,7 +1155,8 @@ main{flex:1;position:relative;overflow:hidden}
 
   const state = {
     valoEans: null,
-    zipFiles: null,
+    zipFiles: null,       // affiches indexées : [{ ean, srcId, pageIndex, filename }]
+    sources: null,        // Map srcId -> { name, bytes } : PDF sources (dépliant unique ou fichiers du ZIP)
     matches: null,
     cachedPdfBytes: null,
     cachedSelectedKey: '',
@@ -1288,61 +1289,100 @@ main{flex:1;position:relative;overflow:hidden}
     }
   }
 
-  async function handleZip(input) {
-    // accepte un ZIP unique OU plusieurs ZIP : les affiches sont FUSIONNÉES
-    const zips = (Array.isArray(input) ? input : [input]).filter(f => f && f.name.toLowerCase().endsWith('.zip'));
-    if (!zips.length) {
-      log2.log('error', 'Format invalide — un (ou plusieurs) fichier .zip est attendu');
-      return;
+  // EAN d'une affiche : le format actuel de la centrale imprime « EAN : 1234567890123 »
+  // sur chaque page ; repli sur n'importe quel groupe de 13 chiffres si besoin.
+  const EAN_TEXT_RE = /EAN\s*[:.]?\s*(\d{13})/i;
+  const EAN_ANY_RE = /(?:^|[^0-9])(\d{13})(?:[^0-9]|$)/;
+
+  // Récupère les PDF sources depuis l'entrée : dépliant CETELEM en PDF unique
+  // (une affiche par page) OU, rétro-compatibilité, ZIP(s) d'affiches EAN_*.pdf.
+  async function collectPdfSources(input) {
+    const files = (Array.isArray(input) ? input : [input]).filter(Boolean);
+    const out = [];
+    for (const f of files) {
+      const lower = (f.name || '').toLowerCase();
+      if (lower.endsWith('.zip')) {
+        const zip = await JSZip.loadAsync(f);
+        const names = Object.keys(zip.files)
+          .filter(n => !zip.files[n].dir && n.toLowerCase().endsWith('.pdf')).sort();
+        for (const n of names) {
+          out.push({ name: n.split('/').pop(), bytes: await zip.files[n].async('uint8array') });
+        }
+      } else if (lower.endsWith('.pdf')) {
+        out.push({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+      }
     }
+    return out;
+  }
+
+  async function handleZip(input) {
     hideAlerts();
     setStepStatus(2, 'active');
     log2.busy('lecture en cours');
-    log2.log('info', `${zips.length} archive(s) : ${zips.map(z => z.name).join(', ')}`);
-
     try {
       const t0 = performance.now();
-      const files = [];
-      const seen = new Set();
-      let withoutEan = 0, totalPdf = 0, done = 0;
-
-      // 1er passage : compter les PDF pour la barre de progression
-      const loaded = [];
-      for (const zf of zips) {
-        const zip = await JSZip.loadAsync(zf);
-        const pdfEntries = Object.keys(zip.files).filter(n => !zip.files[n].dir && n.toLowerCase().endsWith('.pdf'));
-        totalPdf += pdfEntries.length;
-        loaded.push({ zip, pdfEntries, name: zf.name });
+      const sources = await collectPdfSources(input);
+      if (!sources.length) {
+        log2.log('error', 'Format invalide — dépliant PDF ou ZIP d’affiches attendu');
+        log2.idle('échec'); setProgress(2, null); setStepStatus(2, null);
+        return;
       }
-      log2.log('info', `${totalPdf} fichiers PDF au total`);
+      log2.log('info', `${sources.length} PDF source(s) à indexer`);
 
-      for (const { zip, pdfEntries } of loaded) {
-        for (const name of pdfEntries) {
-          const baseName = name.split('/').pop();
-          const eanMatch = baseName.match(/^(\d{13})/);
-          if (eanMatch) {
-            const key = eanMatch[1] + '|' + baseName;
-            if (!seen.has(key)) { // évite les doublons si une affiche est présente dans plusieurs ZIP
-              seen.add(key);
-              files.push({ ean: eanMatch[1], filename: baseName, fullPath: name, zipObj: zip.files[name] });
-            }
-          } else {
-            withoutEan++;
-          }
-          done++;
-          setProgress(2, (done / Math.max(totalPdf, 1)) * 100);
+      const affiches = [];
+      const srcStore = new Map();
+      const seen = new Set();
+      let withoutEan = 0, totalPages = 0, donePages = 0;
+
+      // ouverture unique de chaque source (réutilisée pour l'indexation)
+      const opened = [];
+      for (const s of sources) {
+        const doc = await pdfjsLib.getDocument({ data: s.bytes.slice() }).promise;
+        totalPages += doc.numPages;
+        opened.push(doc);
+      }
+      log2.log('info', `${totalPages} page(s) / affiche(s) au total`);
+
+      for (let s = 0; s < sources.length; s++) {
+        const srcId = 's' + s;
+        srcStore.set(srcId, sources[s]);
+        const doc = opened[s];
+        // EAN de secours depuis le nom de fichier (ancien format 1 affiche/fichier)
+        const fnEan = (sources[s].name.match(/(\d{13})/) || [])[1] || null;
+        for (let p = 1; p <= doc.numPages; p++) {
+          const page = await doc.getPage(p);
+          const tc = await page.getTextContent();
+          const withSp = tc.items.map(i => i.str).join(' ');
+          const noSp = tc.items.map(i => i.str).join('');
+          const m = withSp.match(EAN_TEXT_RE) || noSp.match(EAN_TEXT_RE)
+                 || withSp.match(EAN_ANY_RE) || noSp.match(EAN_ANY_RE);
+          const ean = m ? m[1] : (doc.numPages === 1 ? fnEan : null);
+          // libellé produit lisible (texte en capitales précédant « EAN : »)
+          let label = '';
+          const lm = withSp.match(/([A-Z0-9][A-Z0-9 ._\/-]{2,40})\s+EAN\s*[:.]/i);
+          if (lm) label = lm[1].replace(/\s+/g, ' ').trim();
+          donePages++;
+          setProgress(2, (donePages / Math.max(totalPages, 1)) * 100);
+          if (!ean) { withoutEan++; continue; }
+          const key = srcId + '#' + (p - 1);
+          if (seen.has(key)) continue; seen.add(key);
+          affiches.push({ ean, srcId, pageIndex: p - 1, filename: label || `${ean} — p.${p}` });
         }
+        try { await doc.cleanup(); await doc.destroy(); } catch (e) {}
       }
       const dt = ((performance.now() - t0) / 1000).toFixed(2);
 
-      state.zipFiles = files;
+      state.sources = srcStore;
+      state.zipFiles = affiches;
+      const inputFiles = (Array.isArray(input) ? input : [input]).filter(Boolean);
       const zone = document.getElementById('zone2');
       zone.classList.add('loaded');
-      document.getElementById('zone2-text').textContent = zips.length > 1 ? `${zips.length} ZIP` : zips[0].name;
-      document.getElementById('zone2-info').textContent = `${files.length} affiches indexées`;
+      document.getElementById('zone2-text').textContent =
+        inputFiles.length === 1 ? inputFiles[0].name : `${inputFiles.length} fichiers`;
+      document.getElementById('zone2-info').textContent = `${affiches.length} affiches indexées`;
 
-      log2.log('success', `${files.length} affiches valides en ${dt}s`);
-      if (withoutEan > 0) log2.log('warn', `${withoutEan} fichier(s) ignoré(s) (pas d'EAN en début de nom)`);
+      log2.log('success', `${affiches.length} affiches valides en ${dt}s`);
+      if (withoutEan > 0) log2.log('warn', `${withoutEan} page(s) sans EAN ignorée(s)`);
       log2.ready('terminé');
       setProgress(2, null);
       setStepStatus(2, 'done');
@@ -1378,11 +1418,11 @@ main{flex:1;position:relative;overflow:hidden}
     if (matches.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'list-row no-match';
-      empty.textContent = 'Aucun EAN de la valorisation ne correspond à un fichier du ZIP.';
+      empty.textContent = 'Aucun EAN de la valorisation ne correspond à une affiche du dépliant.';
       rows.appendChild(empty);
       document.getElementById('btnSave').disabled = true;
       document.getElementById('btnPrint').disabled = true;
-      showAlert('warning', 'Aucune correspondance entre les EANs exposés et les affiches du ZIP.');
+      showAlert('warning', 'Aucune correspondance entre les EANs exposés et les affiches du dépliant.');
       setGlobalStatus('aucun match');
     } else {
       // Regrouper par EAN
@@ -1522,7 +1562,7 @@ main{flex:1;position:relative;overflow:hidden}
     updateSelectedCount();
   });
 
-  function selectionKey(items) { return items.map(i => i.fullPath).join('|'); }
+  function selectionKey(items) { return items.map(i => i.srcId + '#' + i.pageIndex).join('|'); }
 
   async function generatePdf(items, statusCb) {
     const { PDFDocument, StandardFonts, rgb, PDFName } = PDFLib;
@@ -1550,125 +1590,117 @@ main{flex:1;position:relative;overflow:hidden}
 
     const errors = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (statusCb) statusCb(i, items.length, item.filename);
+    // Extrait (et retire) les champs de formulaire texte d'une page source pour
+    // les ré-imprimer en texte plat sur la page copiée (ancien format d'affiches
+    // à champs remplissables). Le dépliant actuel n'a aucun champ : renvoie []
+    // et la page est copiée telle quelle (montants déjà imprimés).
+    function extractPageFields(src, page) {
+      const annots = page.node.Annots();
+      if (!annots) return [];
+      const fields = [];
+      const indicesToRemove = [];
+      for (let k = 0; k < annots.size(); k++) {
+        const annot = src.context.lookup(annots.get(k));
+        if (!annot || !annot.get) continue;
+        const subtype = annot.get(PDFName.of('Subtype'));
+        if (!subtype || subtype.toString() !== '/Widget') continue;
+        let ft = annot.get(PDFName.of('FT'));
+        let value = annot.get(PDFName.of('V'));
+        let da = annot.get(PDFName.of('DA'));
+        let q = annot.get(PDFName.of('Q'));
+        let parent = annot.get(PDFName.of('Parent'));
+        while (parent && (!ft || !value || !da)) {
+          const parentObj = src.context.lookup(parent);
+          if (!parentObj || !parentObj.get) break;
+          if (!ft) ft = parentObj.get(PDFName.of('FT'));
+          if (!value) value = parentObj.get(PDFName.of('V'));
+          if (!da) da = parentObj.get(PDFName.of('DA'));
+          if (!q) q = parentObj.get(PDFName.of('Q'));
+          parent = parentObj.get(PDFName.of('Parent'));
+        }
+        if (!ft || ft.toString() !== '/Tx') continue;
+        indicesToRemove.push(k);
+        let valueStr = '';
+        if (value) {
+          if (typeof value.decodeText === 'function') valueStr = value.decodeText();
+          else if (value.value !== undefined) valueStr = value.value;
+          else valueStr = value.toString().replace(/^\(|\)$/g, '').replace(/^<|>$/g, '');
+        }
+        if (!valueStr) continue;
+        const rect = annot.get(PDFName.of('Rect'));
+        if (!rect || !rect.array) continue;
+        const r = rect.array.map(n => n.numberValue !== undefined ? n.numberValue : parseFloat(n.toString()));
+        let daStr = '';
+        if (da) {
+          if (typeof da.decodeText === 'function') daStr = da.decodeText();
+          else if (da.value !== undefined) daStr = da.value;
+          else daStr = da.toString().replace(/^\(|\)$/g, '');
+        }
+        const qNum = q ? (q.numberValue !== undefined ? q.numberValue : parseInt(q.toString())) : 0;
+        const { fontSize, color } = parseDA(daStr);
+        fields.push({ value: valueStr, x: r[0], y: r[1], width: r[2] - r[0], height: r[3] - r[1], fontSize, color, align: qNum });
+      }
+      for (let k = indicesToRemove.length - 1; k >= 0; k--) annots.remove(indicesToRemove[k]);
+      const seen = new Set();
+      return fields.filter(f => {
+        const key = `${f.value}|${f.x.toFixed(1)}|${f.y.toFixed(1)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function drawFields(p, fields) {
+      for (const fld of fields) {
+        let fontSize = fld.fontSize;
+        const font = (fontSize > 20 || fontSize === 0) ? helvBold : helv;
+        if (fontSize === 0) {
+          fontSize = fld.height * 0.7;
+          let textWidth = font.widthOfTextAtSize(fld.value, fontSize);
+          const maxWidth = fld.width - 2;
+          while (textWidth > maxWidth && fontSize > 4) {
+            fontSize *= 0.95;
+            textWidth = font.widthOfTextAtSize(fld.value, fontSize);
+          }
+        }
+        const textWidth = font.widthOfTextAtSize(fld.value, fontSize);
+        let drawX = fld.x + 1;
+        if (fld.align === 1) drawX = fld.x + (fld.width - textWidth) / 2;
+        else if (fld.align === 2) drawX = fld.x + fld.width - textWidth - 1;
+        const drawY = fld.y + (fld.height - fontSize) / 2 + fontSize * 0.18;
+        p.drawText(fld.value, { x: drawX, y: drawY, size: fontSize, font: font, color: fld.color });
+      }
+    }
+
+    // Regrouper les affiches sélectionnées par PDF source : une seule
+    // copyPages() par source déduplique les ressources partagées (logo, fonds)
+    // et garde le PDF de sortie compact.
+    const bySrc = new Map();
+    for (const it of items) {
+      if (!bySrc.has(it.srcId)) bySrc.set(it.srcId, []);
+      bySrc.get(it.srcId).push(it);
+    }
+    let done = 0;
+    for (const [srcId, group] of bySrc) {
+      const source = state.sources && state.sources.get(srcId);
+      if (!source) { group.forEach(it => { errors.push(it.filename); done++; }); continue; }
       try {
-        const pdfBytes = await item.zipObj.async('uint8array');
-        const src = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-
-        const fieldsByPage = {};
+        const src = await PDFDocument.load(source.bytes, { ignoreEncryption: true });
         const srcPages = src.getPages();
-
-        for (let pageIdx = 0; pageIdx < srcPages.length; pageIdx++) {
-          const annots = srcPages[pageIdx].node.Annots();
-          if (!annots) continue;
-          fieldsByPage[pageIdx] = [];
-          const indicesToRemove = [];
-
-          for (let k = 0; k < annots.size(); k++) {
-            const annotRef = annots.get(k);
-            const annot = src.context.lookup(annotRef);
-            if (!annot || !annot.get) continue;
-
-            const subtype = annot.get(PDFName.of('Subtype'));
-            if (!subtype || subtype.toString() !== '/Widget') continue;
-
-            let ft = annot.get(PDFName.of('FT'));
-            let value = annot.get(PDFName.of('V'));
-            let da = annot.get(PDFName.of('DA'));
-            let q = annot.get(PDFName.of('Q'));
-
-            let parent = annot.get(PDFName.of('Parent'));
-            while (parent && (!ft || !value || !da)) {
-              const parentObj = src.context.lookup(parent);
-              if (!parentObj || !parentObj.get) break;
-              if (!ft) ft = parentObj.get(PDFName.of('FT'));
-              if (!value) value = parentObj.get(PDFName.of('V'));
-              if (!da) da = parentObj.get(PDFName.of('DA'));
-              if (!q) q = parentObj.get(PDFName.of('Q'));
-              parent = parentObj.get(PDFName.of('Parent'));
-            }
-
-            if (!ft || ft.toString() !== '/Tx') continue;
-            indicesToRemove.push(k);
-
-            let valueStr = '';
-            if (value) {
-              if (typeof value.decodeText === 'function') valueStr = value.decodeText();
-              else if (value.value !== undefined) valueStr = value.value;
-              else valueStr = value.toString().replace(/^\(|\)$/g, '').replace(/^<|>$/g, '');
-            }
-            if (!valueStr) continue;
-
-            const rect = annot.get(PDFName.of('Rect'));
-            if (!rect || !rect.array) continue;
-            const r = rect.array.map(n => n.numberValue !== undefined ? n.numberValue : parseFloat(n.toString()));
-
-            let daStr = '';
-            if (da) {
-              if (typeof da.decodeText === 'function') daStr = da.decodeText();
-              else if (da.value !== undefined) daStr = da.value;
-              else daStr = da.toString().replace(/^\(|\)$/g, '');
-            }
-            const qNum = q ? (q.numberValue !== undefined ? q.numberValue : parseInt(q.toString())) : 0;
-            const { fontSize, color } = parseDA(daStr);
-
-            fieldsByPage[pageIdx].push({
-              value: valueStr,
-              x: r[0], y: r[1],
-              width: r[2] - r[0], height: r[3] - r[1],
-              fontSize, color, align: qNum,
-            });
-          }
-
-          for (let k = indicesToRemove.length - 1; k >= 0; k--) {
-            annots.remove(indicesToRemove[k]);
-          }
-        }
-
-        for (const idx in fieldsByPage) {
-          const seen = new Set();
-          fieldsByPage[idx] = fieldsByPage[idx].filter(f => {
-            const key = `${f.value}|${f.x.toFixed(1)}|${f.y.toFixed(1)}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-        }
-
+        const pageIdxs = group.map(it => it.pageIndex);
+        const fieldsByPage = pageIdxs.map(idx => extractPageFields(src, srcPages[idx]));
         const catalog = src.catalog;
-        if (catalog.has(PDFName.of('AcroForm'))) {
-          catalog.delete(PDFName.of('AcroForm'));
-        }
-
-        const copied = await merged.copyPages(src, src.getPageIndices());
-        copied.forEach((p, pageIdx) => {
+        if (catalog.has(PDFName.of('AcroForm'))) catalog.delete(PDFName.of('AcroForm'));
+        const copied = await merged.copyPages(src, pageIdxs);
+        copied.forEach((p, i) => {
           merged.addPage(p);
-          const fields = fieldsByPage[pageIdx] || [];
-          for (const fld of fields) {
-            let fontSize = fld.fontSize;
-            const font = (fontSize > 20 || fontSize === 0) ? helvBold : helv;
-            if (fontSize === 0) {
-              fontSize = fld.height * 0.7;
-              let textWidth = font.widthOfTextAtSize(fld.value, fontSize);
-              const maxWidth = fld.width - 2;
-              while (textWidth > maxWidth && fontSize > 4) {
-                fontSize *= 0.95;
-                textWidth = font.widthOfTextAtSize(fld.value, fontSize);
-              }
-            }
-            const textWidth = font.widthOfTextAtSize(fld.value, fontSize);
-            let drawX = fld.x + 1;
-            if (fld.align === 1) drawX = fld.x + (fld.width - textWidth) / 2;
-            else if (fld.align === 2) drawX = fld.x + fld.width - textWidth - 1;
-            const drawY = fld.y + (fld.height - fontSize) / 2 + fontSize * 0.18;
-            p.drawText(fld.value, { x: drawX, y: drawY, size: fontSize, font: font, color: fld.color });
-          }
+          drawFields(p, fieldsByPage[i]);
+          if (statusCb) statusCb(done, items.length, group[i].filename);
+          done++;
         });
       } catch (e) {
         console.error(e);
-        errors.push(item.filename);
+        group.forEach(it => { errors.push(it.filename); done++; });
       }
     }
 
