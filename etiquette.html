@@ -6,8 +6,6 @@
 <title>Étiquettes 2.0 — Promos &amp; Bons Plans</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 /* Police officielle de la charte : Archivo (super-famille, OFL).
    Police variable intégrée (axes wght 100-900 + wdth 62-125) reproduisant
@@ -502,7 +500,6 @@ table.prod tr.multi:hover td{background:#fff3df}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn alt" onclick="goStep(3)">Préparer / ajuster →</button>
-        <button class="btn alt" onclick="downloadPdf()">⬇️ Télécharger le PDF</button>
         <button class="btn" onclick="printNow()">🖨️ Imprimer directement</button>
       </div>
     </div>
@@ -571,7 +568,6 @@ table.prod tr.multi:hover td{background:#fff3df}
     <h2>👀 Aperçu <span style="font-weight:600;font-size:13px;color:#999" id="previewInfo"></span></h2>
     <div class="previewwrap" id="previewWrap"></div>
     <div class="bigaction" style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-      <button class="btn alt" onclick="downloadPdf()">⬇️ Télécharger le PDF</button>
       <button class="btn" onclick="doPrint()">🖨️ Imprimer</button>
     </div>
   </div>
@@ -1355,13 +1351,17 @@ function logicalSort(arr) {
 
 /* Croisement pur (plan actif) : plan promo × valorisation -> produits imprimables */
 function doMatch() {
+  // Plan TV : la colonne « TECHNO » du PDF (4K, Full HD, QLED, Mini LED…) est
+  // sans intérêt client sur l'étiquette — on affiche toujours « TÉLÉVISEUR ».
+  // Le plan PEM garde sa vraie catégorie (ASPIRATEUR BALAI, EXPRESSO…), inchangée.
+  const catFor = state.plan === 'tv' ? () => 'TÉLÉVISEUR' : (p) => p.cat || '';
   state.products = state.promoProducts
     .filter(p => state.storeKeys.has(p.key))
     .map(p => ({
       id: nextId++,
       ean: p.ean,
       name: p.name || state.storeNames.get(p.key) || '',
-      cat: p.cat || '',
+      cat: catFor(p),
       brand: p.brand || '',
       price: p.price,
       oldPrice: null,
@@ -1775,41 +1775,6 @@ function doPrint() {
     ? '@page{size:A4 portrait;margin:0}'
     : '@page{size:A4 landscape;margin:0}';
   window.print();
-}
-
-/* Export PDF téléchargeable : rasterise chaque feuille (html2canvas) et la
-   place sur une page A4 (jsPDF), à l'identique de l'impression. */
-async function downloadPdf() {
-  const sheets = buildSheets();
-  if (!sheets.length) { toast('⚠️ Aucun produit sélectionné'); return; }
-  if (!window.html2canvas || !window.jspdf) { toast('⚠️ Module PDF indisponible, utilisez « Imprimer »', true); return; }
-  const land = state.fmt !== 'a4';
-  const W = land ? 297 : 210, H = land ? 210 : 297;
-  toast('⏳ Génération du PDF…');
-  // conteneur hors-écran, à la taille réelle, pour une capture fidèle
-  const stage = document.createElement('div');
-  stage.style.cssText = `position:fixed;left:-20000px;top:0;background:#fff`;
-  stage.innerHTML = sheets.join('');
-  document.body.appendChild(stage);
-  try {
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: land ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
-    const els = stage.querySelectorAll('.sheet');
-    for (let i = 0; i < els.length; i++) {
-      const canvas = await html2canvas(els[i], { scale: 2, useCORS: true, backgroundColor: '#fff', logging: false });
-      const img = canvas.toDataURL('image/jpeg', 0.92);
-      if (i > 0) pdf.addPage('a4', land ? 'landscape' : 'portrait');
-      pdf.addImage(img, 'JPEG', 0, 0, W, H);
-    }
-    const d = new Date().toISOString().slice(0, 10);
-    pdf.save(`affiches-${state.tpl}-${d}.pdf`);
-    toast('✅ PDF téléchargé');
-  } catch (e) {
-    toast('Échec de la génération : ' + (e.message || e), true);
-  } finally {
-    stage.remove();
-  }
 }
 
 /* ============================================================
