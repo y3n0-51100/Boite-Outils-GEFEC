@@ -9,7 +9,7 @@ claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
 | Outil | Rôle | Valorisation requise |
 | --- | --- | --- |
 | **Affiches CETELEM** | Sélectionne et imprime les affiches de financement sur les produits exposés (PDF valorisation + ZIP des affiches `EAN_*.pdf`). | Oui |
-| **Étiquettes 2.0** | Croise le plan promo national avec le stock magasin et imprime les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. | Oui |
+| **Plans Promo TV & PEM** (Étiquettes 2.0) | Deux onglets — **Plan Promo TV** et **Plan Promo PEM** — croisent chaque plan promo national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. | Oui |
 | **Soldes Magasin** | Déduplique le listing magasin vs Média Centrale, imprimable. | Non |
 
 ## Architecture
@@ -25,7 +25,9 @@ claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
 
 La **valorisation** est déposée une seule fois sur l'accueil et transmise
 automatiquement aux outils qui en ont besoin (Affiches CETELEM et Étiquettes).
-Pour Étiquettes, il ne reste qu'à déposer le plan promo national dans l'outil.
+Pour Plans Promo TV & PEM, il ne reste qu'à déposer les plans promo (TV et/ou PEM,
+reconnus automatiquement) dans l'outil — ou à les publier depuis le compte
+administrateur pour tous les magasins.
 
 ## Démarrage
 
