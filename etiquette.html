@@ -904,10 +904,19 @@ function detectPlanType(pages) {
 function parsePromoPdf(pages) {
   const products = [];
   const seen = new Set();
+  // Ancres de colonnes : certains PDF (ex. PEM) n'impriment l'en-tête que sur
+  // la 1ère page et enchaînent directement les produits sur les pages
+  // suivantes (contrairement au plan TV, qui le répète à chaque page). En
+  // gardant `cols` déclaré HORS de la boucle de pages, une page sans en-tête
+  // hérite simplement des ancres détectées sur la page précédente au lieu de
+  // tout perdre (catégorie/marque/référence vides, prix introuvable, et le
+  // libellé qui retombe sur un texte brut incluant la date d'envoi).
+  let cols = null;
   for (const rows of pages) {
     // 1. Bande d'en-tête -> ancres X des colonnes : la ligne d'ancrage
-    //    (EAN+MARQUE) et ses lignes de libellés voisines.
-    let cols = null;
+    //    (EAN+MARQUE) et ses lignes de libellés voisines. Si cette page n'a
+    //    pas sa propre ligne d'en-tête, `cols` garde la valeur de la page
+    //    précédente (voir commentaire ci-dessus).
     for (let hi = 0; hi < rows.length; hi++) {
       const t = rowText(rows[hi]).toUpperCase();
       if (t.includes('EAN') && t.includes('MARQUE')) {
