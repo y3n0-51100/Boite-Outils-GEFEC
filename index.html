@@ -39,6 +39,7 @@
   --c-cetelem:#ff6b00;
   --c-etiquette:#e30613;
   --c-solde:#4ade80;
+  --c-sisto:#38bdf8;
   --shadow-sm:0 1px 2px rgba(0,0,0,.35);
   --shadow:0 2px 6px rgba(0,0,0,.35),0 14px 32px -14px rgba(0,0,0,.55);
   --shadow-lg:0 34px 80px -26px rgba(0,0,0,.65);
@@ -117,6 +118,7 @@ body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 .tab[data-tab="match"] .dot{background:var(--c-cetelem)}
 .tab[data-tab="etiquette"] .dot{background:var(--c-etiquette)}
 .tab[data-tab="solde"] .dot{background:var(--c-solde)}
+.tab[data-tab="sisto"] .dot{background:var(--c-sisto)}
 .tab.active{color:var(--text)}
 .tab-indicator{position:absolute;top:5px;bottom:5px;border-radius:9px;
   background:var(--surface-3);border:1px solid var(--border-2);
@@ -178,6 +180,7 @@ main{flex:1;position:relative;overflow:hidden}
   animation:fadeUp .6s var(--ease) both}
 .tool-card:nth-child(2){animation-delay:.07s}
 .tool-card:nth-child(3){animation-delay:.14s}
+.tool-card:nth-child(4){animation-delay:.21s}
 /* halo qui suit le curseur */
 .tool-card::before{content:"";position:absolute;inset:0;opacity:0;transition:opacity .3s;z-index:0;
   background:radial-gradient(460px circle at var(--mx,50%) var(--my,50%),rgba(91,140,255,.10),transparent 60%)}
@@ -192,10 +195,12 @@ main{flex:1;position:relative;overflow:hidden}
 .tool-card[data-tool="match"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(249,115,22,.5)}
 .tool-card[data-tool="etiquette"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(230,7,26,.45)}
 .tool-card[data-tool="solde"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(21,163,74,.45)}
+.tool-card[data-tool="sisto"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(14,165,233,.45)}
 .tc-bar{position:absolute;top:0;left:0;right:0;height:5px;z-index:3}
 .tc-bar--orange{background:linear-gradient(90deg,#fdba74,#f97316)}
 .tc-bar--red{background:linear-gradient(90deg,#fb6470,#e6071a)}
 .tc-bar--green{background:linear-gradient(90deg,#4ade80,#15a34a)}
+.tc-bar--cyan{background:linear-gradient(90deg,#7dd3fc,#0284c7)}
 .tc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
 .tc-icon{width:50px;height:50px;border-radius:15px;display:flex;align-items:center;justify-content:center;
   box-shadow:0 12px 26px -8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .35s var(--spring)}
@@ -204,9 +209,11 @@ main{flex:1;position:relative;overflow:hidden}
 .tc-icon--orange{background:linear-gradient(140deg,#fdba74,#f97316)}
 .tc-icon--red{background:linear-gradient(140deg,#fb6470,#e6071a)}
 .tc-icon--green{background:linear-gradient(140deg,#4ade80,#15a34a)}
+.tc-icon--cyan{background:linear-gradient(140deg,#7dd3fc,#0284c7)}
 .tc-badge{font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:999px;letter-spacing:.02em}
 .tc-badge--green{background:rgba(74,222,128,.14);color:#4ade80}
 .tc-badge--amber{background:rgba(251,191,36,.14);color:#fbbf24}
+.tc-badge--cyan{background:rgba(56,189,248,.14);color:#38bdf8}
 .tc-badge-ready{display:none}
 .tool-card.ready .tc-badge-lock{display:none}
 .tool-card.ready .tc-badge-ready{display:inline-block}
@@ -222,6 +229,7 @@ main{flex:1;position:relative;overflow:hidden}
 .tool-card[data-tool="match"]:hover .tc-cta,.tool-card[data-tool="match"]:hover .tc-arrow{color:var(--c-cetelem)}
 .tool-card[data-tool="etiquette"]:hover .tc-cta,.tool-card[data-tool="etiquette"]:hover .tc-arrow{color:var(--c-etiquette)}
 .tool-card[data-tool="solde"]:hover .tc-cta,.tool-card[data-tool="solde"]:hover .tc-arrow{color:var(--c-solde)}
+.tool-card[data-tool="sisto"]:hover .tc-cta,.tool-card[data-tool="sisto"]:hover .tc-arrow{color:var(--c-sisto)}
 
 /* dropzone valorisation partagée — étape clé, mise en avant en haut d'accueil */
 .valo-section{max-width:860px;margin:0 auto 30px;animation:fadeUp .5s var(--ease) .08s both}
@@ -261,6 +269,7 @@ main{flex:1;position:relative;overflow:hidden}
 .view-tool[data-view="match"] .loader-spinner{border-top-color:var(--c-cetelem)}
 .view-tool[data-view="etiquette"] .loader-spinner{border-top-color:var(--c-etiquette)}
 .view-tool[data-view="solde"] .loader-spinner{border-top-color:var(--c-solde)}
+.view-tool[data-view="sisto"] .loader-spinner{border-top-color:var(--c-sisto)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loader-text{color:var(--text-3);font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
 
@@ -306,6 +315,7 @@ main{flex:1;position:relative;overflow:hidden}
         <button class="tab" data-tab="match" type="button"><span class="dot"></span>Affiches CETELEM</button>
         <button class="tab" data-tab="etiquette" type="button"><span class="dot"></span>Plan Promo + Affiches Magasin</button>
         <button class="tab" data-tab="solde" type="button"><span class="dot"></span>Soldes</button>
+        <button class="tab" data-tab="sisto" type="button"><span class="dot"></span>SISTO Checker</button>
       </nav>
       <div class="valo-pill" id="valoPill" hidden>
         <span class="valo-dot"></span>
@@ -386,7 +396,7 @@ main{flex:1;position:relative;overflow:hidden}
           </button>
 
           <!-- Soldes -->
-          <button class="tool-card ready" data-tool="solde" type="button">
+          <button class="tool-card ready" data-tool="solde" data-novalo type="button">
             <div class="tc-bar tc-bar--green"></div>
             <div class="tc-header">
               <div class="tc-icon tc-icon--green">
@@ -397,6 +407,22 @@ main{flex:1;position:relative;overflow:hidden}
             <div class="tc-title">Soldes Magasin</div>
             <div class="tc-sub">Regroupement · Déduplication</div>
             <div class="tc-desc">Retire les références déjà gérées par la Média Centrale et celles sans stock. Résultat imprimable.</div>
+            <div class="tc-footer"><span class="tc-cta">Ouvrir l'outil</span>
+              <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
+          </button>
+
+          <!-- SISTO CHECKER -->
+          <button class="tool-card ready" data-tool="sisto" data-novalo type="button">
+            <div class="tc-bar tc-bar--cyan"></div>
+            <div class="tc-header">
+              <div class="tc-icon tc-icon--cyan">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+              </div>
+              <span class="tc-badge tc-badge--cyan">Disponible</span>
+            </div>
+            <div class="tc-title">SISTO Checker</div>
+            <div class="tc-sub">Situation Stocks des Encours Fournisseurs</div>
+            <div class="tc-desc">Déposez votre SISTO : l'outil relit chaque référence (stock expo &amp; dépôt, disponible à la vente, commandes, média, gamme, famille, ventes) et vous laisse filtrer et trier librement — par exemple les produits verrouillés dont il ne reste qu'un exemplaire en exposition.</div>
             <div class="tc-footer"><span class="tc-cta">Ouvrir l'outil</span>
               <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
           </button>
@@ -421,6 +447,12 @@ main{flex:1;position:relative;overflow:hidden}
       <div class="tool-pane">
         <div class="pane-loader"><div class="loader-spinner"></div><div class="loader-text">chargement de l'outil…</div></div>
         <iframe class="tool-frame" data-tpl="tool-solde" title="Soldes Magasin" allow="clipboard-read; clipboard-write"></iframe>
+      </div>
+    </section>
+    <section class="view view-tool" data-view="sisto" role="tabpanel" aria-label="SISTO Checker">
+      <div class="tool-pane">
+        <div class="pane-loader"><div class="loader-spinner"></div><div class="loader-text">chargement de l'outil…</div></div>
+        <iframe class="tool-frame" data-src="sisto.html" title="SISTO Checker" allow="clipboard-read; clipboard-write"></iframe>
       </div>
     </section>
   </main>
@@ -2815,7 +2847,7 @@ function clearValoFile(){
   homeDrop.classList.remove('loaded','parsing');
   dropTitle.textContent='Glissez le PDF de valorisation'; dropHint.textContent='ou cliquez pour parcourir · .pdf';
   homeFile.value=''; valoPill.hidden=true;
-  document.querySelectorAll('.tool-card:not([data-tool="solde"])').forEach(c=>c.classList.remove('ready'));
+  document.querySelectorAll('.tool-card:not([data-novalo])').forEach(c=>c.classList.remove('ready'));
   switchView('home');
 }
 async function countEans(file){
@@ -2841,7 +2873,7 @@ homeFile.addEventListener('change',e=>{if(e.target.files.length)setValoFile(e.ta
 /* ── Cartes outils ──────────────────────────────────────────── */
 document.querySelectorAll('.tool-card').forEach(card=>{
   card.addEventListener('click',()=>{
-    if (card.dataset.tool==='solde'){ switchView('solde'); return; }
+    if (card.hasAttribute('data-novalo')){ switchView(card.dataset.tool); return; }
     if (!card.classList.contains('ready')){ homeFile.click(); showToast("Importez d'abord la valorisation"); return; }
     switchView(card.dataset.tool);
   });

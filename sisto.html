@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SISTO CHECKER — Situation Stocks des Encours Fournisseurs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+/* ════════════════════════════════════════════════════════════════
+   SISTO CHECKER — charte sombre commune à la Boîte à Outils GEFEC
+   ════════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#0b0e14; --bg-2:#0e1219;
+  --surface:#11151e; --surface-2:#1a2030; --surface-3:#232b3d;
+  --border:#2a334a; --border-2:#1f2638;
+  --text:#e6e9f0; --text-2:#8a93a6; --text-3:#5c6478;
+  --primary:#38bdf8; --primary-2:#7dd3fc; --primary-soft:rgba(56,189,248,.14);
+  --ring:rgba(56,189,248,.35);
+  --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --lock:#a78bfa; --rea:#38bdf8;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+  --shadow:0 2px 6px rgba(0,0,0,.35),0 14px 32px -14px rgba(0,0,0,.55);
+  --shadow-lg:0 34px 80px -26px rgba(0,0,0,.65);
+  --radius:16px; --radius-sm:11px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --font:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font);color:var(--text);overflow:hidden;
+  background:radial-gradient(1100px 560px at 100% -10%,rgba(56,189,248,.09),transparent 60%),
+             radial-gradient(800px 460px at -10% 110%,rgba(167,139,250,.06),transparent 55%),
+             linear-gradient(180deg,var(--bg),var(--bg-2));
+  -webkit-font-smoothing:antialiased}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+svg{display:block}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:8px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#33405c;background-clip:content-box}
+
+.app{display:flex;flex-direction:column;height:100%}
+
+/* ── Barre supérieure ───────────────────────────────────────── */
+.top{display:flex;align-items:center;gap:14px;padding:11px 18px;flex-shrink:0;
+  background:linear-gradient(180deg,rgba(17,21,30,.94),rgba(17,21,30,.74));
+  backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
+  border-bottom:1px solid var(--border-2);box-shadow:0 1px 0 var(--border)}
+.t-mark{width:36px;height:36px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(140deg,var(--primary-2),var(--primary) 55%,#0369a1);color:#03131d;
+  box-shadow:0 10px 20px -8px var(--ring),inset 0 1px 0 rgba(255,255,255,.45)}
+.t-mark svg{width:19px;height:19px}
+.t-name{font-size:15px;font-weight:800;letter-spacing:-.2px;white-space:nowrap}
+.t-sub{font-size:11px;font-weight:600;color:var(--text-3);white-space:nowrap}
+.t-spacer{flex:1}
+.t-meta{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:9px;
+  background:var(--surface-2);border:1px solid var(--border);font-size:11.5px;font-weight:700;color:var(--text-2);white-space:nowrap}
+.chip b{color:var(--text);font-weight:800}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+
+/* ── Dépôt du SISTO ─────────────────────────────────────────── */
+.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:26px;overflow:auto}
+.intro{width:100%;max-width:780px;text-align:center}
+.intro h1{font-size:27px;font-weight:800;letter-spacing:-.5px;margin-bottom:8px}
+.intro h1 span{background:linear-gradient(100deg,var(--primary-2),var(--primary));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.intro p{font-size:13.5px;color:var(--text-2);font-weight:600;line-height:1.65;max-width:620px;margin:0 auto 22px}
+.drop{position:relative;display:flex;align-items:center;gap:16px;text-align:left;padding:22px 24px;cursor:pointer;
+  background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1.5px dashed var(--border);
+  border-radius:var(--radius);transition:border-color .25s,background .25s,transform .25s var(--ease);overflow:hidden}
+.drop:hover,.drop.over{border-color:var(--primary);background:linear-gradient(180deg,var(--surface-2),var(--surface-3));transform:translateY(-2px)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.drop-ic{width:46px;height:46px;border-radius:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(140deg,var(--primary-2),var(--primary));color:#03131d;box-shadow:0 10px 22px -8px var(--ring)}
+.drop-ic svg{width:22px;height:22px}
+.drop-t{font-size:15px;font-weight:800}
+.drop-h{font-size:12px;color:var(--text-3);font-weight:600;margin-top:3px}
+.bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--surface-3);opacity:0;transition:opacity .2s}
+.bar.on{opacity:1}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--primary),var(--primary-2));transition:width .25s}
+.hint{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+.hint span{font-size:11px;font-weight:700;color:var(--text-3);background:var(--surface);border:1px solid var(--border-2);
+  padding:6px 11px;border-radius:8px}
+.err{margin-top:16px;font-size:12.5px;font-weight:700;color:var(--bad);background:rgba(248,113,113,.1);
+  border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:10px 14px;display:none;text-align:left}
+.err.on{display:block}
+
+/* ── Espace de travail ──────────────────────────────────────── */
+.work{flex:1;display:none;min-height:0;grid-template-columns:296px 1fr}
+.work.on{display:grid}
+.work.collapsed{grid-template-columns:0 1fr}
+
+/* panneau de filtres */
+.side{border-right:1px solid var(--border-2);background:rgba(17,21,30,.55);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.side-h{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--border-2);flex-shrink:0}
+.side-h b{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2)}
+.side-h .cnt{margin-left:auto;font-size:11px;font-weight:800;color:var(--primary);background:var(--primary-soft);
+  padding:3px 8px;border-radius:7px}
+.side-b{flex:1;overflow-y:auto;padding:12px 12px 40px}
+.grp{border:1px solid var(--border-2);border-radius:12px;margin-bottom:9px;background:var(--surface);overflow:hidden}
+.grp>summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;align-items:center;gap:8px;
+  font-size:12.5px;font-weight:800;color:var(--text);user-select:none}
+.grp>summary::-webkit-details-marker{display:none}
+.grp>summary::after{content:"";margin-left:auto;width:7px;height:7px;border-right:2px solid var(--text-3);
+  border-bottom:2px solid var(--text-3);transform:rotate(45deg);transition:transform .2s;margin-top:-3px}
+.grp[open]>summary::after{transform:rotate(-135deg);margin-top:2px}
+.grp>summary:hover{background:var(--surface-2)}
+.grp .body{padding:2px 12px 12px;border-top:1px solid var(--border-2)}
+.fl{margin-top:10px}
+.fl>label{display:block;font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--text-3);margin-bottom:5px}
+.inp,select.inp{width:100%;padding:7px 9px;border-radius:9px;background:var(--surface-2);border:1px solid var(--border);
+  font-size:12.5px;font-weight:600;outline:none;transition:border-color .18s,box-shadow .18s}
+.inp:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+select.inp{cursor:pointer;-webkit-appearance:none;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--text-3) 50%),linear-gradient(135deg,var(--text-3) 50%,transparent 50%);
+  background-position:calc(100% - 14px) 13px,calc(100% - 9px) 13px;background-size:5px 5px;background-repeat:no-repeat;padding-right:26px}
+.facet{max-height:172px;overflow-y:auto;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);padding:4px}
+.facet.sm{max-height:120px}
+.opt{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}
+.opt:hover{background:var(--surface-3)}
+.opt input{accent-color:var(--primary);width:13px;height:13px;flex-shrink:0;cursor:pointer}
+.opt .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt .c{font-size:10.5px;font-weight:800;color:var(--text-3);font-family:var(--mono)}
+.tri{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:9px;padding:3px}
+.tri button{padding:5px 2px;border-radius:6px;font-size:11px;font-weight:700;color:var(--text-3);transition:.15s}
+.tri button:hover{color:var(--text)}
+.tri button.on{background:var(--primary);color:#03131d;font-weight:800}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.row3{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:6px}
+.crit{border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:7px;background:var(--surface-2)}
+.crit .top-r{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.crit .top-r select{flex:1}
+.crit .x{width:24px;height:24px;border-radius:7px;background:var(--surface-3);color:var(--text-3);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;line-height:1}
+.crit .x:hover{background:var(--bad);color:#fff}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:9px;
+  font-size:12px;font-weight:800;background:var(--surface-2);border:1px solid var(--border);color:var(--text);transition:.18s}
+.btn:hover{background:var(--surface-3);border-color:var(--primary)}
+.btn.pri{background:linear-gradient(135deg,var(--primary),#0ea5e9);border-color:transparent;color:#03131d}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.wide{width:100%}
+.btn svg{width:14px;height:14px}
+.btn:disabled{opacity:.45;pointer-events:none}
+
+/* zone résultats */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.bar-tools{display:flex;align-items:center;gap:9px;padding:10px 14px;border-bottom:1px solid var(--border-2);
+  flex-wrap:wrap;flex-shrink:0;background:rgba(14,18,25,.6)}
+.icon-btn{width:32px;height:32px;border-radius:9px;background:var(--surface-2);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;color:var(--text-2);transition:.18s;flex-shrink:0}
+.icon-btn:hover{color:var(--text);border-color:var(--primary)}
+.icon-btn svg{width:15px;height:15px}
+.search{position:relative;flex:1;min-width:190px;max-width:420px}
+.search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text-3)}
+.search input{width:100%;padding:8px 10px 8px 31px;border-radius:9px;background:var(--surface-2);
+  border:1px solid var(--border);font-size:12.5px;font-weight:600;outline:none}
+.search input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.presets{display:flex;gap:6px;padding:9px 14px;overflow-x:auto;flex-shrink:0;border-bottom:1px solid var(--border-2);
+  scrollbar-width:thin}
+.pchip{flex-shrink:0;padding:6px 11px;border-radius:20px;font-size:11.5px;font-weight:700;white-space:nowrap;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);transition:.18s}
+.pchip:hover{color:var(--text);border-color:var(--primary)}
+.pchip.on{background:var(--primary);border-color:transparent;color:#03131d;font-weight:800}
+
+.tw{flex:1;overflow:auto;min-height:0}
+table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px}
+thead th{position:sticky;top:0;z-index:3;background:#161c28;border-bottom:1px solid var(--border);
+  padding:0;text-align:left;font-weight:800;white-space:nowrap;color:var(--text-2)}
+thead th .th{display:flex;align-items:center;gap:5px;padding:9px 10px;cursor:pointer;user-select:none;font-size:11px;
+  letter-spacing:.02em}
+thead th .th:hover{color:var(--text)}
+thead th .ar{font-size:9px;color:var(--primary);font-weight:900}
+thead th .rk{font-size:8.5px;background:var(--primary-soft);color:var(--primary);border-radius:4px;padding:1px 3px;font-weight:900}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--border-2);white-space:nowrap;color:var(--text)}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:rgba(56,189,248,.055)}
+tbody tr.sel td{background:rgba(56,189,248,.11)}
+td.num,th.num .th{justify-content:flex-end;text-align:right;font-family:var(--mono);font-size:11.5px}
+td.mono{font-family:var(--mono);font-size:11.5px;color:var(--text-2)}
+td.wrap{white-space:normal;max-width:280px;min-width:170px}
+td.dim{color:var(--text-3)}
+.tag{display:inline-block;padding:1.5px 6px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.02em}
+.tag.v{background:rgba(167,139,250,.16);color:var(--lock)}
+.tag.r{background:rgba(56,189,248,.16);color:var(--rea)}
+.tag.ok{background:rgba(74,222,128,.15);color:var(--ok)}
+.tag.no{background:var(--surface-3);color:var(--text-3)}
+.tag.wa{background:rgba(251,191,36,.16);color:var(--warn)}
+.tag.ba{background:rgba(248,113,113,.16);color:var(--bad)}
+.z0{color:var(--text-3)}
+.zp{color:var(--ok);font-weight:700}
+.zl{color:var(--warn);font-weight:800}
+.empty{padding:56px 20px;text-align:center;color:var(--text-3)}
+.empty b{display:block;font-size:15px;color:var(--text-2);margin-bottom:6px}
+.foot{display:flex;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid var(--border-2);flex-shrink:0;
+  font-size:11.5px;font-weight:700;color:var(--text-3);background:rgba(14,18,25,.6);flex-wrap:wrap}
+.foot b{color:var(--text)}
+
+/* tiroir détail */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:392px;max-width:92vw;background:var(--surface);
+  border-left:1px solid var(--border);box-shadow:var(--shadow-lg);z-index:40;display:flex;flex-direction:column;
+  transform:translateX(102%);transition:transform .3s var(--ease);visibility:hidden}
+.drawer.on{transform:none;visibility:visible}
+.dr-h{display:flex;align-items:flex-start;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border-2)}
+.dr-h .t{flex:1;min-width:0}
+.dr-h .t b{display:block;font-size:14px;font-weight:800;line-height:1.35}
+.dr-h .t span{font-family:var(--mono);font-size:11.5px;color:var(--text-3)}
+.dr-b{flex:1;overflow-y:auto;padding:14px 16px 30px}
+.dsec{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--primary);
+  margin:16px 0 7px;padding-bottom:5px;border-bottom:1px solid var(--border-2)}
+.dsec:first-child{margin-top:0}
+.dl{display:grid;grid-template-columns:1fr auto;gap:3px 12px;font-size:12px}
+.dl dt{color:var(--text-3);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.dl dd{font-weight:700;text-align:right;font-family:var(--mono);font-size:11.5px}
+.mask{position:fixed;inset:0;background:rgba(4,7,12,.5);z-index:39;opacity:0;visibility:hidden;transition:.3s}
+.mask.on{opacity:1;visibility:visible}
+
+.toast{position:fixed;bottom:16px;left:50%;transform:translate(-50%,12px);z-index:60;padding:9px 16px;
+  background:var(--surface-3);border:1px solid var(--border);border-radius:10px;font-size:12.5px;font-weight:700;
+  box-shadow:var(--shadow-lg);opacity:0;visibility:hidden;transition:.25s;pointer-events:none}
+.toast.on{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.toast.bad{background:#dc2626;border-color:transparent;color:#fff}
+
+@media (max-width:900px){
+  .work{grid-template-columns:1fr}
+  .side{position:fixed;top:0;bottom:0;left:0;width:290px;z-index:35;transform:translateX(-102%);transition:transform .3s var(--ease)}
+  .work:not(.collapsed) .side{transform:none;box-shadow:var(--shadow-lg)}
+  .work.collapsed{grid-template-columns:1fr}
+}
+@media print{
+  body{overflow:visible;background:#fff;color:#000}
+  .top,.side,.bar-tools,.presets,.foot,.drawer,.mask,.toast{display:none!important}
+  .work{display:block!important}
+  .tw{overflow:visible}
+  table{font-size:8.5px;width:100%}
+  thead th{background:#eee;color:#000;border-bottom:1px solid #999}
+  tbody td{border-bottom:1px solid #ddd;color:#000}
+  @page{size:A4 landscape;margin:8mm}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Barre supérieure ─────────────────────────────────── -->
+  <div class="top">
+    <div class="t-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18M7 12h14M11 18h10"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><circle cx="8" cy="18" r="1.4" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <div class="t-name">SISTO CHECKER</div>
+      <div class="t-sub">Situation Stocks des Encours Fournisseurs — filtres &amp; tris</div>
+    </div>
+    <div class="t-spacer"></div>
+    <div class="t-meta" id="topMeta"></div>
+  </div>
+
+  <!-- ── Étape 1 : dépôt du SISTO ─────────────────────────── -->
+  <div class="stage" id="stage">
+    <div class="intro">
+      <h1>Analysez votre <span>SISTO</span> en un clin d'œil</h1>
+      <p>Déposez l'édition PDF « Situation Stocks des Encours Fournisseurs » de votre magasin.
+         Chaque référence est relue ligne à ligne — stock expo, stock dépôt, disponible à la vente,
+         média, commandes, gamme, famille, ventes… — puis vous filtrez et triez librement.</p>
+
+      <label class="drop" id="drop" for="fileSisto">
+        <input type="file" id="fileSisto" accept="application/pdf,.pdf">
+        <div class="drop-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div>
+          <div class="drop-t" id="dropT">Glissez votre SISTO (PDF)</div>
+          <div class="drop-h" id="dropH">ou cliquez pour parcourir · .pdf</div>
+        </div>
+        <div class="bar" id="bar"><i></i></div>
+      </label>
+
+      <div class="hint">
+        <span>🔒 Verrouillés</span><span>📦 Stock expo / dépôt</span><span>🚚 En commande</span>
+        <span>📣 Média</span><span>🏷️ Gamme &amp; famille</span><span>📈 Ventes M à M-3</span>
+      </div>
+      <div class="err" id="err"></div>
+    </div>
+  </div>
+
+  <!-- ── Espace de travail ────────────────────────────────── -->
+  <div class="work" id="work">
+
+    <!-- Filtres -->
+    <aside class="side">
+      <div class="side-h">
+        <b>Filtres</b>
+        <span class="cnt" id="filtCount">0 actif</span>
+      </div>
+      <div class="side-b">
+        <button class="btn wide" id="btnReset" style="margin-bottom:10px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          Réinitialiser tous les filtres
+        </button>
+
+        <details class="grp" open>
+          <summary>Statut de la référence</summary>
+          <div class="body">
+            <div class="fl"><label>Verrouillé (RVC = V)</label><div class="tri" data-tri="verrouille"></div></div>
+            <div class="fl"><label>Réapprovisionné (RVC = R)</label><div class="tri" data-tri="reappro"></div></div>
+            <div class="fl"><label>Produit à stocker</label><div class="tri" data-tri="aStocker"></div></div>
+            <div class="fl"><label>Produit à exposer</label><div class="tri" data-tri="aExposer"></div></div>
+            <div class="fl"><label>Présent dans un média</label><div class="tri" data-tri="media"></div></div>
+            <div class="fl"><label>En commande fournisseur</label><div class="tri" data-tri="enCommande"></div></div>
+            <div class="fl"><label>Stock mini/maxi réglé</label><div class="tri" data-tri="stkMinMaxRegle"></div></div>
+          </div>
+        </details>
+
+        <details class="grp" open>
+          <summary>Stocks &amp; disponibilité</summary>
+          <div class="body">
+            <div id="quickNum"></div>
+            <div style="font-size:11px;color:var(--text-3);font-weight:600;margin-top:9px;line-height:1.5">
+              Dans le SISTO, une case chiffrée laissée vide vaut <b>zéro</b> : les filtres et les totaux
+              la comptent comme telle.
+            </div>
+          </div>
+        </details>
+
+        <details class="grp">
+          <summary>Fournisseur</summary>
+          <div class="body"><div class="fl"><input class="inp" placeholder="Rechercher un fournisseur…" data-facetsearch="fournisseur"><div class="facet" data-facet="fournisseur" style="margin-top:6px"></div></div></div>
+        </details>
+
+        <details class="grp">
+          <summary>Famille</summary>
+          <div class="body"><div class="fl"><input class="inp" placeholder="Rechercher une famille…" data-facetsearch="famille"><div class="facet" data-facet="famille" style="margin-top:6px"></div></div></div>
+        </details>
+
+        <details class="grp">
+          <summary>Marque</summary>
+          <div class="body"><div class="fl"><input class="inp" placeholder="Rechercher une marque…" data-facetsearch="marque"><div class="facet" data-facet="marque" style="margin-top:6px"></div></div></div>
+        </details>
+
+        <details class="grp">
+          <summary>Gamme · Typologie · Indices</summary>
+          <div class="body">
+            <div class="fl"><label>Gamme</label><div class="facet sm" data-facet="gamme"></div></div>
+            <div class="fl"><label>Typologie catégorielle</label><div class="facet sm" data-facet="typologie"></div></div>
+            <div class="fl"><label>Indice stock</label><div class="facet sm" data-facet="indiceStk"></div></div>
+            <div class="fl"><label>Liste clé</label><div class="facet sm" data-facet="listeCle"></div></div>
+            <div class="fl"><label>Code média</label><div class="facet sm" data-facet="mediaCode"></div></div>
+          </div>
+        </details>
+
+        <details class="grp">
+          <summary>Critères chiffrés avancés</summary>
+          <div class="body">
+            <div id="crits" style="margin-top:8px"></div>
+            <button class="btn wide" id="btnAddCrit">+ Ajouter un critère</button>
+            <div style="font-size:11px;color:var(--text-3);font-weight:600;margin-top:8px;line-height:1.5">
+              Tous les champs chiffrés du SISTO sont disponibles ici (ventes, prévisions, prix, marge,
+              DEEE, UCDE/CDT, délai, étoile, IDV…). Les critères se cumulent.
+            </div>
+          </div>
+        </details>
+      </div>
+    </aside>
+
+    <!-- Résultats -->
+    <div class="main">
+      <div class="bar-tools">
+        <button class="icon-btn" id="btnSide" title="Afficher / masquer les filtres">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h12M3 18h6"/></svg>
+        </button>
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" placeholder="Rechercher : EAN, libellé, marque, fournisseur, famille…">
+        </div>
+        <button class="btn" id="btnCols" title="Choisir les colonnes affichées">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></svg>
+          Colonnes
+        </button>
+        <button class="btn" id="btnSort" title="Effacer le tri en cours">Tri : <span id="sortLbl" style="color:var(--primary);margin-left:4px">aucun</span></button>
+        <button class="btn" id="btnEans" title="Copier la liste des EAN filtrés">Copier EAN</button>
+        <button class="btn" id="btnCsv">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export CSV
+        </button>
+        <button class="btn" id="btnPrint">Imprimer</button>
+        <button class="btn pri" id="btnNew">Nouveau SISTO</button>
+      </div>
+
+      <div class="presets" id="presets"></div>
+
+      <div class="tw" id="tw">
+        <table id="tbl">
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty" id="empty" style="display:none">
+          <b>Aucune référence ne correspond</b>
+          Assouplissez les filtres ou réinitialisez-les.
+        </div>
+      </div>
+
+      <div class="foot" id="foot"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tiroir de détail -->
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="dr-h">
+    <div class="t"><b id="drT">—</b><span id="drE"></span></div>
+    <button class="icon-btn" id="drX">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="dr-b" id="drB"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   1 · ANALYSEUR DU PDF SISTO
+   ------------------------------------------------------------------------
+   L'édition « Situation Stocks des Encours Fournisseurs » est un état à
+   colonnes fixes : chaque référence occupe un bloc de 3 lignes logiques et
+   chaque colonne occupe une bande horizontale constante (en points PDF,
+   page A4 paysage = 841,92 pt de large). On reconstruit donc chaque
+   référence par POSITION, jamais par ordre d'apparition des mots.
+
+     ligne 0 : RVC · EAN 13 · Libellé · « A stocker » · Famille ·
+               Px vnt moy · PV Mag · STK expo. · DV Expo · Qté indis. Mag ·
+               Information commande · DAT+Prop. · P.O. M à M-3 ·
+               Qté vente année · DEEE · UCDE
+     ligne 1 : Gamme · Marque · Typologie · « A exposer » · (suite famille) ·
+               Marge moy % · PADE · STK HE (dépôt) · DV HE ·
+               STK Min/Max · Prév M à M+3 · DEA · CDT
+     ligne 2 : Liste clé · Indice stk · IDV · Etoile · Média (+ code) ·
+               Date DEEE/DEA
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Colonnes CENTRÉES (quantités) → on borne le centre du mot. */
+const CB = {
+  stkExpo:       [436, 457],   // L0 STK expo.   / L1 STK HE (dépôt)
+  dvExpo:        [466, 487],   // L0 DV Expo     / L1 DV HE
+  qteIndis:      [493, 514],   // L0 Qté indis. Mag
+  poM:           [666, 684],   // L0 P.O. M      / L1 Prév M
+  poM1:          [685, 703],   // L0 P.O. M-1    / L1 Prév M+1
+  poM2:          [704, 722],   // L0 P.O. M-2    / L1 Prév M+2
+  poM3:          [723, 741],   // L0 P.O. M-3    / L1 Prév M+3
+  qteVenteAnnee: [744, 767],   // L0 Qté vente année
+  ucde:          [798, 822],   // L0 UCDE        / L1 CDT
+};
+/* Colonnes alignées à DROITE (montants) → on borne le bord droit. */
+const RB = {
+  pxVntMoy: [386, 402],        // L0 Px vnt moy  / L1 Marge moy %
+  pvMag:    [418, 436],        // L0 PV Mag      / L1 PADE
+};
+/* Colonnes alignées à GAUCHE (textes et blocs) → on borne le bord gauche. */
+const LB = {
+  rvc:      [14, 48],          // L0 RVC · L1 Gamme · L2 Liste clé
+  ean:      [56, 82],          // L0 EAN 13 · L1 Marque · L2 Indice stk
+  libelle:  [104, 248],        // L0 Libellé · L1 Typologie · L2 IDV
+  stockExpo:[244, 285],        // L0 « A stocker » · L1 « A exposer »
+  famille:  [282, 368],        // toutes lignes : Famille (+ suite) · L2 Etoile
+  media:    [458, 516],        // L2 « Média » + code média
+  commande: [516, 622],        // Information commande (n° · date récep. · qté)
+  dat:      [622, 666],        // L0 DAT+Prop. · L1 STK Min/Max
+  deee:     [766, 795],        // L0 DEEE · L1 DEA
+};
+
+const LINE_STEP = 12.35;   // interligne d'un bloc référence (pt)
+const ROW_TOL   = 3.0;     // tolérance de regroupement des mots en ligne
+const BLOCK_MAX = 42;      // hauteur maximale d'un bloc référence
+
+/* Lignes de structure de l'état : elles ferment le bloc en cours. */
+const STOP_RE = /^(Fournisseur\s*:|Récapitulatif|STK expo\.\s*:|STK HE\s*:|Valo\.|Date\s*:|Heure\s*:|Magasin\s*:|Secteur\(s\)|Page\s|Edition triée|SITUATION STOCKS|Donnée\s|\*\s)/;
+
+const inB = (v, b) => v >= b[0] && v <= b[1];
+
+/* Nombre à la française : « -66,66 » → -66.66 · « 1 234 » → 1234 */
+function num(s){
+  if (s == null) return null;
+  let t = String(s).replace(/\s| /g, '').replace(/[€%]/g, '');
+  if (!t || !/\d/.test(t)) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  const v = parseFloat(t);
+  return Number.isFinite(v) ? v : null;
+}
+
+/* Mots d'une page, regroupés en lignes visuelles (y croissant = vers le bas) */
+async function pageRows(page){
+  const vp = page.getViewport({ scale: 1 });
+  const tc = await page.getTextContent();
+  /* L'état n'embarque que deux fontes : une grasse (titres, « Fournisseur : »,
+     propositions de commande non validées) et une normale. On identifie la
+     grasse par le titre de l'état, toujours imprimé en gras. */
+  let boldFont = null;
+  for (const it of tc.items){ if (/^SITUATION STOCKS/.test((it.str||'').trim())) { boldFont = it.fontName; break; } }
+
+  const words = [];
+  for (const it of tc.items){
+    const s = (it.str || '').trim();
+    if (!s) continue;
+    const x = it.transform[4];
+    words.push({ s, x, r: x + (it.width || 0), c: x + (it.width || 0) / 2,
+                 y: vp.height - it.transform[5], bold: boldFont != null && it.fontName === boldFont });
+  }
+  words.sort((a, b) => a.y - b.y || a.x - b.x);
+
+  const rows = [];
+  for (const w of words){
+    const last = rows[rows.length - 1];
+    if (last && w.y - last.y0 <= ROW_TOL){ last.w.push(w); last.ys.push(w.y); }
+    else rows.push({ y0: w.y, ys: [w.y], w: [w] });
+  }
+  for (const row of rows){
+    row.w.sort((a, b) => a.x - b.x);
+    row.ys.sort((a, b) => a - b);
+    row.y = row.ys[Math.floor(row.ys.length / 2)];   // médiane = ligne réelle
+    row.text = row.w.map(o => o.s).join(' ');
+  }
+  return rows;
+}
+
+async function parseSisto(pdf, onProgress){
+  const meta = { magasin:'', secteur:'', date:'', heure:'', pages: pdf.numPages };
+  const products = [];
+  let four = { nom:'', delai:null, francoEuro:null, francoQte:null };
+
+  for (let p = 1; p <= pdf.numPages; p++){
+    const rows = await pageRows(await pdf.getPage(p));
+
+    for (const row of rows.slice(0, 8)){
+      const t = row.text; let m;
+      if (!meta.magasin && (m = t.match(/Magasin\s*:\s*(.+?)\s+Produit\(s\)/))) meta.magasin = m[1].trim();
+      if (!meta.secteur && (m = t.match(/Secteur\(s\)\s*:\s*(.+?)\s+Rayon\(s\)/))) meta.secteur = m[1].trim();
+      if (!meta.date  && (m = t.match(/Date\s*:\s*(\d{2}\/\d{2}\/\d{4})/)))  meta.date  = m[1];
+      if (!meta.heure && (m = t.match(/Heure\s*:\s*(\d{2}:\d{2}:\d{2})/)))   meta.heure = m[1];
+    }
+
+    for (let i = 0; i < rows.length; i++){
+      const row = rows[i];
+
+      /* Ligne fournisseur : nom, délai de livraison, franco €/quantité */
+      if (/^Fournisseur\s*:/.test(row.text)){
+        const nom = row.w.filter(o => o.x >= 74 && o.x < 244 && !/^Fournisseur\s*:?$/.test(o.s))
+                         .map(o => o.s).join(' ').trim();
+        const d = row.text.match(/Délai livraison\s*:\s*(\d+)/);
+        const fE = row.w.find(o => o.x >= 720 && o.x <= 762 && /^[\d.,\s]+$/.test(o.s));
+        const fQ = row.w.find(o => o.x >= 770 && /^[\d.,\s]+$/.test(o.s));
+        four = { nom, delai: d ? parseInt(d[1], 10) : null,
+                 francoEuro: fE ? num(fE.s) : null, francoQte: fQ ? num(fQ.s) : null };
+        continue;
+      }
+
+      /* Début d'un bloc référence : un EAN dans la bande « ean » */
+      if (!row.w.some(o => inB(o.x, LB.ean) && /^\d{8,14}$/.test(o.s))) continue;
+
+      const block = [{ line: 0, row }];
+      for (let j = i + 1; j < rows.length; j++){
+        const nx = rows[j], d = nx.y - row.y;
+        if (d > BLOCK_MAX) break;
+        if (STOP_RE.test(nx.text)) break;
+        if (nx.w.some(o => inB(o.x, LB.ean) && /^\d{8,14}$/.test(o.s))) break;   // référence suivante
+        block.push({ line: Math.max(0, Math.round(d / LINE_STEP)), row: nx });
+      }
+      products.push(buildProduct(block, four, p));
+    }
+    if (onProgress) onProgress(p, pdf.numPages, products.length);
+  }
+  return { meta, products };
+}
+
+function buildProduct(block, four, page){
+  const L    = n => block.filter(b => b.line === n).flatMap(b => b.row.w);
+  const ALL  = block.flatMap(b => b.row.w);
+  const l0 = L(0), l1 = L(1), l2 = L(2);
+
+  const cv   = (ws, band) => { const o = ws.find(o => inB(o.c, band)); return o ? o.s : null; };  // centré
+  const rv   = (ws, band) => { const o = ws.find(o => inB(o.r, band)); return o ? o.s : null; };  // aligné droite
+  const lv   = (ws, band) => { const o = ws.find(o => inB(o.x, band)); return o ? o.s : null; };  // aligné gauche
+  const lall = (ws, band) => ws.filter(o => inB(o.x, band)).map(o => o.s).join(' ').trim();
+
+  /* Famille : elle peut déborder sur les lignes suivantes du bloc. On écarte
+     les nombres purs, car la colonne « Etoile » partage la même bande. */
+  const isNumTok = s => /^[-+]?[\d.,]+$/.test(s);
+  const famille = ALL.filter(o => inB(o.x, LB.famille) && !isNumTok(o.s))
+                     .map(o => o.s).join(' ').replace(/\s+/g, ' ').trim();
+  const etoileW = l2.find(o => inB(o.x, LB.famille) && isNumTok(o.s));
+
+  /* Média : le libellé « Média » est toujours imprimé ; le code n'apparaît
+     que si la référence appartient effectivement à un média. */
+  const mediaCode = (l2.filter(o => inB(o.x, LB.media)).find(o => /^\d{4,}$/.test(o.s)) || {}).s || null;
+
+  /* Information commande : « n° · date de réception · quantité ».
+     Une référence peut porter plusieurs lignes de commande ; les propositions
+     de commande non validées sont imprimées en gras. */
+  const commandes = [];
+  for (const b of block){
+    const ws = b.row.w.filter(o => inB(o.x, LB.commande));
+    const t = ws.map(o => o.s).join(' ').trim();
+    if (!t || !/\d/.test(t)) continue;
+    const m = t.match(/^(\S+)\s*-?\s*(\d{2}\/\d{2}\/\d{4})?\s*-?\s*([\d.,]+)?\s*$/);
+    commandes.push({ num: m ? m[1] : t, date: m && m[2] ? m[2] : null,
+                     qte: m && m[3] ? num(m[3]) : null,
+                     proposition: ws.some(o => o.bold), raw: t });
+  }
+
+  const datW = l0.find(o => inB(o.x, LB.dat));
+  const mm = l1.filter(o => inB(o.x, LB.dat)).map(o => o.s).join('').match(/(-?[\d.,]+)\s*\/\s*(-?[\d.,]+)/);
+  const rvc = (lall(l0, LB.rvc) || '').toUpperCase().replace(/\s+/g, '');
+
+  const p = {
+    page,
+    fournisseur: four.nom, delaiLivraison: four.delai,
+    francoEuro: four.francoEuro, francoQte: four.francoQte,
+
+    rvc, verrouille: rvc.includes('V'), reappro: rvc.includes('R'),
+
+    ean:      (l0.find(o => inB(o.x, LB.ean) && /^\d{8,14}$/.test(o.s)) || {}).s || '',
+    libelle:   lall(l0, LB.libelle),
+    marque:    lv(l1, LB.ean) || '',
+    indiceStk: lv(l2, LB.ean) || '',
+    gamme:     lv(l1, LB.rvc) || '',
+    listeCle:  lv(l2, LB.rvc) || '',
+    typologie: lall(l1, LB.libelle),
+    idv:       num((lall(l2, LB.libelle).match(/IDV\s*(-?[\d.,]+)/) || [])[1]),
+
+    famille, etoile: etoileW ? num(etoileW.s) : null,
+
+    aStocker: l0.some(o => inB(o.x, LB.stockExpo) && /stocker/i.test(o.s)),
+    aExposer: ALL.some(o => inB(o.x, LB.stockExpo) && /exposer/i.test(o.s)),
+
+    pxVntMoy: num(rv(l0, RB.pxVntMoy)),  margeMoy: num(rv(l1, RB.pxVntMoy)),
+    pvMag:    num(rv(l0, RB.pvMag)),     pade:     num(rv(l1, RB.pvMag)),
+
+    stkExpo:     num(cv(l0, CB.stkExpo)), stkHE: num(cv(l1, CB.stkExpo)),
+    dvExpo:      num(cv(l0, CB.dvExpo)),  dvHE:  num(cv(l1, CB.dvExpo)),
+    qteIndisMag: num(cv(l0, CB.qteIndis)),
+    dat:     datW ? num(datW.s) : null,
+    stkMini: mm ? num(mm[1]) : null,
+    stkMaxi: mm ? num(mm[2]) : null,
+
+    venteM:  num(cv(l0, CB.poM)),  venteM1: num(cv(l0, CB.poM1)),
+    venteM2: num(cv(l0, CB.poM2)), venteM3: num(cv(l0, CB.poM3)),
+    prevM:   num(cv(l1, CB.poM)),  prevM1:  num(cv(l1, CB.poM1)),
+    prevM2:  num(cv(l1, CB.poM2)), prevM3:  num(cv(l1, CB.poM3)),
+    qteVenteAnnee: num(cv(l0, CB.qteVenteAnnee)),
+
+    deee: num(lv(l0, LB.deee)), dea: num(lv(l1, LB.deee)),
+    dateDeee: (l2.find(o => o.x >= 740 && /^\d{2}\/\d{2}\/\d{4}$/.test(o.s)) || {}).s || null,
+    ucde: num(cv(l0, CB.ucde)), cdt: num(cv(l1, CB.ucde)),
+
+    media: !!mediaCode, mediaCode, commandes,
+  };
+
+  /* Champs dérivés exploités par les filtres métier */
+  p.stockTotal     = (p.stkExpo || 0) + (p.stkHE || 0);
+  p.dvTotal        = (p.dvExpo || 0) + (p.dvHE || 0);
+  p.enCommande     = p.commandes.length > 0;
+  p.qteCommandee   = p.commandes.reduce((s, c) => s + (c.qte || 0), 0);
+  p.ventes4m       = (p.venteM||0) + (p.venteM1||0) + (p.venteM2||0) + (p.venteM3||0);
+  p.prev4m         = (p.prevM||0) + (p.prevM1||0) + (p.prevM2||0) + (p.prevM3||0);
+  p.stkMinMaxRegle = !!((p.stkMini || 0) || (p.stkMaxi || 0));
+  p.familleCourte  = famille.replace(/\s*\(.*$/, '').trim();
+  p.recherche = [p.ean, p.libelle, p.marque, p.fournisseur, p.famille, p.gamme, p.typologie, p.mediaCode]
+                  .filter(Boolean).join(' ').toUpperCase();
+  return p;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   2 · DESCRIPTION DES CHAMPS — pilote le tableau, les tris, l'export,
+       les critères chiffrés et le tiroir de détail.
+   ════════════════════════════════════════════════════════════════════════ */
+const F = (k, label, type, o = {}) => Object.assign({ k, label, type }, o);
+const FIELDS = [
+  F('ean',           'EAN 13',            'text',  { def:1, mono:1, w:108 }),
+  F('libelle',       'Libellé produit',   'text',  { def:1, wrap:1 }),
+  F('rvc',           'RVC',               'rvc',   { def:1 }),
+  F('gamme',         'Gamme',             'text',  { def:1, facet:1 }),
+  F('marque',        'Marque',            'text',  { def:1, facet:1 }),
+  F('fournisseur',   'Fournisseur',       'text',  { def:1, facet:1, wrap:1 }),
+  F('famille',       'Famille',           'text',  { def:1, facet:1, wrap:1 }),
+  F('typologie',     'Typologie',         'text',  { facet:1 }),
+  F('indiceStk',     'Indice stock',      'text',  { facet:1 }),
+  F('listeCle',      'Liste clé',         'text',  { facet:1 }),
+  F('idv',           'IDV (vendabilité)', 'int',   { def:1, crit:1 }),
+  F('etoile',        'Étoile',            'int',   { crit:1 }),
+  F('aStocker',      'À stocker',         'bool'),
+  F('aExposer',      'À exposer',         'bool',  { def:1 }),
+  F('stkExpo',       'STK expo.',         'qty',   { def:1, crit:1, quick:1, hl:1 }),
+  F('stkHE',         'STK dépôt (HE)',    'qty',   { def:1, crit:1, quick:1, hl:1 }),
+  F('stockTotal',    'Stock total',       'qty',   { crit:1, quick:1 }),
+  F('dvExpo',        'DV Expo',           'qty',   { def:1, crit:1, quick:1 }),
+  F('dvHE',          'DV HE',             'qty',   { crit:1 }),
+  F('dvTotal',       'DV total',          'qty',   { crit:1 }),
+  F('qteIndisMag',   'Qté indis. Mag',    'qty',   { crit:1, quick:1 }),
+  F('dat',           'DAT (dispo à terme)','qty',  { def:1, crit:1, quick:1 }),
+  F('stkMini',       'Stock mini',        'qty',   { crit:1 }),
+  F('stkMaxi',       'Stock maxi',        'qty',   { crit:1 }),
+  F('enCommande',    'En commande',       'bool',  { def:1 }),
+  F('qteCommandee',  'Qté commandée',     'qty',   { crit:1 }),
+  F('media',         'Média',             'bool',  { def:1 }),
+  F('mediaCode',     'Code média',        'text',  { facet:1 }),
+  F('venteM',        'Ventes M',          'qty',   { def:1, crit:1 }),
+  F('venteM1',       'Ventes M-1',        'qty',   { def:1, crit:1 }),
+  F('venteM2',       'Ventes M-2',        'qty',   { crit:1 }),
+  F('venteM3',       'Ventes M-3',        'qty',   { crit:1 }),
+  F('ventes4m',      'Ventes M à M-3',    'qty',   { crit:1 }),
+  F('qteVenteAnnee', 'Qté vente année',   'qty',   { def:1, crit:1, quick:1 }),
+  F('prevM',         'Prév. M',           'qty',   { crit:1 }),
+  F('prevM1',        'Prév. M+1',         'qty',   { crit:1 }),
+  F('prevM2',        'Prév. M+2',         'qty',   { crit:1 }),
+  F('prevM3',        'Prév. M+3',         'qty',   { crit:1 }),
+  F('prev4m',        'Prév. M à M+3',     'qty',   { crit:1 }),
+  F('pxVntMoy',      'Px vnt moy',        'money', { crit:1 }),
+  F('pvMag',         'PV Mag',            'money', { def:1, crit:1 }),
+  F('pade',          'PADE',              'money', { crit:1 }),
+  F('margeMoy',      'Marge moy',         'pct',   { def:1, crit:1 }),
+  F('deee',          'DEEE',              'money', { crit:1 }),
+  F('dea',           'DEA',               'money', { crit:1 }),
+  F('dateDeee',      'Date DEEE/DEA',     'text'),
+  F('ucde',          'UCDE',              'qty',   { crit:1 }),
+  F('cdt',           'CDT (conditionnt)', 'qty',   { def:1, crit:1 }),
+  F('delaiLivraison','Délai livraison (j)','qty',  { crit:1 }),
+  F('francoEuro',    'Franco €',          'money', { crit:1 }),
+  F('francoQte',     'Franco Qté',        'qty',   { crit:1 }),
+  F('page',          'Page SISTO',        'int',   { crit:1 }),
+];
+const FMAP = Object.fromEntries(FIELDS.map(f => [f.k, f]));
+const isNumType = t => t === 'qty' || t === 'int' || t === 'money' || t === 'pct';
+
+/* Valeur numérique exploitable : dans cet état, une case vide vaut zéro. */
+const nv = (p, k) => { const v = p[k]; return v == null ? 0 : v; };
+
+const fmt = {
+  text : v => v == null || v === '' ? '—' : String(v),
+  rvc  : v => v || '—',
+  bool : v => v ? 'Oui' : 'Non',
+  qty  : v => (v == null ? 0 : v).toLocaleString('fr-FR'),
+  int  : v => v == null ? '—' : v.toLocaleString('fr-FR'),
+  money: v => v == null ? '—' : v.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' €',
+  pct  : v => v == null ? '—' : v.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' %',
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   3 · ÉTAT DE L'APPLICATION
+   ════════════════════════════════════════════════════════════════════════ */
+const S = {
+  meta:null, all:[], view:[],
+  q:'',
+  tri:{},               // clé booléenne -> 'oui' | 'non'  (absente = indifférent)
+  facets:{},            // clé -> Set de valeurs cochées
+  crits:[],             // { k, op, a, b }
+  sort:[],              // [{ k, dir }]
+  cols:new Set(FIELDS.filter(f => f.def).map(f => f.k)),
+  preset:null,
+};
+const el = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let toastT = null;
+function toast(msg, bad){
+  const t = el('toast'); t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2400);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   4 · CHARGEMENT DU FICHIER
+   ════════════════════════════════════════════════════════════════════════ */
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const drop = el('drop'), fileInput = el('fileSisto');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer.files.length) load(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files.length) load(e.target.files[0]); });
+
+async function load(file){
+  const errBox = el('err'); errBox.classList.remove('on');
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf'){
+    errBox.textContent = 'Format invalide — le SISTO doit être déposé au format PDF.';
+    errBox.classList.add('on'); return;
+  }
+  el('dropT').textContent = file.name;
+  el('dropH').textContent = 'lecture du document…';
+  el('bar').classList.add('on');
+  const fill = el('bar').firstElementChild;
+  fill.style.width = '3%';
+
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const { meta, products } = await parseSisto(pdf, (p, n, found) => {
+      fill.style.width = (p / n * 100).toFixed(1) + '%';
+      el('dropH').textContent = `page ${p} / ${n} — ${found} référence(s)`;
+    });
+    if (!products.length){
+      errBox.textContent = "Aucune référence n'a été reconnue. Vérifiez qu'il s'agit bien de l'édition « Situation Stocks des Encours Fournisseurs » (SISTO).";
+      errBox.classList.add('on');
+      el('bar').classList.remove('on');
+      el('dropT').textContent = 'Glissez votre SISTO (PDF)';
+      el('dropH').textContent = 'ou cliquez pour parcourir · .pdf';
+      return;
+    }
+    S.meta = meta; S.meta.fichier = file.name; S.all = products;
+    boot();
+  }catch(e){
+    console.error(e);
+    errBox.textContent = 'Lecture impossible : ' + (e && e.message ? e.message : e);
+    errBox.classList.add('on');
+    el('bar').classList.remove('on');
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   5 · CONSTRUCTION DE L'INTERFACE APRÈS ANALYSE
+   ════════════════════════════════════════════════════════════════════════ */
+function boot(){
+  el('stage').style.display = 'none';
+  el('work').classList.add('on');
+  buildTopMeta();
+  buildTri();
+  buildQuickNum();
+  buildFacets();
+  buildPresets();
+  buildHead();
+  apply();
+}
+
+function buildTopMeta(){
+  const m = S.meta;
+  const f = new Set(S.all.map(p => p.fournisseur).filter(Boolean)).size;
+  el('topMeta').innerHTML = [
+    m.magasin ? `<span class="chip"><span class="dot"></span>${esc(m.magasin)}${m.secteur ? ' · ' + esc(m.secteur) : ''}</span>` : '',
+    m.date ? `<span class="chip">Édition du <b>${esc(m.date)}</b>${m.heure ? ' · ' + esc(m.heure) : ''}</span>` : '',
+    `<span class="chip"><b>${S.all.length.toLocaleString('fr-FR')}</b> réf.</span>`,
+    `<span class="chip"><b>${f}</b> fournisseurs</span>`,
+    `<span class="chip"><b>${m.pages}</b> page${m.pages > 1 ? 's' : ''}</span>`,
+  ].join('');
+}
+
+/* ── Filtres oui / non / indifférent ─────────────────────────── */
+const TRI_KEYS = ['verrouille','reappro','aStocker','aExposer','media','enCommande','stkMinMaxRegle'];
+function buildTri(){
+  document.querySelectorAll('[data-tri]').forEach(box => {
+    const k = box.dataset.tri;
+    box.innerHTML = `<button data-v="">Indifférent</button><button data-v="oui">Oui</button><button data-v="non">Non</button>`;
+    box.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.v) S.tri[k] = b.dataset.v; else delete S.tri[k];
+      syncTri(); apply();
+    });
+  });
+  syncTri();
+}
+function syncTri(){
+  document.querySelectorAll('[data-tri]').forEach(box => {
+    const cur = S.tri[box.dataset.tri] || '';
+    box.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === cur));
+  });
+}
+
+/* ── Filtres chiffrés « rapides » (stocks & disponibilité) ───── */
+const OPS = [
+  ['','tous'],
+  ['>=','≥'], ['<=','≤'], ['=','='], ['!=','≠'], ['>','>'], ['<','<'],
+  ['between','entre'], ['zero','= 0'], ['nonzero','≠ 0'],
+];
+function critRow(c, i, quick){
+  const opts = FIELDS.filter(f => f.crit).map(f =>
+    `<option value="${f.k}"${f.k === c.k ? ' selected' : ''}>${esc(f.label)}</option>`).join('');
+  const ops = OPS.map(([v, l]) => `<option value="${v}"${v === c.op ? ' selected' : ''}>${l}</option>`).join('');
+  const two = c.op === 'between', none = c.op === 'zero' || c.op === 'nonzero';
+  return `<div class="crit" data-i="${i}">
+    ${quick ? `<label style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);margin-bottom:5px">${esc(FMAP[c.k].label)}</label>`
+            : `<div class="top-r"><select class="inp" data-f="k">${opts}</select><button class="x" data-f="del" title="Supprimer">×</button></div>`}
+    <div class="${two ? 'row3' : 'row2'}">
+      <select class="inp" data-f="op">${ops}</select>
+      ${none ? '' : `<input class="inp" data-f="a" type="number" step="any" placeholder="valeur" value="${c.a ?? ''}">`}
+      ${two ? `<input class="inp" data-f="b" type="number" step="any" placeholder="et…" value="${c.b ?? ''}">` : ''}
+    </div>
+  </div>`;
+}
+/* Les critères rapides occupent les premiers emplacements de S.crits. */
+const QUICK = FIELDS.filter(f => f.quick).map(f => f.k);
+function buildQuickNum(){
+  if (!S.crits.length) QUICK.forEach(k => S.crits.push({ k, op:'', a:'', b:'', quick:1 }));
+  renderQuickNum(); renderCrits();
+}
+function renderQuickNum(){
+  el('quickNum').innerHTML = S.crits.map((c, i) => c.quick ? critRow(c, i, true) : '').join('');
+}
+function renderCrits(){
+  el('crits').innerHTML = S.crits.map((c, i) => c.quick ? '' : critRow(c, i, false)).join('');
+}
+/* « input » couvre la saisie au clavier, « change » les listes déroulantes. */
+function onCritEdit(e){
+  const box = e.target.closest('.crit'); if (!box) return;
+  const c = S.crits[+box.dataset.i]; if (!c) return;
+  switch (e.target.dataset.f){
+    case 'k':  if (c.k === e.target.value) return; c.k = e.target.value; break;
+    case 'op': if (c.op === e.target.value) return;
+               c.op = e.target.value; renderQuickNum(); renderCrits(); break;
+    case 'a':  c.a = e.target.value; break;
+    case 'b':  c.b = e.target.value; break;
+    default: return;
+  }
+  apply();
+}
+document.addEventListener('change', onCritEdit);
+document.addEventListener('input', onCritEdit);
+document.addEventListener('click', e => {
+  const del = e.target.closest('[data-f="del"]'); if (!del) return;
+  const box = del.closest('.crit');
+  S.crits.splice(+box.dataset.i, 1);
+  renderQuickNum(); renderCrits(); apply();
+});
+el('btnAddCrit').addEventListener('click', () => {
+  S.crits.push({ k:'stkExpo', op:'>=', a:'', b:'' });
+  renderCrits(); apply();
+});
+
+/* ── Facettes (listes à cocher alimentées par le fichier) ────── */
+const FACETS = ['fournisseur','famille','marque','gamme','typologie','indiceStk','listeCle','mediaCode'];
+function buildFacets(){
+  FACETS.forEach(k => { S.facets[k] = new Set(); renderFacet(k); });
+  document.querySelectorAll('[data-facetsearch]').forEach(inp => {
+    inp.addEventListener('input', () => renderFacet(inp.dataset.facetsearch, inp.value));
+  });
+  document.querySelectorAll('[data-facet]').forEach(box => {
+    box.addEventListener('change', e => {
+      const cb = e.target.closest('input'); if (!cb) return;
+      const set = S.facets[box.dataset.facet];
+      if (cb.checked) set.add(cb.value); else set.delete(cb.value);
+      apply();
+    });
+  });
+}
+function renderFacet(k, q){
+  const box = document.querySelector(`[data-facet="${k}"]`); if (!box) return;
+  const counts = new Map();
+  for (const p of S.all){
+    const v = p[k] == null || p[k] === '' ? '(non renseigné)' : String(p[k]);
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  let list = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fr'));
+  if (q) { const Q = q.toUpperCase(); list = list.filter(([v]) => v.toUpperCase().includes(Q)); }
+  box.innerHTML = list.length
+    ? list.map(([v, n]) => `<label class="opt"><input type="checkbox" value="${esc(v)}"${S.facets[k].has(v) ? ' checked' : ''}>
+        <span class="n" title="${esc(v)}">${esc(v)}</span><span class="c">${n}</span></label>`).join('')
+    : `<div style="padding:8px;font-size:11.5px;color:var(--text-3);font-weight:600">Aucune valeur</div>`;
+}
+
+/* ── Filtres rapides prédéfinis ──────────────────────────────── */
+const PRESETS = [
+  { id:'verr',      lbl:'🔒 Verrouillés',              f:p => p.verrouille },
+  { id:'verr1',     lbl:'🔒 Verrouillés · 1 seul en expo', f:p => p.verrouille && nv(p,'stkExpo') === 1 },
+  { id:'dernier',   lbl:'⚠️ Dernier exemplaire (expo 1 · dépôt 0)', f:p => nv(p,'stkExpo') === 1 && nv(p,'stkHE') === 0 },
+  { id:'rupture',   lbl:'🚨 Rupture expo (0)',          f:p => nv(p,'stkExpo') === 0 },
+  { id:'rupTot',    lbl:'🚨 Rupture totale (expo + dépôt = 0)', f:p => p.stockTotal === 0 },
+  { id:'expoVide',  lbl:'👁️ À exposer mais 0 en expo',  f:p => p.aExposer && nv(p,'stkExpo') === 0 },
+  { id:'depotSeul', lbl:'📦 En dépôt sans expo',        f:p => nv(p,'stkHE') > 0 && nv(p,'stkExpo') === 0 },
+  { id:'cmd',       lbl:'🚚 En commande',               f:p => p.enCommande },
+  { id:'dat',       lbl:'⏳ Disponible à terme > 0',    f:p => nv(p,'dat') > 0 },
+  { id:'reappro',   lbl:'🔁 Réapprovisionnés',          f:p => p.reappro },
+  { id:'media',     lbl:'📣 Dans un média',             f:p => p.media },
+  { id:'noMedia',   lbl:'🚫 Hors média',                f:p => !p.media },
+  { id:'noSale',    lbl:'💤 Aucune vente sur l’année',  f:p => nv(p,'qteVenteAnnee') === 0 },
+  { id:'sale',      lbl:'📈 Ventes sur M à M-3',        f:p => p.ventes4m > 0 },
+  { id:'noMinMax',  lbl:'⚙️ Stock mini/maxi non réglé', f:p => !p.stkMinMaxRegle },
+  { id:'stockNoDv', lbl:'❗ Stock non disponible à la vente', f:p => p.stockTotal > 0 && p.dvTotal === 0 },
+  { id:'indis',     lbl:'🛠️ Qté indisponible magasin',  f:p => nv(p,'qteIndisMag') > 0 },
+  { id:'margeNeg',  lbl:'📉 Marge négative',            f:p => p.margeMoy != null && p.margeMoy < 0 },
+];
+function buildPresets(){
+  el('presets').innerHTML = PRESETS.map(p =>
+    `<button class="pchip" data-p="${p.id}">${p.lbl}</button>`).join('');
+  el('presets').addEventListener('click', e => {
+    const b = e.target.closest('.pchip'); if (!b) return;
+    S.preset = S.preset === b.dataset.p ? null : b.dataset.p;
+    el('presets').querySelectorAll('.pchip').forEach(x => x.classList.toggle('on', x.dataset.p === S.preset));
+    apply();
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   6 · FILTRAGE · TRI · RENDU
+   ════════════════════════════════════════════════════════════════════════ */
+function passCrit(p, c){
+  if (!c.op) return true;
+  const v = nv(p, c.k);
+  if (c.op === 'zero')    return v === 0;
+  if (c.op === 'nonzero') return v !== 0;
+  const a = c.a === '' || c.a == null ? null : parseFloat(String(c.a).replace(',', '.'));
+  if (a == null || !Number.isFinite(a)) return true;
+  switch (c.op){
+    case '>=': return v >= a;
+    case '<=': return v <= a;
+    case '=':  return v === a;
+    case '!=': return v !== a;
+    case '>':  return v > a;
+    case '<':  return v < a;
+    case 'between': {
+      const b = c.b === '' || c.b == null ? null : parseFloat(String(c.b).replace(',', '.'));
+      if (b == null || !Number.isFinite(b)) return v >= a;
+      return v >= Math.min(a, b) && v <= Math.max(a, b);
+    }
+  }
+  return true;
+}
+
+function apply(){
+  const Q = S.q.trim().toUpperCase();
+  const preset = S.preset ? PRESETS.find(x => x.id === S.preset) : null;
+  const activeFacets = FACETS.filter(k => S.facets[k] && S.facets[k].size);
+  const activeCrits = S.crits.filter(c => c.op);
+
+  S.view = S.all.filter(p => {
+    if (Q && !p.recherche.includes(Q)) return false;
+    for (const k in S.tri){ const want = S.tri[k] === 'oui'; if (!!p[k] !== want) return false; }
+    for (const k of activeFacets){
+      const v = p[k] == null || p[k] === '' ? '(non renseigné)' : String(p[k]);
+      if (!S.facets[k].has(v)) return false;
+    }
+    for (const c of activeCrits) if (!passCrit(p, c)) return false;
+    if (preset && !preset.f(p)) return false;
+    return true;
+  });
+
+  if (S.sort.length){
+    const rules = S.sort.map(s => ({ f: FMAP[s.k], dir: s.dir === 'desc' ? -1 : 1 }));
+    S.view.sort((A, B) => {
+      for (const { f, dir } of rules){
+        let a, b;
+        if (isNumType(f.type))      { a = nv(A, f.k); b = nv(B, f.k); }
+        else if (f.type === 'bool') { a = A[f.k] ? 1 : 0; b = B[f.k] ? 1 : 0; }
+        else                        { a = String(A[f.k] ?? ''); b = String(B[f.k] ?? ''); }
+        const c = typeof a === 'number' ? a - b : a.localeCompare(b, 'fr');
+        if (c) return c * dir;
+      }
+      return 0;
+    });
+  }
+
+  const nFilt = Object.keys(S.tri).length + activeFacets.length + activeCrits.length
+              + (Q ? 1 : 0) + (preset ? 1 : 0);
+  el('filtCount').textContent = nFilt + (nFilt > 1 ? ' actifs' : ' actif');
+  el('sortLbl').textContent = S.sort.length
+    ? S.sort.map(s => FMAP[s.k].label + (s.dir === 'desc' ? ' ↓' : ' ↑')).join(', ')
+    : 'aucun';
+  renderHeadState(); renderBody(); renderFoot();
+}
+
+function cols(){ return FIELDS.filter(f => S.cols.has(f.k)); }
+
+function buildHead(){
+  el('thead').innerHTML = cols().map(f =>
+    `<th class="${isNumType(f.type) ? 'num' : ''}" data-k="${f.k}"><div class="th">
+       <span>${esc(f.label)}</span><span class="ar"></span><span class="rk" hidden></span>
+     </div></th>`).join('');
+  el('thead').querySelectorAll('th').forEach(th => {
+    th.addEventListener('click', e => toggleSort(th.dataset.k, e.shiftKey));
+  });
+}
+function renderHeadState(){
+  el('thead').querySelectorAll('th').forEach(th => {
+    const i = S.sort.findIndex(s => s.k === th.dataset.k);
+    const ar = th.querySelector('.ar'), rk = th.querySelector('.rk');
+    ar.textContent = i < 0 ? '' : (S.sort[i].dir === 'desc' ? '▼' : '▲');
+    rk.hidden = !(i >= 0 && S.sort.length > 1);
+    rk.textContent = i + 1;
+  });
+}
+function toggleSort(k, add){
+  const i = S.sort.findIndex(s => s.k === k);
+  if (!add){
+    if (i === 0 && S.sort.length === 1) S.sort = S.sort[0].dir === 'asc' ? [{ k, dir:'desc' }] : [];
+    else S.sort = [{ k, dir:'asc' }];
+  } else {
+    if (i < 0) S.sort.push({ k, dir:'asc' });
+    else if (S.sort[i].dir === 'asc') S.sort[i].dir = 'desc';
+    else S.sort.splice(i, 1);
+  }
+  apply();
+}
+
+function cellHtml(p, f){
+  const v = p[f.k];
+  if (f.type === 'bool')
+    return `<td><span class="tag ${v ? 'ok' : 'no'}">${v ? 'Oui' : 'Non'}</span></td>`;
+  if (f.type === 'rvc'){
+    if (!v) return `<td class="dim">—</td>`;
+    return `<td>${p.verrouille ? '<span class="tag v" title="Référence verrouillée">V</span> ' : ''}${p.reappro ? '<span class="tag r" title="Référence réapprovisionnée">R</span> ' : ''}${!p.verrouille && !p.reappro ? '<span class="tag no">' + esc(v) + '</span>' : ''}</td>`;
+  }
+  if (isNumType(f.type)){
+    let cls = 'num';
+    if (f.hl){ const n = v == null ? 0 : v; cls += n === 0 ? ' z0' : (n === 1 ? ' zl' : ' zp'); }
+    else if (f.type === 'qty' && (v == null || v === 0)) cls += ' z0';
+    return `<td class="${cls}">${fmt[f.type](v)}</td>`;
+  }
+  const cls = (f.mono ? 'mono' : '') + (f.wrap ? ' wrap' : '') + (v ? '' : ' dim');
+  return `<td class="${cls}" ${f.wrap ? `title="${esc(v)}"` : ''}>${esc(fmt.text(v))}</td>`;
+}
+
+function renderBody(){
+  const cs = cols(), tb = el('tbody');
+  el('empty').style.display = S.view.length ? 'none' : '';
+  el('tbl').style.display = S.view.length ? '' : 'none';
+  const out = [];
+  for (let i = 0; i < S.view.length; i++){
+    const p = S.view[i];
+    out.push(`<tr data-i="${i}">` + cs.map(f => cellHtml(p, f)).join('') + '</tr>');
+  }
+  tb.innerHTML = out.join('');
+}
+el('tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  el('tbody').querySelectorAll('tr.sel').forEach(x => x.classList.remove('sel'));
+  tr.classList.add('sel');
+  openDrawer(S.view[+tr.dataset.i]);
+});
+
+function renderFoot(){
+  const v = S.view;
+  const sum = k => v.reduce((s, p) => s + nv(p, k), 0);
+  el('foot').innerHTML = [
+    `<span><b>${v.length.toLocaleString('fr-FR')}</b> référence(s) affichée(s) sur ${S.all.length.toLocaleString('fr-FR')}</span>`,
+    `<span>STK expo <b>${sum('stkExpo').toLocaleString('fr-FR')}</b></span>`,
+    `<span>STK dépôt <b>${sum('stkHE').toLocaleString('fr-FR')}</b></span>`,
+    `<span>Verrouillées <b>${v.filter(p => p.verrouille).length}</b></span>`,
+    `<span>En commande <b>${v.filter(p => p.enCommande).length}</b></span>`,
+    `<span>Média <b>${v.filter(p => p.media).length}</b></span>`,
+    `<span>Ventes année <b>${sum('qteVenteAnnee').toLocaleString('fr-FR')}</b></span>`,
+  ].join('');
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   7 · TIROIR DE DÉTAIL
+   ════════════════════════════════════════════════════════════════════════ */
+const DRAWER_SECTIONS = [
+  ['Identification', ['ean','libelle','rvc','gamme','marque','fournisseur','delaiLivraison','francoEuro','francoQte','page']],
+  ['Classement',     ['famille','typologie','indiceStk','listeCle','idv','etoile','aStocker','aExposer']],
+  ['Stocks',         ['stkExpo','stkHE','stockTotal','dvExpo','dvHE','dvTotal','qteIndisMag','dat','stkMini','stkMaxi']],
+  ['Ventes',         ['venteM','venteM1','venteM2','venteM3','ventes4m','qteVenteAnnee','prevM','prevM1','prevM2','prevM3']],
+  ['Prix & taxes',   ['pxVntMoy','pvMag','pade','margeMoy','deee','dea','dateDeee','ucde','cdt']],
+  ['Média',          ['media','mediaCode']],
+];
+function openDrawer(p){
+  if (!p) return;
+  el('drT').textContent = p.libelle || '(sans libellé)';
+  el('drE').textContent = p.ean + (p.fournisseur ? ' · ' + p.fournisseur : '');
+  let h = '';
+  for (const [title, keys] of DRAWER_SECTIONS){
+    h += `<div class="dsec">${title}</div><dl class="dl">`;
+    for (const k of keys){
+      const f = FMAP[k]; if (!f) continue;
+      const v = p[k];
+      const txt = f.type === 'bool' ? fmt.bool(v)
+                : f.type === 'rvc'  ? (v || '—')
+                : isNumType(f.type) ? fmt[f.type](v)
+                : fmt.text(v);
+      h += `<dt>${esc(f.label)}</dt><dd>${esc(txt)}</dd>`;
+    }
+    h += '</dl>';
+  }
+  h += `<div class="dsec">Commandes en cours</div>`;
+  h += p.commandes.length
+    ? '<dl class="dl">' + p.commandes.map(c =>
+        `<dt>${esc(c.num)}${c.proposition ? ' <span class="tag wa">proposition</span>' : ''}</dt>
+         <dd>${esc(c.date || '—')}${c.qte != null ? ' · ' + c.qte : ''}</dd>`).join('') + '</dl>'
+    : `<div style="font-size:12px;color:var(--text-3);font-weight:600">Aucune commande en cours pour cette référence.</div>`;
+  el('drB').innerHTML = h;
+  el('drawer').classList.add('on'); el('mask').classList.add('on');
+}
+function closeDrawer(){ el('drawer').classList.remove('on'); el('mask').classList.remove('on'); }
+el('drX').addEventListener('click', closeDrawer);
+el('mask').addEventListener('click', closeDrawer);
+window.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+/* ════════════════════════════════════════════════════════════════════════
+   8 · BARRE D'OUTILS
+   ════════════════════════════════════════════════════════════════════════ */
+let qT = null;
+el('q').addEventListener('input', e => {
+  clearTimeout(qT);
+  qT = setTimeout(() => { S.q = e.target.value; apply(); }, 140);
+});
+el('btnSide').addEventListener('click', () => el('work').classList.toggle('collapsed'));
+el('btnSort').addEventListener('click', () => { S.sort = []; apply(); });
+
+el('btnReset').addEventListener('click', () => {
+  S.q = ''; el('q').value = '';
+  S.tri = {}; syncTri();
+  FACETS.forEach(k => S.facets[k].clear());
+  document.querySelectorAll('[data-facet]').forEach(b => renderFacet(b.dataset.facet));
+  document.querySelectorAll('[data-facetsearch]').forEach(i => i.value = '');
+  S.crits = S.crits.filter(c => c.quick).map(c => ({ ...c, op:'', a:'', b:'' }));
+  renderQuickNum(); renderCrits();
+  S.preset = null;
+  el('presets').querySelectorAll('.pchip').forEach(x => x.classList.remove('on'));
+  apply(); toast('Filtres réinitialisés');
+});
+
+/* Choix des colonnes affichées */
+el('btnCols').addEventListener('click', () => {
+  const old = document.getElementById('colsPop'); if (old){ old.remove(); return; }
+  const pop = document.createElement('div');
+  pop.id = 'colsPop';
+  pop.style.cssText = `position:fixed;z-index:50;background:var(--surface);border:1px solid var(--border);
+    border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;max-height:62vh;overflow:auto;width:262px`;
+  const r = el('btnCols').getBoundingClientRect();
+  pop.style.top = (r.bottom + 6) + 'px';
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - 272)) + 'px';
+  pop.innerHTML = FIELDS.map(f =>
+    `<label class="opt"><input type="checkbox" value="${f.k}"${S.cols.has(f.k) ? ' checked' : ''}>
+       <span class="n">${esc(f.label)}</span></label>`).join('') +
+    `<div style="display:flex;gap:6px;margin-top:8px"><button class="btn" style="flex:1" data-a="all">Tout</button>
+     <button class="btn" style="flex:1" data-a="def">Défaut</button></div>`;
+  pop.addEventListener('change', e => {
+    const cb = e.target.closest('input'); if (!cb) return;
+    if (cb.checked) S.cols.add(cb.value); else S.cols.delete(cb.value);
+    if (!S.cols.size) { S.cols.add('ean'); cb.checked = true; }
+    buildHead(); apply();
+  });
+  pop.addEventListener('click', e => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    S.cols = b.dataset.a === 'all' ? new Set(FIELDS.map(f => f.k))
+                                   : new Set(FIELDS.filter(f => f.def).map(f => f.k));
+    pop.querySelectorAll('input').forEach(i => i.checked = S.cols.has(i.value));
+    buildHead(); apply();
+  });
+  document.body.appendChild(pop);
+  setTimeout(() => document.addEventListener('click', function off(ev){
+    if (!pop.contains(ev.target) && ev.target !== el('btnCols')){ pop.remove(); document.removeEventListener('click', off); }
+  }), 0);
+});
+
+/* Export CSV — séparateur « ; » et BOM pour Excel français */
+el('btnCsv').addEventListener('click', () => {
+  if (!S.view.length){ toast('Aucune référence à exporter', true); return; }
+  const cs = cols();
+  const cell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const lines = [cs.map(f => cell(f.label)).join(';')];
+  for (const p of S.view){
+    lines.push(cs.map(f => {
+      const v = p[f.k];
+      if (f.type === 'bool') return cell(v ? 'Oui' : 'Non');
+      if (isNumType(f.type)) return cell(v == null ? (f.type === 'qty' ? 0 : '') : String(v).replace('.', ','));
+      return cell(v);
+    }).join(';'));
+  }
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sisto-' + (S.meta.date || '').replace(/\//g, '-') + '-' + S.view.length + 'ref.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(S.view.length + ' référence(s) exportée(s)');
+});
+
+el('btnEans').addEventListener('click', async () => {
+  if (!S.view.length){ toast('Aucune référence à copier', true); return; }
+  const txt = S.view.map(p => p.ean).join('\n');
+  try { await navigator.clipboard.writeText(txt); toast(S.view.length + ' EAN copiés'); }
+  catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast(S.view.length + ' EAN copiés'); }
+    catch(_){ toast('Copie impossible', true); }
+    ta.remove();
+  }
+});
+
+el('btnPrint').addEventListener('click', () => window.print());
+el('btnNew').addEventListener('click', () => {
+  el('work').classList.remove('on');
+  el('stage').style.display = '';
+  el('bar').classList.remove('on');
+  el('bar').firstElementChild.style.width = '0';
+  el('dropT').textContent = 'Glissez votre SISTO (PDF)';
+  el('dropH').textContent = 'ou cliquez pour parcourir · .pdf';
+  el('topMeta').innerHTML = '';
+  fileInput.value = '';
+  S.all = []; S.view = []; S.meta = null; S.sort = []; S.preset = null;
+});
+</script>
+</body>
+</html>
