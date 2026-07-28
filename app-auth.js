@@ -414,7 +414,16 @@
   function reportProblem() {
     const who = CURRENT ? `${CURRENT.display_name || CURRENT.username || '?'} (${ROLE_LABEL[CURRENT.role] || CURRENT.role}${CURRENT.storeId ? ', magasin ' + CURRENT.storeId : ''})` : 'non connecté';
     let base = 'inconnue';
-    try { const b = window.BASE_ECO; if (b && b.data) base = (b.count || Object.keys(b.data).length) + ' réf., données du ' + (b.updated ? new Date(b.updated).toLocaleDateString('fr-FR') : '?'); } catch (e) {}
+    try {
+      const b = window.BASE_ECO;
+      if (b && b.data) {
+        const eco = Object.keys(b.data).length;
+        const refs = b.info ? Object.keys(b.info).length : eco;
+        base = refs + ' réf. (dont ' + eco + ' avec éco-participation), données du '
+             + (b.updated ? new Date(b.updated).toLocaleDateString('fr-FR') : '?')
+             + (window.BASE_CHECKED ? ', source vérifiée le ' + new Date(window.BASE_CHECKED).toLocaleDateString('fr-FR') : '');
+      }
+    } catch (e) {}
     const lines = [
       'Bonjour Rémi,', '',
       'Je rencontre le problème suivant :', '', '(décrivez ici ce qui se passe)', '',

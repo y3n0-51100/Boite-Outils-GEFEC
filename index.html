@@ -159,6 +159,7 @@ main{flex:1;position:relative;overflow:hidden}
 .sr-dot.ok{background:#4ade80;box-shadow:0 0 0 2.5px rgba(74,222,128,.16)}
 .sr-dot.late{background:#fbbf24;box-shadow:0 0 0 2.5px rgba(251,191,36,.16)}
 .sr-dot.none,.sr-dot.never{background:var(--text-3)}
+.sr-warn{color:#fbbf24;font-weight:800}
 .sr-name{font-weight:700;color:var(--text)}
 .sr-sep{color:var(--border);margin:0 1px}
 
@@ -2753,13 +2754,19 @@ function updateBaseStatus(){
   if(!slot) return;
   try{
     const b=window.BASE_ECO;
-    const n=b&&b.data?(b.count||Object.keys(b.data).length):0;
+    const eco=b&&b.data?Object.keys(b.data).length:0;              // références portant une éco-participation
+    const n=b&&b.info?Object.keys(b.info).length:eco;              // références réellement présentes dans la base
     if(!n) throw new Error('vide');
     const fmt=v=>{const d=v?new Date(v):null;return d&&!isNaN(d.getTime())?d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}):null;};
     const ds=fmt(b.updated)||'date inconnue';
     const cs=fmt(window.BASE_CHECKED);
     const check=cs&&cs!==ds?`<span class="sr-sep">·</span><span title="Contrôle automatique quotidien de la source">vérifiée le ${cs}</span>`:'';
-    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span>${n.toLocaleString('fr-FR')} réf.</span><span class="sr-sep">·</span><span>données du ${ds}</span>${check}</div>`;
+    // alerte si la source n'a pas bougé depuis longtemps : le contrôle quotidien
+    // peut réussir tous les jours tout en retéléchargeant un fichier figé.
+    const age=b.updated?Math.floor((Date.now()-new Date(b.updated).getTime())/86400000):null;
+    const stale=age!=null&&age>30;
+    const staleTxt=stale?`<span class="sr-sep">·</span><span class="sr-warn" title="La source n'a pas fourni de nouvelle version depuis ${age} jours — prévenir l'administrateur">⚠ figée depuis ${age} jours</span>`:'';
+    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ${stale?'late':'ok'}"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span title="${eco.toLocaleString('fr-FR')} portent une éco-participation">${n.toLocaleString('fr-FR')} références</span><span class="sr-sep">·</span><span>données du ${ds}</span>${check}${staleTxt}</div>`;
   }catch(e){
     slot.innerHTML=`<div class="sr-chip"><span class="sr-dot never"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span>non chargée — contacter Rémi SCHAFFHAUSER</span></div>`;
   }
