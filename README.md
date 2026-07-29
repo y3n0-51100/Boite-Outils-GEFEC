@@ -52,6 +52,28 @@ reconnus automatiquement) dans l'outil — ou à les publier depuis le compte
 administrateur pour tous les magasins. **Soldes Magasin** et **SISTO Checker**
 s'ouvrent sans valorisation.
 
+## Documentation
+
+| Document | Public | Régénération |
+| --- | --- | --- |
+| `docs/Tutoriel-Directeurs-GEFEC.pdf` | **Directeurs de magasin** — 9 pages : une page de présentation, puis deux pages par outil (à quoi il sert, la marche à suivre, une capture annotée, un mémo « 30 secondes »). | `node scripts/make-tutoriel.js` |
+| `docs/Guide-Utilisation-GEFEC.pdf` | Magasins & directeurs régionaux — connexion, valorisation, principes généraux. | `node scripts/make-guide.js` |
+| `docs/Guide-Outil-Promo-GEFEC.pdf` | Outil promo (historique). | `node scripts/make-flyer.js` |
+
+Les captures annotées du tutoriel vivent dans `docs/captures/`. Elles sont
+produites par un navigateur réel, les pastilles numérotées étant injectées sur
+les éléments avant la capture — elles suivent donc la mise en page :
+
+```bash
+python3 -m http.server 8099 &                     # servir le dépôt
+SISTO_PDF=/chemin/vers/un-sisto.pdf \
+  node scripts/shoot-captures.js                  # régénère docs/captures/
+node scripts/make-tutoriel.js                     # régénère le PDF
+```
+
+`scripts/fonts/` contient Manrope (OFL), la police de la charte, embarquée dans
+le PDF pour qu'il soit identique partout.
+
 ## Démarrage
 
 Servir le dossier (les outils étant chargés en iframe + `base-eco.js` en relatif,
