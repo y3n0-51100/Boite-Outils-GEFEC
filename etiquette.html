@@ -1612,6 +1612,31 @@ function toggleAll(v) {
   visibleProducts().forEach(p => p.selected = v);
   renderTable();
 }
+/* Navigation clavier dans le tableau : ↓/↑ passe au même champ (prix,
+   ancien prix, éco…) de la ligne suivante/précédente, comme un tableur —
+   évite d'avoir à repasser par la souris pour saisir une série de prix.
+   Écouteur posé une seule fois sur le conteneur stable (#tableWrap survit
+   aux reconstructions de renderTable, seul son contenu est remplacé). */
+document.getElementById('tableWrap').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const input = e.target.closest('input.cell');
+  if (!input) return;
+  const tr = input.closest('tr');
+  const tbody = tr.parentElement;
+  const tdIndex = [...tr.children].indexOf(input.closest('td'));
+  const rowIndex = [...tbody.children].indexOf(tr);
+  const targetRowIndex = e.key === 'ArrowDown' ? rowIndex + 1 : rowIndex - 1;
+  e.preventDefault();
+  // input.blur() peut valider une saisie en cours (onchange -> updProd ->
+  // renderTable), qui reconstruit tout le tableau : on retrouve donc la
+  // ligne cible PAR INDEX après coup plutôt que par référence DOM.
+  input.blur();
+  const freshTbody = document.querySelector('#tableWrap table.prod tbody');
+  const targetTr = freshTbody && freshTbody.children[targetRowIndex];
+  const targetTd = targetTr && targetTr.children[tdIndex];
+  const targetInput = targetTd && targetTd.querySelector('input.cell');
+  if (targetInput) { targetInput.focus(); targetInput.select(); }
+});
 /* Ajout manuel : recherche d'un produit (EAN13 ou référence/libellé)
    dans le plan promo national, puis ajout d'une ligne code / référence / prix. */
 function toggleManualAdd() {
