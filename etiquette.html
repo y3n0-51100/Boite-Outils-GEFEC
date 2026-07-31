@@ -1249,6 +1249,11 @@ function setPlan(t) {
   document.getElementById('tabPem').classList.toggle('active', t === 'pem');
   document.getElementById('tabPerso').classList.toggle('active', t === 'perso');
   renderStep1ForPlan();
+  // Promo Perso n'a pas de croisement automatique qui justifie de sauter à
+  // l'étape 2 : on atterrit toujours sur l'étape 1 pour composer la sélection
+  // (contrairement à TV/PEM, où rester sur l'étape en cours a du sens quand
+  // un croisement vient de réussir).
+  if (t === 'perso') goStep(1);
   renderPlanStatus();
   updateMatchBtn();
   updateCoverage();
