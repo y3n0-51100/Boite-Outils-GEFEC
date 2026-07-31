@@ -455,14 +455,17 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 <header class="app">
   <div class="logo">BUT</div>
   <div>
-    <h1>Étiquettes 2.0 — Plans Promo TV &amp; PEM</h1>
-    <div class="sub">Croisement des plans promo nationaux × stock magasin → impression des affiches prix</div>
+    <h1 id="appTitle">PLAN PROMO TV &amp; PEM</h1>
+    <div class="sub" id="appSub">Croisement des plans promo nationaux × stock magasin → impression des affiches prix</div>
   </div>
 </header>
 
 <!-- Onglets : un espace de travail par plan promo (TV / PEM). L'outil de
-     création d'étiquettes (étapes 1 à 4) est exactement le même dans les deux. -->
-<nav class="plans" role="tablist">
+     création d'étiquettes (étapes 1 à 4) est exactement le même dans les deux.
+     L'onglet Promo Perso, lui, n'apparaît que dans le mode dédié
+     (etiquette.html?plan=perso) : c'est un outil à part entière, ouvert depuis
+     sa propre carte sur l'accueil de la Boîte à Outils. -->
+<nav class="plans" role="tablist" id="planTabs">
   <button id="tabTv" class="active" role="tab" onclick="setPlan('tv')">📺 Plan Promo TV <span class="badge" id="badgeTv">0</span></button>
   <button id="tabPem" role="tab" onclick="setPlan('pem')">🍳 Plan Promo PEM <span class="badge" id="badgePem">0</span></button>
   <button id="tabPerso" role="tab" onclick="setPlan('perso')">⭐ Promo Perso <span class="badge" id="badgePerso">0</span></button>
@@ -528,6 +531,14 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
           <button class="btn small" onclick="document.getElementById('filePersoList').click()">Choisir le fichier</button>
           <input type="file" id="filePersoList" accept=".pdf,application/pdf,.xlsx,.xls,.csv">
           <div class="status" id="stPersoList"></div>
+        </div>
+        <!-- Passerelle SISTO Checker → Promo Perso -->
+        <div class="drop" id="dropPersoSisto">
+          <div class="ic">🎯</div>
+          <div class="t">Récupérer les EAN de votre SISTO filtré</div>
+          <div class="d">Dans <b>SISTO Checker</b>, filtrez vos références (verrouillées, dernier exemplaire en expo, faibles ventes…) puis cliquez sur <b>« ⭐ Envoyer vers Promo Perso »</b>. Les codes EAN vous attendent ici.</div>
+          <button class="btn small" id="btnPersoSisto" onclick="importSistoSelection()">📥 Récupérer les EAN de votre SISTO filtré</button>
+          <div class="status" id="stPersoSisto"></div>
         </div>
       </div>
       <div class="manualadd" style="margin-top:16px;display:block">
@@ -748,6 +759,13 @@ function withPlan(t, fn) {
 }
 const ADMIN_PASSWORD = 'admin123';
 let nextId = 1;
+
+/* Deux outils distincts pour un même moteur :
+   · etiquette.html            → Plan Promo TV & PEM (onglets TV / PEM)
+   · etiquette.html?plan=perso → Promo Perso, outil autonome ouvert depuis sa
+     propre carte sur l'accueil de la Boîte à Outils.
+   Chacun ignore les onglets de l'autre : les deux espaces sont dissociés. */
+const PERSO_ONLY = /(?:^|[?&])plan=perso(?:&|$)/.test(location.search);
 
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -1244,8 +1262,9 @@ function renderStep1ForPlan() {
   document.getElementById('step1Title').textContent = isPerso
     ? '⭐ Composez votre sélection Promo Perso'
     : '📂 Chargez vos fichiers';
+  if (isPerso) renderSistoSelectionStatus();
   document.getElementById('step1Hint').innerHTML = isPerso
-    ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter, ou importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN : chaque code trouvé dans la base est ajouté tout seul, avec son libellé et son <b>ancien prix</b>. Il ne reste qu'à saisir le <b>prix promo</b> de chacun à l'étape suivante — un outil de promo, ça sert à faire des promos 😉"
+    ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter, importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN, ou <b>récupérez les EAN filtrés dans SISTO Checker</b> : chaque code trouvé est ajouté tout seul, avec son libellé et son <b>ancien prix</b>. Il ne reste qu'à saisir le <b>prix promo</b> de chacun à l'étape suivante — un outil de promo, ça sert à faire des promos 😉"
     : "Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.";
 }
 /* Changement d'onglet : tout le flux (étapes 1 à 4) bascule sur le plan choisi */
@@ -1417,26 +1436,7 @@ async function handlePersoListFile(file) {
       throw new Error('Format non reconnu — utilisez un PDF ou un fichier Excel (.xlsx/.xls/.csv).');
     }
     if (!codes.size) throw new Error('Aucun code EAN trouvé dans ce fichier.');
-    const already = new Set(state.products.map(x => normCode(x.ean)));
-    let added = 0, notFound = 0;
-    for (const code of codes) {
-      if (already.has(code)) continue;
-      const v = (state.baseInfo && state.baseInfo.get(code)) || {};
-      const hasInfo = v.name != null || v.price != null || state.ecoMap.has(code);
-      if (!hasInfo) { notFound++; continue; }
-      const name = v.name || state.storeNames.get(code) || '';
-      // même règle que la recherche manuelle : le prix de la base est le prix
-      // normal (« ancien prix » sur l'étiquette), pas le prix promo à imprimer.
-      state.products.unshift({
-        id: nextId++, ean: padCode(code), name, brand: '',
-        price: null, oldPrice: v.price != null ? v.price : null,
-        eco: state.ecoMap.has(code) ? state.ecoMap.get(code) : null,
-        from: null, to: null, selected: true,
-      });
-      already.add(code);
-      added++;
-    }
-    renderTable(); renderPlanStatus(); searchPersona();
+    const { added, notFound } = addPersoProducts([...codes]);
     st.textContent = `✅ ${added} produit(s) ajouté(s)` + (notFound ? ` — ${notFound} code(s) introuvable(s) dans la base` : '');
     if (added) { toast(`✅ ${added} produit(s) ajouté(s) depuis ${file.name} — renseignez le prix promo de chacun dans le tableau`, 6000); goStep(2); }
     else toast('⚠️ Aucun des codes de ce fichier n\'a été trouvé dans la base article.');
@@ -1445,6 +1445,90 @@ async function handlePersoListFile(file) {
     toast('❌ ' + e.message);
   }
 }
+
+/* Ajout d'une liste de références à la sélection Promo Perso — commun à
+   l'import d'un fichier de codes EAN et à la récupération d'un filtre SISTO.
+   Chaque entrée est soit un code EAN, soit { ean, name, brand, price } : les
+   informations de la base article priment, celles fournies par l'appelant
+   (SISTO) servent de secours pour les références absentes de la base. */
+function addPersoProducts(items) {
+  const already = new Set(state.products.map(x => normCode(x.ean)));
+  let added = 0, notFound = 0, dup = 0;
+  for (const it of items) {
+    const raw = typeof it === 'string' ? it : (it && it.ean);
+    const code = normCode(String(raw || '').trim());
+    if (!/^\d{7,13}$/.test(code)) continue;
+    if (already.has(code)) { dup++; continue; }
+    const v = (state.baseInfo && state.baseInfo.get(code)) || {};
+    const alt = typeof it === 'object' && it ? it : {};
+    const name = v.name || alt.name || state.storeNames.get(code) || '';
+    // même règle que la recherche manuelle : le prix connu est le prix de vente
+    // NORMAL (« ancien prix », barré sur l'étiquette), pas le prix promo.
+    const oldPrice = v.price != null ? v.price : (alt.price != null ? +alt.price : null);
+    if (!name && oldPrice == null && !state.ecoMap.has(code)) { notFound++; continue; }
+    state.products.unshift({
+      id: nextId++, ean: padCode(code), name, brand: alt.brand || '',
+      price: null, oldPrice,
+      eco: state.ecoMap.has(code) ? state.ecoMap.get(code) : null,
+      from: null, to: null, selected: true,
+    });
+    already.add(code);
+    added++;
+  }
+  renderTable(); renderPlanStatus(); searchPersona();
+  return { added, notFound, dup };
+}
+
+/* ── Passerelle SISTO Checker → Promo Perso ──────────────────────────────
+   SISTO Checker dépose les EAN filtrés dans le stockage local (même origine) ;
+   ils sont récupérables ici tant qu'un nouveau filtre ne les remplace pas. */
+const SISTO_PROMO_KEY = 'GEFEC_SISTO_PROMO';
+function readSistoSelection() {
+  try {
+    const raw = localStorage.getItem(SISTO_PROMO_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return d && Array.isArray(d.items) && d.items.length ? d : null;
+  } catch (e) { return null; }
+}
+function renderSistoSelectionStatus() {
+  const st = document.getElementById('stPersoSisto');
+  const btn = document.getElementById('btnPersoSisto');
+  if (!st || !btn) return;
+  const sel = readSistoSelection();
+  if (!sel) {
+    st.textContent = 'Aucune sélection en attente — filtrez d\'abord votre SISTO dans SISTO Checker.';
+    btn.disabled = true;
+    return;
+  }
+  const d = new Date(sel.savedAt);
+  const quand = isNaN(d.getTime()) ? '' : ` — filtrés le ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+  st.textContent = `✅ ${sel.items.length} EAN en attente${quand}${sel.source ? ' · ' + sel.source : ''}`;
+  btn.disabled = false;
+}
+function importSistoSelection() {
+  const sel = readSistoSelection();
+  if (!sel) {
+    toast('⚠️ Aucun EAN en attente : dans SISTO Checker, filtrez vos références puis cliquez sur « ⭐ Envoyer vers Promo Perso ».', 7000);
+    return;
+  }
+  const { added, notFound, dup } = addPersoProducts(sel.items);
+  const details = [];
+  if (dup) details.push(`${dup} déjà présent(s)`);
+  if (notFound) details.push(`${notFound} sans libellé ni prix`);
+  document.getElementById('stPersoSisto').textContent =
+    `✅ ${added} produit(s) ajouté(s) depuis SISTO` + (details.length ? ` — ${details.join(', ')}` : '');
+  if (added) {
+    toast(`✅ ${added} produit(s) repris de votre SISTO — renseignez le prix promo de chacun dans le tableau`, 6000);
+    goStep(2);
+  } else {
+    toast('⚠️ Aucun nouveau produit à ajouter : ces références sont déjà dans votre sélection.', 5000);
+  }
+}
+// le filtre peut être envoyé depuis SISTO Checker pendant que cet outil est
+// ouvert (deux iframes de la même origine) : l'état se rafraîchit tout seul
+window.addEventListener('storage', e => { if (!e.key || e.key === SISTO_PROMO_KEY) renderSistoSelectionStatus(); });
+window.addEventListener('focus', renderSistoSelectionStatus);
 function bindDrop(dropId, inputId, handler) {
   const drop = document.getElementById(dropId);
   const input = document.getElementById(inputId);
@@ -2115,6 +2199,29 @@ function goStep(n) {
   if (n === 3) renderPreview();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+/* ============================================================
+   MODE D'OUVERTURE (Plan Promo TV & PEM ou Promo Perso)
+   ============================================================ */
+/* Appliqué tout de suite (le script est en fin de <body>, le DOM est prêt) :
+   l'outil s'affiche d'emblée dans le bon mode, sans clignotement. */
+(function applyToolMode() {
+  const tabPerso = document.getElementById('tabPerso');
+  if (!PERSO_ONLY) { if (tabPerso) tabPerso.style.display = 'none'; return; }
+  state.plan = 'perso';
+  document.getElementById('appTitle').textContent = 'PROMO PERSO';
+  document.getElementById('appSub').textContent =
+    'Vos propres promos magasin : composez votre sélection → impression des affiches prix';
+  // un seul espace de travail : la barre d'onglets de plans n'a plus d'objet
+  const tabs = document.getElementById('planTabs');
+  if (tabs) tabs.style.display = 'none';
+  const sep = document.querySelector('.plansep');
+  if (sep) sep.style.display = 'none';
+  const nav1 = document.getElementById('navStep1');
+  if (nav1) nav1.innerHTML = '<span class="n">1</span> Sélection';
+  document.title = 'Promo Perso — affiches prix magasin';
+  renderStep1ForPlan();
+})();
 
 /* ============================================================
    INITIALISATION — recharge les données mémorisées

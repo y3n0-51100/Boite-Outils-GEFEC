@@ -144,6 +144,10 @@ select.inp{cursor:pointer;-webkit-appearance:none;appearance:none;
 .btn:hover{background:var(--surface-3);border-color:var(--primary)}
 .btn.pri{background:linear-gradient(135deg,var(--primary),#0ea5e9);border-color:transparent;color:#03131d}
 .btn.pri:hover{filter:brightness(1.08)}
+/* Passerelle vers l'outil Promo Perso : couleur « étoile » (ambre), la même
+   que la carte Promo Perso de l'accueil, pour que le lien saute aux yeux. */
+.btn.gold{background:linear-gradient(135deg,#fbbf24,#f59e0b);border-color:transparent;color:#2a1a00}
+.btn.gold:hover{filter:brightness(1.08)}
 .btn.wide{width:100%}
 .btn svg{width:14px;height:14px}
 .btn:disabled{opacity:.45;pointer-events:none}
@@ -388,6 +392,7 @@ td.dim{color:var(--text-3)}
         </button>
         <button class="btn" id="btnSort" title="Effacer le tri en cours">Tri : <span id="sortLbl" style="color:var(--primary);margin-left:4px">aucun</span></button>
         <button class="btn" id="btnEans" title="Copier la liste des EAN filtrés">Copier EAN</button>
+        <button class="btn gold" id="btnPromo" title="Enregistre les EAN affichés pour les récupérer dans l'outil Promo Perso">⭐ Envoyer vers Promo Perso</button>
         <button class="btn" id="btnCsv">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Export CSV
@@ -1283,6 +1288,41 @@ el('btnEans').addEventListener('click', async () => {
     catch(_){ toast('Copie impossible', true); }
     ta.remove();
   }
+});
+
+/* ── Passerelle SISTO → Promo Perso ──────────────────────────────────────
+   Les références actuellement filtrées sont déposées dans le stockage local
+   du navigateur (même origine que l'outil Promo Perso, qui les récupère d'un
+   clic). On transmet aussi le libellé, la marque et le prix de vente magasin :
+   une référence absente de la base article reste ainsi exploitable. */
+const SISTO_PROMO_KEY = 'GEFEC_SISTO_PROMO';
+el('btnPromo').addEventListener('click', () => {
+  if (!S.view.length){ toast('Aucune référence filtrée à envoyer', true); return; }
+  const seen = new Set();
+  const items = [];
+  for (const p of S.view){
+    const ean = String(p.ean || '').trim();
+    if (!/^\d{8,14}$/.test(ean) || seen.has(ean)) continue;
+    seen.add(ean);
+    items.push({
+      ean,
+      name:  p.libelle || '',
+      brand: p.marque || '',
+      price: p.pvMag != null ? p.pvMag : (p.pxVntMoy != null ? p.pxVntMoy : null),
+    });
+  }
+  if (!items.length){ toast('Aucun code EAN exploitable dans ce filtre', true); return; }
+  const payload = {
+    savedAt: new Date().toISOString(),
+    source: (S.meta && S.meta.fichier) || '',
+    magasin: (S.meta && S.meta.magasin) || '',
+    items,
+  };
+  try { localStorage.setItem(SISTO_PROMO_KEY, JSON.stringify(payload)); }
+  catch(e){ toast('Enregistrement impossible (stockage du navigateur saturé)', true); return; }
+  toast(items.length + ' EAN enregistrés — récupérez-les dans Promo Perso');
+  // la coque (index.html) rappelle où les retrouver ; sans coque, on ignore
+  try { parent.postMessage({ type:'gefec:sisto-promo', count: items.length }, '*'); } catch(e){}
 });
 
 el('btnPrint').addEventListener('click', () => window.print());

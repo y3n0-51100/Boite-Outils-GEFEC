@@ -40,6 +40,7 @@
   --c-etiquette:#e30613;
   --c-solde:#4ade80;
   --c-sisto:#38bdf8;
+  --c-perso:#fbbf24;
   --shadow-sm:0 1px 2px rgba(0,0,0,.35);
   --shadow:0 2px 6px rgba(0,0,0,.35),0 14px 32px -14px rgba(0,0,0,.55);
   --shadow-lg:0 34px 80px -26px rgba(0,0,0,.65);
@@ -118,6 +119,7 @@ body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 .tab[data-tab="match"] .dot{background:var(--c-cetelem)}
 .tab[data-tab="etiquette"] .dot{background:var(--c-etiquette)}
 .tab[data-tab="solde"] .dot{background:var(--c-solde)}
+.tab[data-tab="perso"] .dot{background:var(--c-perso)}
 .tab[data-tab="sisto"] .dot{background:var(--c-sisto)}
 .tab.active{color:var(--text)}
 .tab-indicator{position:absolute;top:5px;bottom:5px;border-radius:9px;
@@ -195,11 +197,13 @@ main{flex:1;position:relative;overflow:hidden}
 @keyframes shine{from{left:-70%}to{left:130%}}
 .tool-card[data-tool="match"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(249,115,22,.5)}
 .tool-card[data-tool="etiquette"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(230,7,26,.45)}
+.tool-card[data-tool="perso"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(245,158,11,.45)}
 .tool-card[data-tool="solde"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(21,163,74,.45)}
 .tool-card[data-tool="sisto"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(14,165,233,.45)}
 .tc-bar{position:absolute;top:0;left:0;right:0;height:5px;z-index:3}
 .tc-bar--orange{background:linear-gradient(90deg,#fdba74,#f97316)}
 .tc-bar--red{background:linear-gradient(90deg,#fb6470,#e6071a)}
+.tc-bar--amber{background:linear-gradient(90deg,#fcd34d,#f59e0b)}
 .tc-bar--green{background:linear-gradient(90deg,#4ade80,#15a34a)}
 .tc-bar--cyan{background:linear-gradient(90deg,#7dd3fc,#0284c7)}
 .tc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
@@ -209,6 +213,7 @@ main{flex:1;position:relative;overflow:hidden}
 .tc-icon svg{width:24px;height:24px;color:#fff}
 .tc-icon--orange{background:linear-gradient(140deg,#fdba74,#f97316)}
 .tc-icon--red{background:linear-gradient(140deg,#fb6470,#e6071a)}
+.tc-icon--amber{background:linear-gradient(140deg,#fcd34d,#f59e0b)}
 .tc-icon--green{background:linear-gradient(140deg,#4ade80,#15a34a)}
 .tc-icon--cyan{background:linear-gradient(140deg,#7dd3fc,#0284c7)}
 .tc-badge{font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:999px;letter-spacing:.02em}
@@ -229,6 +234,7 @@ main{flex:1;position:relative;overflow:hidden}
 .tool-card:hover .tc-arrow{transform:translateX(4px)}
 .tool-card[data-tool="match"]:hover .tc-cta,.tool-card[data-tool="match"]:hover .tc-arrow{color:var(--c-cetelem)}
 .tool-card[data-tool="etiquette"]:hover .tc-cta,.tool-card[data-tool="etiquette"]:hover .tc-arrow{color:var(--c-etiquette)}
+.tool-card[data-tool="perso"]:hover .tc-cta,.tool-card[data-tool="perso"]:hover .tc-arrow{color:var(--c-perso)}
 .tool-card[data-tool="solde"]:hover .tc-cta,.tool-card[data-tool="solde"]:hover .tc-arrow{color:var(--c-solde)}
 .tool-card[data-tool="sisto"]:hover .tc-cta,.tool-card[data-tool="sisto"]:hover .tc-arrow{color:var(--c-sisto)}
 
@@ -269,6 +275,7 @@ main{flex:1;position:relative;overflow:hidden}
   border-radius:50%;animation:spin .8s linear infinite}
 .view-tool[data-view="match"] .loader-spinner{border-top-color:var(--c-cetelem)}
 .view-tool[data-view="etiquette"] .loader-spinner{border-top-color:var(--c-etiquette)}
+.view-tool[data-view="perso"] .loader-spinner{border-top-color:var(--c-perso)}
 .view-tool[data-view="solde"] .loader-spinner{border-top-color:var(--c-solde)}
 .view-tool[data-view="sisto"] .loader-spinner{border-top-color:var(--c-sisto)}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -314,7 +321,8 @@ main{flex:1;position:relative;overflow:hidden}
       <nav class="tab-nav" id="tabNav" hidden>
         <span class="tab-indicator"></span>
         <button class="tab" data-tab="match" type="button"><span class="dot"></span>Affiches CETELEM</button>
-        <button class="tab" data-tab="etiquette" type="button"><span class="dot"></span>Plan Promo + Affiches Magasin</button>
+        <button class="tab" data-tab="etiquette" type="button"><span class="dot"></span>Plan Promo TV &amp; PEM</button>
+        <button class="tab" data-tab="perso" type="button"><span class="dot"></span>Promo Perso</button>
         <button class="tab" data-tab="solde" type="button"><span class="dot"></span>Soldes</button>
         <button class="tab" data-tab="sisto" type="button"><span class="dot"></span>SISTO Checker</button>
       </nav>
@@ -396,6 +404,22 @@ main{flex:1;position:relative;overflow:hidden}
               <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
           </button>
 
+          <!-- Promo Perso : outil à part entière (etiquette.html?plan=perso) -->
+          <button class="tool-card ready" data-tool="perso" data-novalo type="button">
+            <div class="tc-bar tc-bar--amber"></div>
+            <div class="tc-header">
+              <div class="tc-icon tc-icon--amber">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/></svg>
+              </div>
+              <span class="tc-badge tc-badge--amber">Disponible</span>
+            </div>
+            <div class="tc-title">Promo Perso</div>
+            <div class="tc-sub">Vos promos magasin · A4 / A5</div>
+            <div class="tc-desc">Composez librement votre sélection : recherchez un produit dans la base article, importez une liste de codes EAN, ou récupérez directement les EAN filtrés dans SISTO Checker — puis imprimez vos affiches prix.</div>
+            <div class="tc-footer"><span class="tc-cta">Ouvrir l'outil</span>
+              <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
+          </button>
+
           <!-- Soldes -->
           <button class="tool-card ready" data-tool="solde" data-novalo type="button">
             <div class="tc-bar tc-bar--green"></div>
@@ -442,6 +466,15 @@ main{flex:1;position:relative;overflow:hidden}
       <div class="tool-pane">
         <div class="pane-loader"><div class="loader-spinner"></div><div class="loader-text">chargement de l'outil…</div></div>
         <iframe class="tool-frame" data-src="etiquette.html" data-input="fileValo" title="Plans Promo TV &amp; PEM" allow="clipboard-read; clipboard-write"></iframe>
+      </div>
+    </section>
+    <!-- Promo Perso : même moteur qu'Étiquettes, ouvert dans son mode dédié.
+         Chargé à la première ouverture seulement (data-lazy) : inutile de
+         payer le coût d'un second outil complet si le magasin ne s'en sert pas. -->
+    <section class="view view-tool" data-view="perso" role="tabpanel" aria-label="Promo Perso">
+      <div class="tool-pane">
+        <div class="pane-loader"><div class="loader-spinner"></div><div class="loader-text">chargement de l'outil…</div></div>
+        <iframe class="tool-frame" data-src="etiquette.html?plan=perso" data-lazy title="Promo Perso" allow="clipboard-read; clipboard-write"></iframe>
       </div>
     </section>
     <section class="view view-tool" data-view="solde" role="tabpanel" aria-label="Soldes Magasin">
@@ -2748,10 +2781,22 @@ function buildPrintArea(results) {
 const state = { valoFile:null, valoEanCount:null, injected:new Set(), iframeReady:new Set() };
 
 /* ── Statut de la base article → chip dans le ruban ─────────── */
+/* Base NOSICA déposée à la main par l'administrateur (Réglages) : elle
+   remplace la base automatique dans les outils, le ruban le dit. */
+let sharedBase=null;
+window.setSharedBaseInfo=function(meta){ sharedBase=meta||null; updateBaseStatus(); };
 function updateBaseStatus(){
   const slot=document.getElementById('srBase');
   const ribbon=document.getElementById('statusRibbon');
   if(!slot) return;
+  if(sharedBase&&sharedBase.updated_at){
+    const d=new Date(sharedBase.updated_at);
+    const ds=isNaN(d.getTime())?'date inconnue':d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+    const nm=sharedBase.file_name?`<span class="sr-sep">·</span><span>${String(sharedBase.file_name).replace(/[<>&]/g,'')}</span>`:'';
+    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span title="Fichier Excel déposé par l'administrateur — prioritaire sur la base automatique">fichier publié par l'administrateur le ${ds}</span>${nm}</div>`;
+    if(ribbon) ribbon.hidden=false;
+    return;
+  }
   try{
     const b=window.BASE_ECO;
     const eco=b&&b.data?Object.keys(b.data).length:0;              // références portant une éco-participation
@@ -2779,12 +2824,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.tool-frame').forEach(frame => {
     const view = frame.closest('.view-tool').dataset.view;
     frame.addEventListener('load', () => {
+      // un cadre paresseux émet d'abord un « load » pour son about:blank :
+      // le voile de chargement doit rester tant que l'outil n'est pas là
+      if (!frame.src && !frame.srcdoc) return;
       state.iframeReady.add(view);
       const loader = frame.closest('.view-tool').querySelector('.pane-loader');
       if (loader) loader.classList.add('hide');
       maybeInject(frame);
-    }, { once:true });
+    });
 
+    if (frame.hasAttribute('data-lazy')) return;  // chargé à la première ouverture
     if (frame.dataset.tpl) {
       const tpl = document.getElementById(frame.dataset.tpl);
       if (tpl) frame.srcdoc = tpl.textContent.replace(/<\\\/script/g, '</script');
@@ -2793,6 +2842,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+/* Outils chargés à la demande (data-lazy) : au premier affichage seulement */
+function ensureFrameLoaded(frame){
+  if (!frame || !frame.hasAttribute('data-lazy') || frame.src) return;
+  if (frame.dataset.src) frame.src = frame.dataset.src;
+}
 
 /* ── Injection de la valorisation partagée dans un outil ────── */
 function maybeInject(frame) {
@@ -2902,7 +2956,7 @@ function switchView(name){
     tabs.forEach(t=>{const on=t.dataset.tab===name;t.classList.toggle('active',on);t.setAttribute('aria-selected',on)});
     requestAnimationFrame(positionIndicator); setTimeout(positionIndicator,120);
     const frame=document.querySelector(`.view-tool[data-view="${name}"] .tool-frame`);
-    if (frame) maybeInject(frame);
+    if (frame){ ensureFrameLoaded(frame); maybeInject(frame); }
   }
 }
 function positionIndicator(){
@@ -2917,6 +2971,13 @@ document.getElementById('brand').addEventListener('click',()=>switchView('home')
 document.getElementById('valoChange').addEventListener('click',e=>{e.stopPropagation();clearValoFile()});
 window.addEventListener('keydown',e=>{
   if (e.key==='Escape' && shell.dataset.view!=='home') switchView('home');
+});
+
+/* ── Passerelle SISTO Checker → Promo Perso ─────────────────── */
+window.addEventListener('message', e => {
+  const d = e && e.data;
+  if (!d || d.type !== 'gefec:sisto-promo') return;
+  showToast(`${d.count} EAN enregistrés ✓ — ouvrez « Promo Perso » puis « Récupérer les EAN de votre SISTO filtré »`);
 });
 
 /* ── Toast ──────────────────────────────────────────────────── */

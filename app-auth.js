@@ -160,6 +160,7 @@
         ${Object.keys(SHARED).filter(id => !SHARED[id].legacy).map(id => `
         <div class="gpromo">
           <div class="gpromo-title">${esc(SHARED[id].name)}${SHARED[id].multi ? ' <span style="font-weight:600;font-size:11px;opacity:.7">· plusieurs fichiers possibles</span>' : ''}</div>
+          ${SHARED[id].hint ? `<div class="gpromo-sub">${esc(SHARED[id].hint)}</div>` : ''}
           <div class="gmsg" id="ds-status-${id}">Chargement…</div>
           <input type="file" id="ds-file-${id}" accept="${SHARED[id].accept}"${SHARED[id].multi ? ' multiple' : ''} style="display:none">
           <div class="gpromo-actions">
@@ -526,6 +527,11 @@
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
     'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
+    // Base article NOSICA déposée à la main : le classeur est injecté dans les
+    // deux outils d'étiquettes (Plan Promo et Promo Perso), qui le relisent et
+    // remplacent la base automatique (éco-participations, libellés, prix).
+    'base-nosica':      { name: 'Base article NOSICA (fichier Excel)', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src^="etiquette.html"]', input: 'adminBaseFile',
+                          hint: "À utiliser quand la mise à jour automatique de nuit est en panne ou en retard : déposez le fichier Excel NOSICA téléchargé depuis le portail. Il remplace la base article (éco-participations, libellés, prix de vente) chez tous les magasins, dès leur prochaine connexion." },
   };
   const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem'], match: 'affiches-cetelem', solde: 'medias-soldes' };
   const sharedFiles = {};      // id -> [File, ...] chargés (1 pour les docs simples, N pour multi)
@@ -574,12 +580,16 @@
       input.dispatchEvent(new win.Event('change', { bubbles: true }));
     } catch (e) { frame['__inj_' + id] = false; }
   }
+  // un document partagé peut concerner plusieurs outils (ex. la base article,
+  // utilisée par Plan Promo ET par Promo Perso) : on injecte dans chaque cadre
   function tryInjectShared(id) {
     const cfg = SHARED[id]; if (!cfg) return;
-    const frame = document.querySelector(cfg.frameSel);
-    if (!frame) return;
-    injectSharedInto(id, frame);                              // si déjà chargée
-    frame.addEventListener('load', () => injectSharedInto(id, frame)); // au prochain chargement
+    document.querySelectorAll(cfg.frameSel).forEach(frame => {
+      injectSharedInto(id, frame);                            // si déjà chargé
+      if (frame['__lis_' + id]) return;                       // un seul écouteur par cadre
+      frame['__lis_' + id] = true;
+      frame.addEventListener('load', () => injectSharedInto(id, frame)); // au prochain chargement
+    });
   }
   async function ensureSharedLoaded(id, meta) {
     if (!meta || !meta.file_path) return;
@@ -613,6 +623,9 @@
       if (SHARED[id].legacy && hasNewPlans) continue;
       if (metas[id]) await ensureSharedLoaded(id, metas[id]);
     }
+    // ruban d'accueil : signaler une base article déposée à la main
+    const nb = metas['base-nosica'];
+    if (window.setSharedBaseInfo) window.setSharedBaseInfo(nb && nb.file_path ? nb : null);
   }
 
   function relAge(dt) {
@@ -732,6 +745,7 @@
       toast(cfg.name + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
       input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
       refreshSharedStatus(id);
+      if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(await fetchSharedMeta(id));
     } catch (e) {
       toast('Échec de la publication : ' + (e.message || e), true);
     } finally {
@@ -762,6 +776,7 @@
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       toast(cfg.name + ' retiré pour tous les magasins.');
       refreshSharedStatus(id);
+      if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(null);
     } catch (e) {
       toast('Échec du retrait : ' + (e.message || e), true);
     } finally {

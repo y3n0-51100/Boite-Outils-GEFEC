@@ -9,9 +9,10 @@ claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
 | Outil | Rôle | Valorisation requise |
 | --- | --- | --- |
 | **Affiches CETELEM** | Sélectionne et imprime les affiches de financement sur les produits exposés (PDF valorisation + ZIP des affiches `EAN_*.pdf`). | Oui |
-| **Plans Promo TV & PEM** (Étiquettes 2.0) | Deux onglets — **Plan Promo TV** et **Plan Promo PEM** — croisent chaque plan promo national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. | Oui |
+| **Plan Promo TV & PEM** | Deux onglets — **Plan Promo TV** et **Plan Promo PEM** — croisent chaque plan promo national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. | Oui |
+| **Promo Perso** | Outil **dissocié** du plan promo national : le magasin compose lui-même sa sélection (recherche dans la base article, import d'une liste de codes EAN, ou **récupération des EAN filtrés dans SISTO Checker**), saisit ses prix promo et imprime les mêmes affiches. | Non |
 | **Soldes Magasin** | Déduplique le listing magasin vs Média Centrale, imprimable. | Non |
-| **SISTO Checker** | Relit l'édition PDF « Situation Stocks des Encours Fournisseurs » du magasin et permet de **filtrer et trier** les références sur tous leurs critères : stock expo / dépôt, disponible à la vente, disponible à terme, commandes, média, gamme, famille, marque, verrouillage, ventes M à M-3, prix, marge… Export CSV et impression. | Non |
+| **SISTO Checker** | Relit l'édition PDF « Situation Stocks des Encours Fournisseurs » du magasin et permet de **filtrer et trier** les références sur tous leurs critères : stock expo / dépôt, disponible à la vente, disponible à terme, commandes, média, gamme, famille, marque, verrouillage, ventes M à M-3, prix, marge… Export CSV et impression. Le bouton **« ⭐ Envoyer vers Promo Perso »** enregistre les EAN du filtre courant pour les récupérer d'un clic dans **Promo Perso**. | Non |
 
 ## Architecture
 
@@ -19,13 +20,28 @@ claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
   valorisation partagée), navigation par onglets, et chargement de chaque outil
   dans une iframe. Charte claire commune ; les outils hérités (CETELEM, Soldes)
   sont automatiquement rebasculés en charte claire par injection de variables CSS.
-- `etiquette.html` — l'outil **Étiquettes 2.0** complet et autonome (polices et
-  masques officiels intégrés). Chargé en iframe par la coque.
+- `etiquette.html` — le moteur d'étiquettes complet et autonome (polices et
+  masques officiels intégrés). Chargé en iframe par la coque, dans **deux modes**
+  qui ne partagent rien à l'écran : `etiquette.html` = **Plan Promo TV & PEM**
+  (onglets TV / PEM), `etiquette.html?plan=perso` = **Promo Perso** (outil à part,
+  sa propre carte sur l'accueil, chargé seulement à la première ouverture).
 - `sisto.html` — l'outil **SISTO Checker**, complet et autonome. Chargé en iframe
   par la coque. Il ne dépend ni de la valorisation ni d'un document publié par
   l'administrateur : chaque utilisateur y dépose son propre SISTO.
-- `base-eco.js` — base des éco-participations (publiée par l'administrateur depuis
-  l'outil Étiquettes ; chargée automatiquement au démarrage).
+- `base-eco.js` — base article NOSICA (éco-participations, libellés, prix de
+  vente) régénérée chaque nuit par GitHub Actions et chargée automatiquement au
+  démarrage. En cas de panne de la mise à jour automatique, l'administrateur peut
+  **déposer le fichier Excel NOSICA à la main** (⚙️ Réglages → « Base article
+  NOSICA ») : il est alors injecté chez tous les magasins et remplace la base
+  automatique dans les deux outils d'étiquettes.
+
+### SISTO Checker → Promo Perso
+
+Le passage d'un outil à l'autre se fait par le **stockage local du navigateur**
+(même origine, clé `GEFEC_SISTO_PROMO`) : SISTO Checker y dépose les références
+affichées par le filtre courant (EAN, libellé, marque, prix de vente magasin),
+Promo Perso les reprend à la demande. Une référence absente de la base article
+reste exploitable : son libellé et son prix viennent alors du SISTO.
 
 ### SISTO Checker — lecture du PDF
 
@@ -47,10 +63,10 @@ une case chiffrée laissée vide vaut **zéro** ; filtres et totaux la comptent 
 
 La **valorisation** est déposée une seule fois sur l'accueil et transmise
 automatiquement aux outils qui en ont besoin (Affiches CETELEM et Étiquettes).
-Pour Plans Promo TV & PEM, il ne reste qu'à déposer les plans promo (TV et/ou PEM,
+Pour Plan Promo TV & PEM, il ne reste qu'à déposer les plans promo (TV et/ou PEM,
 reconnus automatiquement) dans l'outil — ou à les publier depuis le compte
-administrateur pour tous les magasins. **Soldes Magasin** et **SISTO Checker**
-s'ouvrent sans valorisation.
+administrateur pour tous les magasins. **Promo Perso**, **Soldes Magasin** et
+**SISTO Checker** s'ouvrent sans valorisation.
 
 ## Documentation
 
