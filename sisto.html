@@ -863,13 +863,7 @@ function buildTopMeta(){
 const TRI_KEYS = ['verrouille','reappro','aStocker','aExposer','media','enCommande','stkMinMaxRegle'];
 function buildTri(){
   document.querySelectorAll('[data-tri]').forEach(box => {
-    const k = box.dataset.tri;
     box.innerHTML = `<button data-v="">Indifférent</button><button data-v="oui">Oui</button><button data-v="non">Non</button>`;
-    box.addEventListener('click', e => {
-      const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.v) S.tri[k] = b.dataset.v; else delete S.tri[k];
-      syncTri(); apply();
-    });
   });
   syncTri();
 }
@@ -944,17 +938,6 @@ el('btnAddCrit').addEventListener('click', () => {
 const FACETS = ['fournisseur','famille','marque','gamme','typologie','indiceStk','listeCle','mediaCode'];
 function buildFacets(){
   FACETS.forEach(k => { S.facets[k] = new Set(); renderFacet(k); });
-  document.querySelectorAll('[data-facetsearch]').forEach(inp => {
-    inp.addEventListener('input', () => renderFacet(inp.dataset.facetsearch, inp.value));
-  });
-  document.querySelectorAll('[data-facet]').forEach(box => {
-    box.addEventListener('change', e => {
-      const cb = e.target.closest('input'); if (!cb) return;
-      const set = S.facets[box.dataset.facet];
-      if (cb.checked) set.add(cb.value); else set.delete(cb.value);
-      apply();
-    });
-  });
 }
 function renderFacet(k, q){
   const box = document.querySelector(`[data-facet="${k}"]`); if (!box) return;
@@ -993,15 +976,47 @@ const PRESETS = [
   { id:'margeNeg',  lbl:'📉 Marge négative',            f:p => p.margeMoy != null && p.margeMoy < 0 },
 ];
 function buildPresets(){
+  syncPresets();
+}
+function syncPresets(){
+  el('presets').querySelectorAll('.pchip').forEach(x => x.classList.toggle('on', x.dataset.p === S.preset));
+}
+
+/* ── Écouteurs des filtres : posés UNE SEULE FOIS ─────────────────────────
+   Le panneau latéral et la barre de filtres rapides ne sont jamais recréés :
+   les réenregistrer à chaque nouveau SISTO empilait les gestionnaires, et un
+   clic sur une puce de filtre rapide l'activait puis la désactivait aussitôt
+   (deux gestionnaires = deux bascules). Seul le CONTENU dépendant du fichier
+   est reconstruit à chaque analyse (buildTri / buildFacets / buildPresets). */
+function wireFilters(){
   el('presets').innerHTML = PRESETS.map(p =>
     `<button class="pchip" data-p="${p.id}">${p.lbl}</button>`).join('');
   el('presets').addEventListener('click', e => {
     const b = e.target.closest('.pchip'); if (!b) return;
     S.preset = S.preset === b.dataset.p ? null : b.dataset.p;
-    el('presets').querySelectorAll('.pchip').forEach(x => x.classList.toggle('on', x.dataset.p === S.preset));
-    apply();
+    syncPresets(); apply();
+  });
+  document.querySelectorAll('[data-tri]').forEach(box => {
+    box.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const k = box.dataset.tri;
+      if (b.dataset.v) S.tri[k] = b.dataset.v; else delete S.tri[k];
+      syncTri(); apply();
+    });
+  });
+  document.querySelectorAll('[data-facetsearch]').forEach(inp => {
+    inp.addEventListener('input', () => renderFacet(inp.dataset.facetsearch, inp.value));
+  });
+  document.querySelectorAll('[data-facet]').forEach(box => {
+    box.addEventListener('change', e => {
+      const cb = e.target.closest('input'); if (!cb) return;
+      const set = S.facets[box.dataset.facet];
+      if (cb.checked) set.add(cb.value); else set.delete(cb.value);
+      apply();
+    });
   });
 }
+wireFilters();
 
 /* ════════════════════════════════════════════════════════════════════════
    6 · FILTRAGE · TRI · RENDU
@@ -1208,17 +1223,18 @@ el('q').addEventListener('input', e => {
 el('btnSide').addEventListener('click', () => el('work').classList.toggle('collapsed'));
 el('btnSort').addEventListener('click', () => { S.sort = []; apply(); });
 
-el('btnReset').addEventListener('click', () => {
+function resetFilters(){
   S.q = ''; el('q').value = '';
   S.tri = {}; syncTri();
-  FACETS.forEach(k => S.facets[k].clear());
+  FACETS.forEach(k => S.facets[k] && S.facets[k].clear());
   document.querySelectorAll('[data-facet]').forEach(b => renderFacet(b.dataset.facet));
   document.querySelectorAll('[data-facetsearch]').forEach(i => i.value = '');
   S.crits = S.crits.filter(c => c.quick).map(c => ({ ...c, op:'', a:'', b:'' }));
   renderQuickNum(); renderCrits();
-  S.preset = null;
-  el('presets').querySelectorAll('.pchip').forEach(x => x.classList.remove('on'));
-  apply(); toast('Filtres réinitialisés');
+  S.preset = null; syncPresets();
+}
+el('btnReset').addEventListener('click', () => {
+  resetFilters(); apply(); toast('Filtres réinitialisés');
 });
 
 /* Choix des colonnes affichées */
@@ -1335,7 +1351,11 @@ el('btnNew').addEventListener('click', () => {
   el('dropH').textContent = 'ou cliquez pour parcourir · .pdf';
   el('topMeta').innerHTML = '';
   fileInput.value = '';
-  S.all = []; S.view = []; S.meta = null; S.sort = []; S.preset = null;
+  el('err').classList.remove('on');
+  S.all = []; S.view = []; S.meta = null; S.sort = [];
+  // le SISTO suivant repart de zéro : des filtres hérités du fichier précédent
+  // (marques, fournisseurs, seuils…) masqueraient ses références sans raison
+  resetFilters();
 });
 </script>
 </body>
