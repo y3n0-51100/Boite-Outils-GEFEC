@@ -918,11 +918,16 @@
     if (!win || typeof win.applyCustomMasks !== 'function') return;
     try { win.applyCustomMasks(customMasksData); frame.__masksInj = true; } catch (e) {}
   }
+  // les masques concernent les deux outils d'étiquettes : Plan Promo TV & PEM
+  // (etiquette.html) ET Promo Perso (etiquette.html?plan=perso)
+  const ETIQ_FRAMES = '.tool-frame[data-src^="etiquette.html"]';
   function tryInjectMasks() {
-    const frame = document.querySelector('.tool-frame[data-src="etiquette.html"]');
-    if (!frame) return;
-    injectMasksInto(frame);
-    frame.addEventListener('load', () => { frame.__masksInj = false; injectMasksInto(frame); });
+    document.querySelectorAll(ETIQ_FRAMES).forEach(frame => {
+      injectMasksInto(frame);
+      if (frame.__masksLis) return;                 // un seul écouteur par cadre
+      frame.__masksLis = true;
+      frame.addEventListener('load', () => { frame.__masksInj = false; injectMasksInto(frame); });
+    });
   }
 
   /* ---------- Modale admin : comptes ---------- */
