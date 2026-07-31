@@ -387,7 +387,7 @@
       chips.push({ st, name: 'Valorisation', val });
     }
 
-    const labels = { 'plan-promo-tv': 'Plan promo TV', 'plan-promo-pem': 'Plan promo PEM', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
+    const labels = { 'plan-promo-tv': 'Plan promo TV', 'plan-promo-pem': 'Plan promo PEM', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes', 'base-nosica': 'Base NOSICA (manuelle)' };
     for (const id of Object.keys(SHARED)) {
       if (!labels[id]) continue; // document hérité : pas de pastille dédiée
       const meta = await fetchSharedMeta(id);
@@ -519,6 +519,7 @@
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
     'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
+    'base-nosica':      { name: 'Base NOSICA — fichier Excel (EAN / éco-participation)', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'adminBaseFile' },
   };
   const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem'], match: 'affiches-cetelem', solde: 'medias-soldes' };
   const sharedFiles = {};      // id -> [File, ...] chargés (1 pour les docs simples, N pour multi)
