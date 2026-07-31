@@ -458,6 +458,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 <nav class="plans" role="tablist">
   <button id="tabTv" class="active" role="tab" onclick="setPlan('tv')">📺 Plan Promo TV <span class="badge" id="badgeTv">0</span></button>
   <button id="tabPem" role="tab" onclick="setPlan('pem')">🍳 Plan Promo PEM <span class="badge" id="badgePem">0</span></button>
+  <button id="tabPerso" role="tab" onclick="setPlan('perso')">⭐ Promo Perso <span class="badge" id="badgePerso">0</span></button>
 </nav>
 <div class="plansep"></div>
 
@@ -473,9 +474,9 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 <!-- ================= ÉTAPE 1 : FICHIERS ================= -->
 <section class="panel active" id="step1">
   <div class="card">
-    <h2>📂 Chargez vos fichiers</h2>
-    <p class="hint">Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.</p>
-    <div class="drops">
+    <h2 id="step1Title">📂 Chargez vos fichiers</h2>
+    <p class="hint" id="step1Hint">Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.</p>
+    <div class="drops" id="tvPemDrops">
       <div class="drop" id="dropPromo">
         <div class="ic">🗓️</div>
         <div class="t" id="dropPromoTitle">Plan promo TV / PEM</div>
@@ -506,8 +507,29 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
         <div class="status" id="stBase"></div>
       </div>
     </div>
-    <div class="bigaction" style="margin-top:22px">
+    <div class="bigaction" style="margin-top:22px" id="matchAction">
       <button class="btn" id="btnMatch" disabled onclick="runMatch()">🔍 Croiser les références</button>
+    </div>
+
+    <!-- Promo Perso : pas de plan national, la sélection se construit directement -->
+    <div id="personaBlock" style="display:none">
+      <div class="drops">
+        <div class="drop" id="dropPersoFile">
+          <div class="ic">📁</div>
+          <div class="t">Importer une liste de codes EAN</div>
+          <div class="d">PDF ou Excel (.xlsx/.xls/.csv) contenant des codes EAN : chaque code est recherché automatiquement dans la base article — libellé et prix repris tout seuls.</div>
+          <button class="btn small" onclick="document.getElementById('filePersoList').click()">Choisir le fichier</button>
+          <input type="file" id="filePersoList" accept=".pdf,application/pdf,.xlsx,.xls,.csv">
+          <div class="status" id="stPersoList"></div>
+        </div>
+      </div>
+      <div class="manualadd" style="margin-top:16px;display:block">
+        <div class="manualadd-row">
+          <input type="search" id="personaSearch" autocomplete="off" placeholder="Code EAN13 ou référence / libellé du produit…" oninput="searchPersona()">
+        </div>
+        <div class="manualadd-hint">Recherchez un produit de la <b>base article</b> par son code EAN13 ou son libellé, puis cliquez sur « Ajouter le produit ». Son code, son libellé et son prix de vente sont repris automatiquement.</div>
+        <div id="personaResults" class="manualresults"></div>
+      </div>
     </div>
   </div>
 </section>
@@ -527,7 +549,6 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
     </div>
     <div id="coverage" class="coverage" hidden></div>
     <div class="toolbar">
-      <input type="search" id="searchBox" placeholder="Rechercher un produit, une marque, un code…" oninput="renderTable()">
       <span class="counter" id="counter"></span>
       <button class="btn alt small" onclick="toggleAll(true)">Tout cocher</button>
       <button class="btn alt small" onclick="toggleAll(false)">Tout décocher</button>
@@ -684,8 +705,11 @@ const state = {
   // valorisation, la base article et les réglages d'impression sont communs.
   plan: 'tv',          // onglet actif
   plans: {
-    tv:  { label: 'Plan Promo TV',  icon: '📺', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
-    pem: { label: 'Plan Promo PEM', icon: '🍳', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
+    tv:    { label: 'Plan Promo TV',  icon: '📺', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
+    pem:   { label: 'Plan Promo PEM', icon: '🍳', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
+    // Promo Perso : pas de plan promo national à croiser — les produits sont
+    // ajoutés directement (recherche ou import d'une liste de codes EAN).
+    perso: { label: 'Promo Perso',    icon: '⭐', promoProducts: [], promoFileName: '', products: [], _autoMatched: true },
   },
   storeKeys: new Set(),// codes (normalisés) présents dans la valorisation magasin
   storeNames: new Map(),// code normalisé -> libellé valorisation
@@ -1192,9 +1216,30 @@ function renderPlanStatus() {
   }
   if (state.plans.tv.promoProducts.length || state.plans.pem.promoProducts.length)
     document.getElementById('dropPromo').classList.add('loaded');
+  // Promo Perso : le badge reflète simplement le nombre de produits ajoutés
+  // (pas de « plan promo » à croiser, donc pas de statut de fichier national)
+  const plPerso = state.plans.perso;
+  const badgePerso = document.getElementById('badgePerso');
+  if (badgePerso) badgePerso.textContent = plPerso.products.length || 0;
+  const tabPerso = document.getElementById('tabPerso');
+  if (tabPerso) tabPerso.classList.toggle('has-data', !!plPerso.products.length);
   const pl = state.plans[state.plan];
   const t2 = document.getElementById('step2Title');
   if (t2) t2.textContent = `🛒 ${pl.icon} ${pl.label} — produits de votre magasin en offre`;
+}
+/* Étape 1 : bloc « fichiers plan promo » (TV/PEM) contre bloc « recherche /
+   import de codes EAN » (Promo Perso) — un seul est visible selon l'onglet. */
+function renderStep1ForPlan() {
+  const isPerso = state.plan === 'perso';
+  document.getElementById('tvPemDrops').style.display = isPerso ? 'none' : '';
+  document.getElementById('matchAction').style.display = isPerso ? 'none' : '';
+  document.getElementById('personaBlock').style.display = isPerso ? 'block' : 'none';
+  document.getElementById('step1Title').textContent = isPerso
+    ? '⭐ Composez votre sélection Promo Perso'
+    : '📂 Chargez vos fichiers';
+  document.getElementById('step1Hint').innerHTML = isPerso
+    ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter avec son prix repris automatiquement de la base article, ou importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN : chaque code trouvé dans la base est ajouté tout seul, avec son libellé et son prix."
+    : "Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.";
 }
 /* Changement d'onglet : tout le flux (étapes 1 à 4) bascule sur le plan choisi */
 function setPlan(t) {
@@ -1202,6 +1247,8 @@ function setPlan(t) {
   state.plan = t;
   document.getElementById('tabTv').classList.toggle('active', t === 'tv');
   document.getElementById('tabPem').classList.toggle('active', t === 'pem');
+  document.getElementById('tabPerso').classList.toggle('active', t === 'perso');
+  renderStep1ForPlan();
   renderPlanStatus();
   updateMatchBtn();
   updateCoverage();
@@ -1322,6 +1369,68 @@ async function handleBaseFile(fileOrBuffer, label) {
   }
 }
 
+/* Liste de codes EAN dans un classeur Excel/CSV : scanne toutes les cellules
+   de toutes les feuilles sans supposer de colonne particulière — le fichier
+   « codes EAN » d'un magasin peut être une simple liste, sans en-tête fixe. */
+function extractEanCodesFromWorkbook(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const codes = new Set();
+  for (const sheetName of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true });
+    for (const row of rows) {
+      for (const cell of row) {
+        if (cell == null) continue;
+        const s = String(cell).trim();
+        if (/^\d{8,13}$/.test(s)) codes.add(normCode(s));
+      }
+    }
+  }
+  return codes;
+}
+/* Promo Perso — import d'un fichier (PDF ou Excel) listant des codes EAN :
+   chaque code trouvé dans la base article est ajouté avec son libellé et
+   son prix de vente, exactement comme un ajout manuel un par un. */
+async function handlePersoListFile(file) {
+  const st = document.getElementById('stPersoList');
+  st.textContent = '⏳ Analyse du fichier…';
+  try {
+    const lower = (file.name || '').toLowerCase();
+    let codes;
+    if (lower.endsWith('.pdf')) {
+      const pages = await extractPdfRows(file);
+      codes = parseValoPdf(pages).keys;
+    } else if (/\.(xlsx|xls|csv)$/.test(lower)) {
+      codes = extractEanCodesFromWorkbook(await file.arrayBuffer());
+    } else {
+      throw new Error('Format non reconnu — utilisez un PDF ou un fichier Excel (.xlsx/.xls/.csv).');
+    }
+    if (!codes.size) throw new Error('Aucun code EAN trouvé dans ce fichier.');
+    const already = new Set(state.products.map(x => normCode(x.ean)));
+    let added = 0, notFound = 0;
+    for (const code of codes) {
+      if (already.has(code)) continue;
+      const v = (state.baseInfo && state.baseInfo.get(code)) || {};
+      const hasInfo = v.name != null || v.price != null || state.ecoMap.has(code);
+      if (!hasInfo) { notFound++; continue; }
+      const name = v.name || state.storeNames.get(code) || '';
+      state.products.unshift({
+        id: nextId++, ean: padCode(code), name, brand: '',
+        price: v.price != null ? v.price : null, oldPrice: null,
+        eco: state.ecoMap.has(code) ? state.ecoMap.get(code) : null,
+        from: null, to: null, selected: true,
+      });
+      already.add(code);
+      added++;
+    }
+    renderTable(); renderPlanStatus(); searchPersona();
+    st.textContent = `✅ ${added} produit(s) ajouté(s)` + (notFound ? ` — ${notFound} code(s) introuvable(s) dans la base` : '');
+    if (added) { toast(`✅ ${added} produit(s) ajouté(s) depuis ${file.name}`); goStep(2); }
+    else toast('⚠️ Aucun des codes de ce fichier n\'a été trouvé dans la base article.');
+  } catch (e) {
+    st.textContent = '';
+    toast('❌ ' + e.message);
+  }
+}
 function bindDrop(dropId, inputId, handler) {
   const drop = document.getElementById(dropId);
   const input = document.getElementById(inputId);
@@ -1334,6 +1443,7 @@ function bindDrop(dropId, inputId, handler) {
 }
 bindDrop('dropPromo', 'filePromo', handlePromoFile);
 bindDrop('dropValo', 'fileValo', handleValoFile);
+bindDrop('dropPersoFile', 'filePersoList', handlePersoListFile);
 // entrées dédiées aux plans partagés publiés par l'admin : type imposé,
 // pas d'ambiguïté de détection (l'admin publie TV et PEM séparément)
 document.getElementById('filePromoTv').addEventListener('change', e => {
@@ -1433,12 +1543,7 @@ function updateCoverage() {
 /* ============================================================
    ÉTAPE 2 — TABLEAU PRODUITS
    ============================================================ */
-function visibleProducts() {
-  const q = (document.getElementById('searchBox').value || '').toLowerCase().trim();
-  if (!q) return state.products;
-  return state.products.filter(p =>
-    p.name.toLowerCase().includes(q) || p.ean.includes(q) || (p.brand || '').toLowerCase().includes(q));
-}
+function visibleProducts() { return state.products; }
 function shortDate(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '?'; }
 function renderTable() {
   const wrap = document.getElementById('tableWrap');
@@ -1515,9 +1620,13 @@ function closeManualAdd() { document.getElementById('manualAdd').style.display =
 function blankBtn() {
   return '<div style="margin-top:8px"><button class="btn alt small" type="button" onclick="addBlank()">＋ Ajouter une ligne vierge</button></div>';
 }
-function searchManual() {
-  const box = document.getElementById('manualResults');
-  const q = (document.getElementById('manualSearch').value || '').toLowerCase().trim();
+/* Recherche d'un produit dans la base article (EAN13 ou libellé) : logique
+   commune au panneau « + Ajouter un produit » (TV/PEM) et à la recherche de
+   l'onglet Promo Perso — seuls le champ de saisie et la zone de résultats
+   diffèrent. */
+function renderProductSearch(queryElId, resultsElId) {
+  const box = document.getElementById(resultsElId);
+  const q = (document.getElementById(queryElId).value || '').toLowerCase().trim();
   const base = state.baseInfo;          // code normalisé -> { name, price }
   const hasInfo = base && base.size;
   // base ancienne (EAN + éco seulement, sans libellé/prix) : recherche par EAN dans ecoMap
@@ -1569,6 +1678,8 @@ function searchManual() {
     </div>`;
   }).join('');
 }
+function searchManual() { renderProductSearch('manualSearch', 'manualResults'); }
+function searchPersona() { renderProductSearch('personaSearch', 'personaResults'); }
 function addFromBase(code) {
   const k = normCode(code);
   if (state.products.some(x => normCode(x.ean) === k)) { toast('Ce produit est déjà dans la liste.'); return; }
@@ -1581,7 +1692,7 @@ function addFromBase(code) {
     eco: state.ecoMap.has(k) ? state.ecoMap.get(k) : null,
     from: null, to: null, selected: true,
   });
-  renderTable(); searchManual();
+  renderTable(); renderPlanStatus(); searchManual(); searchPersona();
   toast('✅ Produit ajouté : ' + (name || padCode(code)));
 }
 function addBlank() {
