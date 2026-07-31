@@ -517,7 +517,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
         <div class="drop" id="dropPersoFile">
           <div class="ic">📁</div>
           <div class="t">Importer une liste de codes EAN</div>
-          <div class="d">PDF ou Excel (.xlsx/.xls/.csv) contenant des codes EAN : chaque code est recherché automatiquement dans la base article — libellé et prix repris tout seuls.</div>
+          <div class="d">PDF ou Excel (.xlsx/.xls/.csv) contenant des codes EAN : chaque code est recherché automatiquement dans la base article — libellé et ancien prix repris tout seuls (le prix promo reste à saisir).</div>
           <button class="btn small" onclick="document.getElementById('filePersoList').click()">Choisir le fichier</button>
           <input type="file" id="filePersoList" accept=".pdf,application/pdf,.xlsx,.xls,.csv">
           <div class="status" id="stPersoList"></div>
@@ -527,7 +527,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
         <div class="manualadd-row">
           <input type="search" id="personaSearch" autocomplete="off" placeholder="Code EAN13 ou référence / libellé du produit…" oninput="searchPersona()">
         </div>
-        <div class="manualadd-hint">Recherchez un produit de la <b>base article</b> par son code EAN13 ou son libellé, puis cliquez sur « Ajouter le produit ». Son code, son libellé et son prix de vente sont repris automatiquement.</div>
+        <div class="manualadd-hint">Recherchez un produit de la <b>base article</b> par son code EAN13 ou son libellé, puis cliquez sur « Ajouter le produit ». Son code et son libellé sont repris automatiquement ; son prix de vente actuel est repris dans <b>Ancien prix</b> (barré sur l'étiquette) — à vous de saisir le <b>prix promo</b> dans le tableau à l'étape suivante.</div>
         <div id="personaResults" class="manualresults"></div>
       </div>
     </div>
@@ -559,7 +559,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
         <input type="search" id="manualSearch" autocomplete="off" placeholder="Code EAN13 ou référence / libellé du produit…" oninput="searchManual()">
         <button class="btn alt small" type="button" onclick="closeManualAdd()">Fermer</button>
       </div>
-      <div class="manualadd-hint" id="manualHint">Recherchez un produit de la <b>base article</b> par son code EAN13 ou son libellé (même hors plan promo), puis cliquez sur « Ajouter le produit ». Son code, son libellé et son prix de vente sont repris automatiquement.</div>
+      <div class="manualadd-hint" id="manualHint">Recherchez un produit de la <b>base article</b> par son code EAN13 ou son libellé (même hors plan promo), puis cliquez sur « Ajouter le produit ». Son code et son libellé sont repris automatiquement ; son prix de vente actuel est repris dans <b>Ancien prix</b> (barré sur l'étiquette) — à vous de saisir le <b>prix promo</b> dans le tableau.</div>
       <div id="manualResults" class="manualresults"></div>
     </div>
     <div id="tableWrap"></div>
@@ -1238,7 +1238,7 @@ function renderStep1ForPlan() {
     ? '⭐ Composez votre sélection Promo Perso'
     : '📂 Chargez vos fichiers';
   document.getElementById('step1Hint').innerHTML = isPerso
-    ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter avec son prix repris automatiquement de la base article, ou importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN : chaque code trouvé dans la base est ajouté tout seul, avec son libellé et son prix."
+    ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter, ou importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN : chaque code trouvé dans la base est ajouté tout seul, avec son libellé et son <b>ancien prix</b>. Il ne reste qu'à saisir le <b>prix promo</b> de chacun à l'étape suivante — un outil de promo, ça sert à faire des promos 😉"
     : "Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.";
 }
 /* Changement d'onglet : tout le flux (étapes 1 à 4) bascule sur le plan choisi */
@@ -1413,9 +1413,11 @@ async function handlePersoListFile(file) {
       const hasInfo = v.name != null || v.price != null || state.ecoMap.has(code);
       if (!hasInfo) { notFound++; continue; }
       const name = v.name || state.storeNames.get(code) || '';
+      // même règle que la recherche manuelle : le prix de la base est le prix
+      // normal (« ancien prix » sur l'étiquette), pas le prix promo à imprimer.
       state.products.unshift({
         id: nextId++, ean: padCode(code), name, brand: '',
-        price: v.price != null ? v.price : null, oldPrice: null,
+        price: null, oldPrice: v.price != null ? v.price : null,
         eco: state.ecoMap.has(code) ? state.ecoMap.get(code) : null,
         from: null, to: null, selected: true,
       });
@@ -1424,7 +1426,7 @@ async function handlePersoListFile(file) {
     }
     renderTable(); renderPlanStatus(); searchPersona();
     st.textContent = `✅ ${added} produit(s) ajouté(s)` + (notFound ? ` — ${notFound} code(s) introuvable(s) dans la base` : '');
-    if (added) { toast(`✅ ${added} produit(s) ajouté(s) depuis ${file.name}`); goStep(2); }
+    if (added) { toast(`✅ ${added} produit(s) ajouté(s) depuis ${file.name} — renseignez le prix promo de chacun dans le tableau`, 6000); goStep(2); }
     else toast('⚠️ Aucun des codes de ce fichier n\'a été trouvé dans la base article.');
   } catch (e) {
     st.textContent = '';
@@ -1685,15 +1687,19 @@ function addFromBase(code) {
   if (state.products.some(x => normCode(x.ean) === k)) { toast('Ce produit est déjà dans la liste.'); return; }
   const v = (state.baseInfo && state.baseInfo.get(k)) || {};
   const name = v.name || state.storeNames.get(k) || '';
+  // le prix repris de la base article est le prix de vente NORMAL, pas un prix
+  // promo : il va dans « Ancien prix » (barré sur l'étiquette). Le champ
+  // « Prix » — celui qui s'affiche en gros — reste à compléter avec le vrai
+  // prix promo, l'outil ne peut pas le deviner tout seul.
   state.products.unshift({
     id: nextId++, ean: padCode(code),
     name, brand: '',
-    price: v.price != null ? v.price : null, oldPrice: null,
+    price: null, oldPrice: v.price != null ? v.price : null,
     eco: state.ecoMap.has(k) ? state.ecoMap.get(k) : null,
     from: null, to: null, selected: true,
   });
   renderTable(); renderPlanStatus(); searchManual(); searchPersona();
-  toast('✅ Produit ajouté : ' + (name || padCode(code)));
+  toast('✅ Produit ajouté : ' + (name || padCode(code)) + (v.price != null ? ' — renseignez le prix promo (ancien prix repris : ' + v.price.toFixed(2) + ' €)' : ''), 5000);
 }
 function addBlank() {
   const q = (document.getElementById('manualSearch').value || '').trim();
