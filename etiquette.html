@@ -405,6 +405,13 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 .lbl.fa5 .eco{position:absolute;left:35.3mm;top:calc(var(--boxtop) + 78.4mm);font-size:4.2mm;margin:0}
 /* libellé + code : centrés ; libellé sur 2 lignes max, le code suit dessous */
 .lbl.fa5 .a5namecode{position:absolute;left:0;right:0;top:calc(var(--boxtop) + 84.4mm);padding:0 11mm;text-align:center}
+/* Ancien prix barré affiché (destockage/promo perso) : la ligne .crossed
+   ajoute ~12mm sous le prix, que ces deux positions FIXES ne prévoyaient
+   pas — elles chevauchaient le prix barré. Décalage mesuré (chevauchement
+   réel + marge), identique quel que soit le masque puisque .crossed a une
+   taille de police fixe. */
+.lbl.fa5.has-old .eco{top:calc(var(--boxtop) + 78.4mm + 15mm)}
+.lbl.fa5.has-old .a5namecode{top:calc(var(--boxtop) + 84.4mm + 15mm)}
 .lbl.fa5 .a5namecode .pcat{font-size:5.6mm;line-height:1.06;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .lbl.fa5 .a5namecode .pref{font-size:5mm;line-height:1.05;margin-top:1.2mm}
 .lbl.fa5 .a5namecode .pcode{font-size:4.5mm;line-height:1;margin-top:2.5mm}
@@ -1896,7 +1903,7 @@ function labelHtml(p, fmtClass) {
   // A4 : dates dans la bande jaune sous le titre ; A5 : dates en haut de
   // la zone blanche (position du bordereau officiel), dans tous les modes
   const datesInHead = drawVector && state.fmt === 'a4';
-  return `<div class="lbl ${fmtClass} tpl-${tplPos(tpl)} ${useImg ? 'with-img' : ''} ${noBg ? 'no-bg' : ''} ${p ? '' : 'empty-slot'}">
+  return `<div class="lbl ${fmtClass} tpl-${tplPos(tpl)} ${useImg ? 'with-img' : ''} ${noBg ? 'no-bg' : ''} ${p ? '' : 'empty-slot'} ${p && p.oldPrice != null ? 'has-old' : ''}">
     ${maskImgTag}
     <div class="inner">
       ${drawVector ? `<div class="head">${title}${datesInHead && dates && p ? `<div class="dates">${esc(dates)}</div>` : ''}</div>` : ''}
