@@ -1387,8 +1387,12 @@
     return { path, url: data.signedUrl, expires: new Date(Date.now() + days * 86400000) };
   }
 
-  // Envoi par la fonction Edge. Une erreur « pas de fournisseur configuré »
-  // n'en est pas vraiment une : la messagerie de l'administrateur prend le relais.
+  // Envoi par la fonction Edge.
+  //   · fonction injoignable, ou aucune voie d'envoi configurée -> repli sur la
+  //     messagerie de l'administrateur (err.fallback) : c'est le seul recours.
+  //   · fournisseur qui refuse (clé invalide, domaine non vérifié, SMTP qui
+  //     rejette) -> on affiche l'erreur telle quelle. Détourner la messagerie
+  //     ne ferait que masquer une panne parfaitement réparable.
   async function mailAffiches(store, to, link, info) {
     const { data, error } = await sb.functions.invoke('send-affiches-mail', {
       body: {
@@ -1402,8 +1406,12 @@
       try { const ctx = await error.context?.json?.(); if (ctx && ctx.error) m = ctx.error; } catch (e) {}
       const err = new Error(m); err.fallback = true; throw err;
     }
-    if (data && data.ok === false) { const err = new Error(data.error || 'envoi automatique non configuré'); err.fallback = true; throw err; }
-    if (data && data.error) { const err = new Error(data.error); err.fallback = true; throw err; }
+    if (data && data.ok === false) {
+      const err = new Error(data.error || 'envoi automatique non configuré');
+      err.fallback = data.code === 'mail_not_configured';
+      throw err;
+    }
+    if (data && data.error) throw new Error(data.error);
     return data;
   }
 
@@ -1521,7 +1529,7 @@
     };
     el('affBarWrap').hidden = false;
 
-    let done = 0, failed = 0, manual = 0, stop = '';
+    let done = 0, failed = 0, manual = 0, stop = '', lastError = '';
     try {
       const plans = await planFilesForExport();
       if (!plans.count) throw new Error("aucun plan promo publié : déposez les plans TV et/ou PEM dans ⚙️ Réglages");
@@ -1572,7 +1580,12 @@
             manual++;
           }
         } catch (e) {
-          setSt(store.id, 'ko', (e && e.message) || 'échec');
+          lastError = (e && e.message) || String(e);
+          setSt(store.id, 'ko', 'échec');
+          // le motif complet sous le nom du magasin : « .st » reste court
+          const row = el('aff-st-' + store.id);
+          const sub = row && row.querySelector('.gr-sub');
+          if (sub) sub.textContent = lastError;
           failed++;
         }
       }
@@ -1587,6 +1600,9 @@
     if (stop) {
       msg.className = 'gmsg err';
       msg.textContent = `Envoi groupé interrompu — ${stop}. Tant que la fonction « send-affiches-mail » n'est pas configurée (voir supabase/SETUP.md), envoyez magasin par magasin : le message est alors préparé dans votre messagerie.`;
+    } else if (failed && !done && !manual) {
+      msg.className = 'gmsg err';
+      msg.textContent = 'Échec : ' + lastError;
     } else if (manual) {
       msg.className = 'gmsg';
       msg.textContent = "Envoi automatique non configuré : le message vient de s'ouvrir dans votre messagerie, lien inclus (également copié dans le presse-papiers).";

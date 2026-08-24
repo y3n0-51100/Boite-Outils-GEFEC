@@ -75,24 +75,39 @@ PDF de **toutes** les affiches de ce magasin (bouton **✉️ Affiches** dans
 [`functions/send-affiches-mail/index.ts`](./functions/send-affiches-mail/index.ts)
 → **Deploy**. (En CLI : `supabase functions deploy send-affiches-mail --project-ref <ref>`.)
 
-### 6.3 La clé d'envoi
-Dans **Edge Functions → Secrets**, ajouter **au choix** :
+### 6.3 Par où les mails partent
+Dans **Edge Functions → Secrets**. `MAIL_FROM` est **toujours** requis ; pour le
+reste, **une seule des trois voies suffit** — la première configurée l'emporte.
+
+**Voie 1 — votre messagerie existante (aucun compte à créer, aucun domaine).**
+C'est la plus simple, et les magasins reçoivent le mail depuis une adresse
+qu'ils connaissent déjà.
 
 | Secret | Valeur |
 | --- | --- |
-| `RESEND_API_KEY` | clé d'API [Resend](https://resend.com) (3 000 mails/mois gratuits) |
-| `BREVO_API_KEY` | *ou* clé d'API [Brevo](https://www.brevo.com) (300 mails/jour gratuits) |
-| `MAIL_FROM` | expéditeur, ex : `Boîte à Outils GEFEC <affiches@mondomaine.fr>` |
-| `MAIL_REPLY_TO` | *(facultatif)* adresse de réponse |
+| `SMTP_HOST` | `smtp.gmail.com` (Gmail) · `smtp-mail.outlook.com` (Outlook) · le serveur de la centrale |
+| `SMTP_PORT` | `465` (TLS direct, par défaut) ou `587` (STARTTLS) |
+| `SMTP_USER` | l'adresse du compte, ex : `remi.schaff@gmail.com` |
+| `SMTP_PASS` | un **mot de passe d'application**, jamais le mot de passe du compte |
+| `MAIL_FROM` | ex : `Boîte à Outils GEFEC <remi.schaff@gmail.com>` |
 
-> L'adresse d'expédition doit appartenir à un **domaine vérifié** chez le
-> fournisseur — c'est la seule condition pour que les mails ne partent pas en
-> indésirables.
+> Gmail : la double authentification doit être active, puis
+> [créer un mot de passe d'application](https://myaccount.google.com/apppasswords)
+> (16 caractères) à coller dans `SMTP_PASS`. Limite ~500 envois/jour, très
+> au-delà des 16 magasins.
 
-**Sans ces secrets, rien ne casse** : l'outil génère quand même le PDF et le
-lien, puis ouvre le message tout rédigé dans la messagerie de l'administrateur,
-qui n'a plus qu'à l'envoyer (le lien est aussi copié dans le presse-papiers).
-Seul l'envoi groupé aux 16 magasins demande une clé.
+**Voie 2 — Brevo** (`BREVO_API_KEY`) : 300 mails/jour gratuits, un simple
+expéditeur validé par clic suffit, pas de domaine exigé.
+
+**Voie 3 — Resend** (`RESEND_API_KEY`) : 3 000 mails/mois, mais l'envoi vers des
+destinataires quelconques réclame un **domaine vérifié**.
+
+`MAIL_REPLY_TO` est facultatif partout (adresse de réponse).
+
+**Sans aucun de ces secrets, rien ne casse** : l'outil génère quand même le PDF
+et le lien, puis ouvre le message tout rédigé dans la messagerie de
+l'administrateur, qui n'a plus qu'à l'envoyer. C'est un dépannage, pas le mode
+normal — et seul l'envoi groupé aux 16 magasins exige une vraie voie d'envoi.
 
 ### 6.4 Les adresses des directeurs
 Elles ne sont pas dans les comptes (les identifiants de connexion utilisent un

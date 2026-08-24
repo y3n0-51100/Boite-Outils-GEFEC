@@ -7,9 +7,17 @@
 // puis signé. Cette fonction ne fait que poster le lien par mail, avec une
 // clé d'API qui n'a rien à faire dans le site.
 //
-// Secrets à définir (Edge Functions -> Secrets), au choix du fournisseur :
-//   RESEND_API_KEY   clé Resend        (https://resend.com)
-//   BREVO_API_KEY    clé Brevo         (https://brevo.com)
+// Secrets à définir (Edge Functions -> Secrets). MAIL_FROM est toujours requis ;
+// pour le reste, UNE des trois voies suffit — la première configurée gagne :
+//
+//   1. Votre messagerie existante, en SMTP (aucun compte à créer) :
+//        SMTP_HOST    ex : smtp.gmail.com
+//        SMTP_PORT    465 (TLS direct) ou 587 (STARTTLS) — 465 par défaut
+//        SMTP_USER    l'adresse du compte
+//        SMTP_PASS    le mot de passe d'application (PAS le mot de passe du compte)
+//   2. RESEND_API_KEY  clé Resend  (https://resend.com) — demande un domaine vérifié
+//   3. BREVO_API_KEY   clé Brevo   (https://brevo.com)  — accepte un expéditeur validé seul
+//
 //   MAIL_FROM        expéditeur, ex : "Boîte à Outils GEFEC <affiches@mondomaine.fr>"
 //   MAIL_REPLY_TO    (facultatif) adresse de réponse
 // Sans clé, la fonction répond { ok:false, code:'mail_not_configured' } :
@@ -148,19 +156,49 @@ Deno.serve(async (req) => {
     const replyTo = Deno.env.get("MAIL_REPLY_TO") ?? "";
     const resend = Deno.env.get("RESEND_API_KEY") ?? "";
     const brevo = Deno.env.get("BREVO_API_KEY") ?? "";
+    const smtpHost = Deno.env.get("SMTP_HOST") ?? "";
+    const smtpUser = Deno.env.get("SMTP_USER") ?? "";
+    const smtpPass = Deno.env.get("SMTP_PASS") ?? "";
 
-    // 3) Aucun fournisseur configuré : l'interface prendra le relais avec la
+    // 3) Aucune voie configurée : l'interface prendra le relais avec la
     //    messagerie de l'administrateur (ce n'est pas une erreur).
-    if (!resend && !brevo)
+    if (!smtpHost && !resend && !brevo)
       return json(200, {
         ok: false, code: "mail_not_configured",
-        error: "Aucune clé d'envoi (RESEND_API_KEY ou BREVO_API_KEY) n'est définie pour la fonction.",
+        error: "Aucune voie d'envoi (SMTP_HOST, RESEND_API_KEY ou BREVO_API_KEY) n'est définie pour la fonction.",
       });
     if (!from)
       return json(200, {
         ok: false, code: "mail_not_configured",
         error: "Le secret MAIL_FROM (adresse d'expédition) n'est pas défini.",
       });
+
+    // 4) SMTP : la messagerie que vous avez déjà. Le client est importé ici et
+    //    non en tête de fichier — si deno.land était injoignable, la fonction
+    //    continuerait de démarrer et de répondre aux autres voies.
+    if (smtpHost) {
+      const port = Number(Deno.env.get("SMTP_PORT") ?? 465);
+      try {
+        const { SMTPClient } = await import("https://deno.land/x/denomailer@1.6.0/mod.ts");
+        const client = new SMTPClient({
+          connection: {
+            hostname: smtpHost,
+            port,
+            tls: port === 465,        // 465 = TLS direct ; 587 passe par STARTTLS
+            ...(smtpUser ? { auth: { username: smtpUser, password: smtpPass } } : {}),
+          },
+        });
+        await client.send({
+          from, to, subject: mail.titre, content: mail.text, html: mail.html,
+          ...(replyTo ? { replyTo } : {}),
+        });
+        await client.close();
+        return json(200, { ok: true, provider: "smtp" });
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        return json(400, { error: `Envoi SMTP refusé par ${smtpHost}:${port} — ${m}` });
+      }
+    }
 
     let res: Response;
     if (resend) {

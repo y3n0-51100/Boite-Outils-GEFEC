@@ -120,7 +120,7 @@ faits ici par l'administrateur au moment de l'envoi.
 | Génération | Navigateur de l'admin | `gefecBuildAffiches()` : valorisation × plans promo → planches → PDF (html2canvas + jsPDF, chargés à la demande). Le rendu se fait dans un document réduit à la feuille de style de l'outil : html2canvas recopie le document à chaque planche, et recopier la page entière (masques embarqués compris) coûte des secondes par affiche au lieu d'un dixième de seconde. |
 | Dépôt | Bucket privé `affiches` | `<code magasin>/affiches.pdf`, remplacé à chaque envoi : les liens déjà partis restent valides et servent la dernière version. |
 | Lien | URL signée Supabase | Valable 30, 60 ou 90 jours au choix, avec l'option `download` pour que le clic télécharge au lieu d'afficher. |
-| Mail | Fonction Edge `send-affiches-mail` | Resend ou Brevo, clé côté serveur. **Sans clé configurée**, l'outil ne bloque pas : il prépare le message dans la messagerie de l'administrateur, lien inclus. |
+| Mail | Fonction Edge `send-affiches-mail` | Trois voies, la première configurée l'emporte : **SMTP** (la messagerie que vous avez déjà — ni compte ni domaine à créer), Brevo, ou Resend. Les identifiants restent côté serveur. **Sans aucune voie configurée**, l'outil ne bloque pas : il prépare le message dans la messagerie de l'administrateur, lien inclus. Un fournisseur qui refuse (clé invalide, domaine non vérifié) affiche l'erreur au lieu de basculer sur la messagerie — la panne est réparable, autant la montrer. |
 | Trace | Table `affiches_mails` | « affiches envoyées il y a 3 jours à … » sous chaque magasin. |
 
 Mise en place : exécuter [`supabase/add-affiches-mail.sql`](./supabase/add-affiches-mail.sql)
