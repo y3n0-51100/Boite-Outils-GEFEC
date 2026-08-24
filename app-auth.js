@@ -105,6 +105,30 @@
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
   .gmask-name{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2,#8a93a6);margin:8px 0}
   .gmask-name input{padding:9px 11px;border:1px solid var(--border,#2a334a);border-radius:9px;font-size:14px;font-weight:600;text-transform:uppercase;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0)}
+
+  /* Portail « valorisation à jour » : barrage tant que le magasin n'a pas
+     déposé une valorisation de moins de 4 semaines. */
+  #valoGate{position:fixed;inset:0;z-index:9990;background:var(--bg,#0b0e14);
+    display:none;align-items:center;justify-content:center;padding:20px;font-family:var(--font,system-ui,sans-serif)}
+  #valoGate.show{display:flex}
+  .vgate-card{width:100%;max-width:560px;background:var(--surface,#11151e);border:1px solid var(--border,#2a334a);
+    border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.5);padding:34px 32px;animation:agFade .4s ease both;color:var(--text,#e6e9f0)}
+  .vgate-badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+    padding:5px 11px;border-radius:999px;background:rgba(251,191,36,.14);color:#fbbf24;margin-bottom:14px}
+  .vgate-title{font-size:21px;font-weight:800;letter-spacing:-.3px;margin-bottom:8px}
+  .vgate-sub{font-size:13.5px;line-height:1.55;color:var(--text-2,#8a93a6);font-weight:600}
+  .vgate-sub b{color:var(--text,#e6e9f0)}
+  .vgate-drop{margin-top:20px;border:2px dashed var(--border,#2a334a);border-radius:14px;padding:26px 20px;text-align:center;
+    cursor:pointer;transition:.15s;background:var(--surface-2,#1a2030)}
+  .vgate-drop:hover,.vgate-drop.over{border-color:var(--primary,#5b8cff);background:var(--surface-3,#232b3d)}
+  .vgate-drop .ic{font-size:30px;line-height:1;margin-bottom:8px}
+  .vgate-drop .t{font-size:14.5px;font-weight:800}
+  .vgate-drop .d{font-size:12px;color:var(--text-3,#5c6478);font-weight:600;margin-top:4px}
+  .vgate-msg{font-size:13px;font-weight:700;margin-top:14px;min-height:18px}
+  .vgate-msg.err{color:#f87171} .vgate-msg.ok{color:#4ade80} .vgate-msg.wait{color:var(--text-2,#8a93a6)}
+  .vgate-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;
+    border-top:1px solid var(--border,#2a334a);padding-top:16px}
+  .vgate-help{font-size:12px;color:var(--text-3,#5c6478);font-weight:600}
   `;
 
   /* ---------- petits utilitaires ---------- */
@@ -285,16 +309,37 @@
     help.addEventListener('click', e => { if (e.target === help) help.classList.remove('show'); });
     el('helpReport').addEventListener('click', reportProblem);
 
-    // pop-up d'ancienneté de la valorisation (> 10 jours)
-    const valo = document.createElement('div'); valo.className = 'gmodal'; valo.id = 'valoModal';
-    valo.innerHTML = `
-      <div class="gmodal-card" style="max-width:480px">
-        <div class="gmodal-head"><h2>📦 Valorisation de votre magasin</h2></div>
-        <div id="valoPopupBody" class="promo-body"></div>
-        <div style="text-align:right;margin-top:18px"><button class="gbtn" id="valoOk">Compris</button></div>
+    // Portail « valorisation à jour » : le magasin ne peut rien ouvrir tant que
+    // sa valorisation n'a pas moins de 4 semaines. Pas un pop-up qu'on ferme :
+    // un barrage, avec le seul geste qui le lève.
+    const vg = document.createElement('div'); vg.id = 'valoGate';
+    vg.innerHTML = `
+      <div class="vgate-card">
+        <div class="vgate-badge" id="vgBadge">Valorisation requise</div>
+        <div class="vgate-title" id="vgTitle">Mettez votre valorisation à jour</div>
+        <div class="vgate-sub" id="vgSub"></div>
+        <div class="vgate-drop" id="vgDrop">
+          <div class="ic">📄</div>
+          <div class="t">Déposez le PDF « Valorisation du stock »</div>
+          <div class="d">ou cliquez pour le choisir sur votre ordinateur · .pdf</div>
+          <input type="file" id="vgFile" accept="application/pdf,.pdf" style="display:none">
+        </div>
+        <div class="vgate-msg" id="vgMsg"></div>
+        <div class="vgate-foot">
+          <span class="vgate-help">Éditez la valorisation depuis NOSICA, puis déposez le PDF ici.</span>
+          <button class="gbtn alt" id="vgLogout">Déconnexion</button>
+        </div>
       </div>`;
-    document.body.appendChild(valo);
-    el('valoOk').addEventListener('click', () => valo.classList.remove('show'));
+    document.body.appendChild(vg);
+    el('vgDrop').addEventListener('click', () => el('vgFile').click());
+    el('vgFile').addEventListener('change', e => { if (e.target.files[0]) onValoGateFile(e.target.files[0]); e.target.value = ''; });
+    el('vgDrop').addEventListener('dragover', e => { e.preventDefault(); el('vgDrop').classList.add('over'); });
+    el('vgDrop').addEventListener('dragleave', () => el('vgDrop').classList.remove('over'));
+    el('vgDrop').addEventListener('drop', e => {
+      e.preventDefault(); el('vgDrop').classList.remove('over');
+      if (e.dataTransfer.files.length) onValoGateFile(e.dataTransfer.files[0]);
+    });
+    el('vgLogout').addEventListener('click', doLogout);
   }
 
   function syncStoreFields() {
@@ -356,23 +401,85 @@
     el('acAdmin').hidden = CURRENT.role !== 'admin';
     el('acStores').hidden = !(CURRENT.role === 'admin' || CURRENT.role === 'director');
 
+    // profil d'accès : la coque n'ouvre aucun outil avant de savoir QUI se
+    // connecte (magasin = version simplifiée, admin/directeur = outil complet)
+    if (window.applyUserMode) window.applyUserMode({ role: CURRENT.role, storeId: CURRENT.storeId, name: CURRENT.name });
+
     hideGate();
 
-    // magasin : charger sa valorisation depuis le cloud
-    if (CURRENT.role === 'store' && CURRENT.storeId) {
-      await loadStoreValo(CURRENT.storeId, true);
-    }
+    // magasin : valorisation obligatoire et de moins de 4 semaines
+    if (isSimpleUser()) await enforceValoGate();
     // tout le monde : charger les documents partagés publiés par l'admin
     await loadAllSharedDocs();
     // masques personnalisés (SOLDES, etc.) → injectés dans Étiquettes
     await loadCustomMasks();
     // panneau "état de préparation" sur l'accueil
     renderHomeStatus();
-    // magasin : alerter si la valorisation a plus de 10 jours
-    if (CURRENT.role === 'store' && CURRENT.storeId) {
-      await checkValoAge(CURRENT.storeId);
-    }
   }
+
+  /* ---------- Profil magasin : valorisation à jour obligatoire ----------
+     Le magasin ne travaille bien qu'avec une photo récente de son stock : une
+     valorisation vieille de plus de 4 semaines produit des affiches pour des
+     produits qui ne sont plus exposés. Elle est donc exigée avant tout accès,
+     et non plus simplement rappelée par un pop-up qu'on referme. */
+  const VALO_MAX_DAYS = 28;
+  const isSimpleUser = () => !!(CURRENT && CURRENT.role === 'store' && CURRENT.storeId);
+  const daysSince = (d) => Math.floor((Date.now() - d.getTime()) / 86400000);
+
+  async function enforceValoGate() {
+    const upd = await getValoUpdatedAt(CURRENT.storeId);
+    const age = upd && !isNaN(upd.getTime()) ? daysSince(upd) : null;
+    if (age === null)        { showValoGate('absente'); return false; }
+    if (age > VALO_MAX_DAYS) { showValoGate('perimee', upd, age); return false; }
+    // une fiche à jour ne suffit pas : le PDF doit être réellement récupérable
+    if (!await loadStoreValo(CURRENT.storeId, true)) { showValoGate('illisible'); return false; }
+    return true;
+  }
+
+  const VALO_GATE_TEXT = {
+    absente: () => ({
+      title: 'Déposez votre valorisation',
+      sub: `Aucune valorisation n'est enregistrée pour le magasin <b>${esc(CURRENT.storeId)}</b>. Les outils croisent les offres nationales avec les produits réellement exposés chez vous : sans elle, ils ne peuvent rien produire.<br><br>Déposez le PDF de valorisation pour ouvrir vos outils.`,
+    }),
+    perimee: (upd, age) => ({
+      title: 'Mettez votre valorisation à jour',
+      sub: `Votre valorisation date du <b>${esc(upd.toLocaleDateString('fr-FR', { dateStyle: 'long' }))}</b>, soit <b>${age} jours</b>. Au-delà de 4 semaines elle ne reflète plus votre stock : vos affiches porteraient sur des produits qui ne sont plus en exposition.<br><br>Déposez une valorisation à jour pour ouvrir vos outils.`,
+    }),
+    illisible: () => ({
+      title: 'Déposez à nouveau votre valorisation',
+      sub: `La valorisation enregistrée pour le magasin <b>${esc(CURRENT.storeId)}</b> n'a pas pu être récupérée. Déposez à nouveau le PDF pour ouvrir vos outils.`,
+    }),
+  };
+
+  function showValoGate(reason, upd, age) {
+    const t = VALO_GATE_TEXT[reason](upd, age);
+    el('vgTitle').textContent = t.title;
+    el('vgSub').innerHTML = t.sub;
+    el('vgMsg').textContent = '';
+    el('valoGate').classList.add('show');
+  }
+  function hideValoGate() { el('valoGate').classList.remove('show'); }
+
+  function vgMsg(text, cls) { const m = el('vgMsg'); if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; } }
+
+  async function onValoGateFile(file) {
+    if (!file) return;
+    const isPdf = (file.type === 'application/pdf') || /\.pdf$/i.test(file.name || '');
+    if (!isPdf) { vgMsg('Format invalide — le PDF de valorisation est attendu.', 'err'); return; }
+    vgMsg('Lecture et envoi en cours…', 'wait');
+    // setValoFile lit le PDF puis déclenche onValoLocallySet (envoi cloud) :
+    // le portail se ferme sur l'événement de sauvegarde, pas avant.
+    try { await window.setValoFile(file); }
+    catch (e) { vgMsg('Échec : ' + (e.message || e), 'err'); }
+  }
+  document.addEventListener('gefec:valo-saved', () => {
+    vgMsg('Valorisation enregistrée ✓', 'ok');
+    setTimeout(hideValoGate, 600);
+    renderHomeStatus();
+  });
+  document.addEventListener('gefec:valo-error', e => {
+    vgMsg('Envoi impossible : ' + ((e.detail && e.detail.message) || 'réessayez'), 'err');
+  });
 
   // Ruban de statut : valorisation + documents partagés (chips inline)
   async function renderHomeStatus() {
@@ -475,20 +582,6 @@
     } catch (e) {}
     return null;
   }
-  // pop-up d'alerte si la valorisation a plus de 10 jours
-  async function checkValoAge(storeId) {
-    const upd = await getValoUpdatedAt(storeId);
-    if (!upd || isNaN(upd.getTime())) return;
-    const days = Math.floor((Date.now() - upd.getTime()) / 86400000);
-    if (days <= 10) return;
-    const body = el('valoPopupBody');
-    if (!body) return;
-    body.innerHTML = `
-      <div class="promo-warn">⚠️ Votre valorisation date de ${days} jours</div>
-      <div class="promo-info"><b>Dernier dépôt :</b> ${esc(upd.toLocaleDateString('fr-FR', { dateStyle: 'long' }))}</div>
-      <div class="promo-note">De nouveaux produits sont peut-être désormais en stock et disponibles. Pensez à <b>redéposer une valorisation à jour</b> depuis la page d'accueil, afin que vos affiches et étiquettes soient complètes.</div>`;
-    el('valoModal').classList.add('show');
-  }
 
   // appelé par le moteur quand un utilisateur dépose une valorisation
   window.onValoLocallySet = async function (file, eanCount) {
@@ -500,6 +593,7 @@
       if (error) throw error;
     } catch (e) {
       toast('Sauvegarde cloud impossible : ' + (e.message || e), true);
+      document.dispatchEvent(new CustomEvent('gefec:valo-error', { detail: { message: e.message || String(e) } }));
       return;
     }
     // 2) les métadonnées (best-effort : n'empêche pas la sauvegarde du fichier)
@@ -511,6 +605,8 @@
       });
     } catch (e) { /* métadonnées facultatives */ }
     toast('Valorisation enregistrée dans le cloud ✓');
+    // le portail « valorisation à jour » attend ce signal pour s'effacer
+    document.dispatchEvent(new CustomEvent('gefec:valo-saved'));
   };
 
   /* ---------- Documents partagés publiés par l'admin ----------
@@ -688,6 +784,7 @@
   }
   // Portail consulté par le moteur avant d'ouvrir un outil
   window.moduleGate = function (name) {
+    if (isSimpleUser()) return true;      // magasin : aucun pop-up, on ouvre l'outil
     const ids = MODULE_DOC[name];
     if (!ids) return true;                // module sans document partagé
     if (moduleSeen[name]) return true;    // déjà vu cette session

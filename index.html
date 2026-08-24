@@ -2092,7 +2092,7 @@ body{font-family:var(--font-sans);background:var(--bg-0);color:var(--text);min-h
         <div class="zone-note" style="text-align:center;margin-top:6px">Application Windows · à exécuter sur votre poste</div>
       </section>
 
-      <section>
+      <section id="mc-section">
         <div class="sec-head">
           <div class="step-n active" id="s1">1</div>
           <div class="sec-title">Fichiers Média Centrale</div>
@@ -2103,7 +2103,7 @@ body{font-family:var(--font-sans);background:var(--bg-0);color:var(--text);min-h
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             Ajouter fichiers Média Centrale
           </div>
-          <div class="zone-note">PDF individuels ou un <b>.zip</b> contenant les PDF</div>
+          <div class="zone-note" id="mc-note">PDF individuels ou un <b>.zip</b> contenant les PDF</div>
           <div id="mc-list"></div>
         </div>
       </section>
@@ -2184,6 +2184,12 @@ body{font-family:var(--font-sans);background:var(--bg-0);color:var(--text);min-h
 /* ── PDF.js ───────────────────────────────────────────────────────────────── */
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ── Profil d'accès ──────────────────────────────────────────────────────── */
+/* L'outil est servi en srcdoc par la coque : il lit le profil directement sur
+   celle-ci (même origine). En mode magasin, les fichiers Média Centrale sont
+   publiés par l'administrateur et le magasin n'apporte que son regroupement. */
+const SIMPLE = (() => { try { return parent.document.body.dataset.mode === 'simple'; } catch (e) { return false; } })();
 
 /* ── State ───────────────────────────────────────────────────────────────── */
 const S = { mcFiles: [], rgFiles: [], results: null };
@@ -2410,17 +2416,20 @@ function renderFileList(listId, arr, onRemove) {
     const row = document.createElement('div');
     row.className = 'file-entry';
     const nameEl = document.createElement('span'); nameEl.className = 'file-entry-name'; nameEl.title = f.name; nameEl.textContent = f.name;
-    const rmBtn  = document.createElement('button'); rmBtn.className = 'file-entry-rm'; rmBtn.textContent = '✕';
-    rmBtn.addEventListener('click', () => onRemove(i));
     row.innerHTML = '<span class="file-entry-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>';
     row.appendChild(nameEl);
-    row.appendChild(rmBtn);
+    // liste en lecture seule (fichiers publiés par l'administrateur) : pas de croix
+    if (onRemove) {
+      const rmBtn = document.createElement('button'); rmBtn.className = 'file-entry-rm'; rmBtn.textContent = '✕';
+      rmBtn.addEventListener('click', () => onRemove(i));
+      row.appendChild(rmBtn);
+    }
     el.appendChild(row);
   });
 }
 
 function updateUI() {
-  renderFileList('mc-list', S.mcFiles, i => { S.mcFiles.splice(i,1); updateUI(); });
+  renderFileList('mc-list', S.mcFiles, SIMPLE ? null : i => { S.mcFiles.splice(i,1); updateUI(); });
   renderFileList('rg-list', S.rgFiles, i => { S.rgFiles.splice(i,1); updateUI(); });
   const ok = S.mcFiles.length > 0 && S.rgFiles.length > 0;
   document.getElementById('btn-analyze').disabled = !ok;
@@ -2469,8 +2478,16 @@ function setupZone(zoneId, addId, inputId, arr, zip) {
     await addFiles([...e.dataTransfer.files], arr, zip);
   });
 }
-setupZone('mc-zone','mc-add','mc-input', S.mcFiles, true);
+if (!SIMPLE) setupZone('mc-zone','mc-add','mc-input', S.mcFiles, true);
 setupZone('rg-zone','rg-add','rg-input', S.rgFiles, true);
+
+/* Mode magasin : les fichiers Média Centrale sont publiés par l'administrateur
+   et injectés automatiquement — le magasin n'apporte que son regroupement. */
+if (SIMPLE) {
+  document.getElementById('mc-add').style.display = 'none';
+  document.getElementById('mc-zone').style.cursor = 'default';
+  document.getElementById('mc-note').innerHTML = 'Publiés par l\'administrateur — chargés automatiquement';
+}
 
 /* ═══════════════════════ ANALYSIS ══════════════════════════════════════════ */
 
@@ -2837,8 +2854,47 @@ function updateBaseStatus(){
 }
 document.addEventListener('DOMContentLoaded', updateBaseStatus);
 
+/* ════════════════════════════════════════════════════════════════
+   PROFIL D'ACCÈS — administrateur (outil complet) ou magasin (V2)
+   ────────────────────────────────────────────────────────────────
+   Le magasin n'a pas besoin de tout l'outil : il dépose sa valorisation,
+   choisit son affiche et imprime. On lui sert donc une version réduite —
+   trois outils, aucun réglage, aucun pop-up — pendant que l'administrateur
+   (et les directeurs régionaux) gardent l'outil complet. app-auth.js appelle
+   applyUserMode() dès que le rôle est connu ; RIEN n'est chargé avant, pour
+   qu'un cadre d'outil ne démarre jamais dans le mauvais mode.
+   ════════════════════════════════════════════════════════════════ */
+let USER_MODE = null;                                  // 'simple' (magasin) | 'full'
+const SIMPLE_TOOLS = ['match', 'etiquette', 'solde'];  // périmètre magasin
+const isSimple = () => USER_MODE === 'simple';
+
+window.applyUserMode = function(user){
+  if (USER_MODE) return;                               // profil déjà appliqué
+  USER_MODE = (user && user.role === 'store') ? 'simple' : 'full';
+  document.body.dataset.mode = USER_MODE;
+  // le habillage ne doit jamais empêcher les outils de démarrer : ce serait
+  // un magasin authentifié devant une coque vide
+  try { if (isSimple()) restrictToStoreScope(); } finally { bootTools(); }
+};
+function restrictToStoreScope(){
+  // Promo Perso et SISTO Checker sortent du périmètre magasin : on retire les
+  // nœuds (carte, onglet, vue + iframe) plutôt que de les masquer, pour
+  // qu'aucun outil hors périmètre ne soit chargé ni atteignable.
+  document.querySelectorAll('.tool-card,.tab,.view-tool').forEach(n => {
+    const view = n.dataset.tool || n.dataset.tab || n.dataset.view;
+    if (view && SIMPLE_TOOLS.indexOf(view) < 0) n.remove();
+  });
+  const sub = document.querySelector('.hw-sub');
+  if (sub) sub.textContent = 'Votre valorisation est à jour — choisissez un outil';
+  const lab = document.querySelector('.vs-label');
+  if (lab) lab.textContent = 'Votre valorisation — déposez-en une nouvelle pour la mettre à jour';
+  // retirer sa valorisation n'a pas de sens ici : elle est obligatoire
+  const chg = document.getElementById('valoChange');
+  if (chg) chg.remove();
+}
+
 /* ── Chargement des outils ──────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
+function bootTools() {
   document.querySelectorAll('.tool-frame').forEach(frame => {
     const view = frame.closest('.view-tool').dataset.view;
     frame.addEventListener('load', () => {
@@ -2856,14 +2912,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const tpl = document.getElementById(frame.dataset.tpl);
       if (tpl) frame.srcdoc = tpl.textContent.replace(/<\\\/script/g, '</script');
     } else if (frame.dataset.src) {
-      frame.src = frame.dataset.src; // Étiquettes 2.0 = fichier autonome (etiquette.html)
+      frame.src = frameSrc(frame);  // Étiquettes 2.0 = fichier autonome (etiquette.html)
     }
   });
-});
+}
+/* L'outil Étiquettes lit son mode dans son URL : en mode magasin il n'affiche
+   que le choix d'affiche, de format, de fond et l'aperçu. Les outils servis en
+   srcdoc (CETELEM, Soldes) lisent parent.document.body.dataset.mode. */
+function frameSrc(frame){
+  const src = frame.dataset.src;
+  if (!isSimple() || !/^etiquette\.html/.test(src)) return src;
+  return src + (src.indexOf('?') < 0 ? '?' : '&') + 'mode=simple';
+}
 /* Outils chargés à la demande (data-lazy) : au premier affichage seulement */
 function ensureFrameLoaded(frame){
   if (!frame || !frame.hasAttribute('data-lazy') || frame.src) return;
-  if (frame.dataset.src) frame.src = frame.dataset.src;
+  if (frame.dataset.src) frame.src = frameSrc(frame);
 }
 
 /* ── Injection de la valorisation partagée dans un outil ────── */
@@ -2950,20 +3014,28 @@ homeDrop.addEventListener('drop',e=>{e.preventDefault();homeDrop.classList.remov
 homeFile.addEventListener('change',e=>{if(e.target.files.length)setValoFile(e.target.files[0])});
 
 /* ── Cartes outils ──────────────────────────────────────────── */
-document.querySelectorAll('.tool-card').forEach(card=>{
-  card.addEventListener('click',()=>{
-    if (card.hasAttribute('data-novalo')){ switchView(card.dataset.tool); return; }
-    if (!card.classList.contains('ready')){ homeFile.click(); showToast("Importez d'abord la valorisation"); return; }
-    switchView(card.dataset.tool);
-  });
-  card.addEventListener('mousemove',e=>{const r=card.getBoundingClientRect();
-    card.style.setProperty('--mx',(e.clientX-r.left)+'px');card.style.setProperty('--my',(e.clientY-r.top)+'px')});
+const toolsGrid=document.querySelector('.tools-grid');
+toolsGrid.addEventListener('click',e=>{
+  const card=e.target.closest('.tool-card'); if(!card) return;
+  if (card.hasAttribute('data-novalo')){ switchView(card.dataset.tool); return; }
+  if (!card.classList.contains('ready')){ homeFile.click(); showToast("Importez d'abord la valorisation"); return; }
+  switchView(card.dataset.tool);
+});
+toolsGrid.addEventListener('mousemove',e=>{
+  const card=e.target.closest('.tool-card'); if(!card) return;
+  const r=card.getBoundingClientRect();
+  card.style.setProperty('--mx',(e.clientX-r.left)+'px');card.style.setProperty('--my',(e.clientY-r.top)+'px');
 });
 
 /* ── Navigation ─────────────────────────────────────────────── */
 const shell=document.querySelector('.shell'), tabNav=document.getElementById('tabNav'),
-      tabs=tabNav.querySelectorAll('.tab'), tabIndicator=tabNav.querySelector('.tab-indicator');
+      tabIndicator=tabNav.querySelector('.tab-indicator');
+// les onglets hors périmètre sont retirés du DOM par applyUserMode : on les
+// ré-interroge à chaque fois plutôt que de garder une liste figée
+const tabsNow=()=>tabNav.querySelectorAll('.tab');
 function switchView(name){
+  // vue retirée du profil (Promo Perso, SISTO Checker en mode magasin) : rien à ouvrir
+  if (name!=='home' && !document.querySelector(`.view-tool[data-view="${name}"]`)) return;
   // pop-up "document partagé" avant d'ouvrir un outil (géré par app-auth.js)
   if (typeof window.moduleGate==='function' && !window.moduleGate(name)) return;
   shell.dataset.view=name;
@@ -2971,7 +3043,7 @@ function switchView(name){
   if (name==='home'){ tabNav.hidden=true; }
   else {
     tabNav.hidden=false;
-    tabs.forEach(t=>{const on=t.dataset.tab===name;t.classList.toggle('active',on);t.setAttribute('aria-selected',on)});
+    tabsNow().forEach(t=>{const on=t.dataset.tab===name;t.classList.toggle('active',on);t.setAttribute('aria-selected',on)});
     requestAnimationFrame(positionIndicator); setTimeout(positionIndicator,120);
     const frame=document.querySelector(`.view-tool[data-view="${name}"] .tool-frame`);
     if (frame){ ensureFrameLoaded(frame); maybeInject(frame); }
@@ -2983,7 +3055,7 @@ function positionIndicator(){
   tabIndicator.style.left=(r.left-nav.left)+'px'; tabIndicator.style.width=r.width+'px';
   tabIndicator.classList.add('ready');
 }
-tabs.forEach(t=>t.addEventListener('click',()=>switchView(t.dataset.tab)));
+tabNav.addEventListener('click',e=>{const t=e.target.closest('.tab'); if(t) switchView(t.dataset.tab)});
 window.addEventListener('resize',positionIndicator);
 document.getElementById('brand').addEventListener('click',()=>switchView('home'));
 document.getElementById('valoChange').addEventListener('click',e=>{e.stopPropagation();clearValoFile()});

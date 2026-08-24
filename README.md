@@ -4,6 +4,25 @@ Suite d'outils PDF pour le magasin, réunis dans une interface unique à la char
 claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
 Étiquettes 2.0) : l'ancien outil **Plan Promo** a été **remplacé par Étiquettes 2.0**.
 
+## Deux profils d'accès
+
+Le rôle du compte connecté (table `profiles`) décide de l'interface servie —
+`app-auth.js` appelle `applyUserMode()` **avant** que la coque ne charge le
+moindre outil, pour qu'aucun cadre ne démarre dans le mauvais mode.
+
+| | **Magasin** (`role = store`) | **Administrateur / directeur régional** |
+| --- | --- | --- |
+| Valorisation | **Obligatoire et de moins de 4 semaines** : un portail bloque tout accès tant qu'elle n'est pas déposée | Aucun barrage |
+| Outils servis | Affiches CETELEM · Plan Promo TV & PEM · Soldes Magasin | Les cinq outils |
+| Plan Promo | Onglets TV / PEM, **trois choix** (type d'affiche, format, papier) et l'aperçu — croisement automatique, ni fichiers ni tableau produits ni réglages | Outil complet (étapes 1 à 4) |
+| Promo Perso · SISTO Checker | Hors périmètre : carte, onglet et vue retirés du document | Accessibles |
+| Soldes Magasin | Fichiers Média Centrale **publiés par l'administrateur** (lecture seule) ; le magasin n'apporte que son regroupement | Dépôt libre des deux jeux de fichiers |
+| Pop-ups | Aucun | Rappels « document partagé » à l'ouverture d'un outil |
+
+Le cloisonnement est **côté interface** : il retire ce qui n'a pas lieu d'être
+pour un magasin, il ne remplace pas les politiques RLS Supabase, qui restent la
+seule barrière sur les données (valorisations, documents partagés, comptes).
+
 ## Outils inclus
 
 | Outil | Rôle | Valorisation requise |
@@ -25,6 +44,11 @@ claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
   qui ne partagent rien à l'écran : `etiquette.html` = **Plan Promo TV & PEM**
   (onglets TV / PEM), `etiquette.html?plan=perso` = **Promo Perso** (outil à part,
   sa propre carte sur l'accueil, chargé seulement à la première ouverture).
+  Le paramètre `?mode=simple`, ajouté par la coque pour les comptes magasin,
+  réduit l'outil à l'écran d'impression : barre d'étapes, panneau fichiers,
+  tableau produits et réglages sont masqués (les nœuds restent en place, le
+  moteur continue d'y écrire), `goStep()` ramène toujours aux étiquettes et le
+  croisement se fait tout seul dès que plan promo et valorisation sont là.
 - `sisto.html` — l'outil **SISTO Checker**, complet et autonome. Chargé en iframe
   par la coque. Il ne dépend ni de la valorisation ni d'un document publié par
   l'administrateur : chaque utilisateur y dépose son propre SISTO.

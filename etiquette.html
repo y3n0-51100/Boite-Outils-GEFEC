@@ -613,7 +613,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
           <button class="choice" id="chBgNo" onclick="setBg(false)">Sans fond<small>papier pré-imprimé BON PLAN / PROMO : contenu seul</small></button>
         </div>
       </div>
-      <div class="optblock">
+      <div class="optblock" id="optDates">
         <h3>Période de validité</h3>
         <div class="switch" style="margin-top:0;margin-bottom:8px"><input type="checkbox" id="perProductDates" checked onchange="onPrefChange()"> Utiliser les dates du plan promo (propres à chaque produit)</div>
         <div class="datefields">
@@ -766,6 +766,14 @@ let nextId = 1;
      propre carte sur l'accueil de la Boîte à Outils.
    Chacun ignore les onglets de l'autre : les deux espaces sont dissociés. */
 const PERSO_ONLY = /(?:^|[?&])plan=perso(?:&|$)/.test(location.search);
+
+/* Mode magasin (etiquette.html?mode=simple), servi par la coque aux comptes
+   « magasin ». Tout ce qui n'est pas « je choisis mon affiche et j'imprime »
+   disparaît : plus d'étapes, plus de panneau fichiers, plus de tableau
+   produits, plus de réglages. Le croisement plan promo × valorisation se fait
+   tout seul (autoMatchPlans), il ne reste que trois choix et l'aperçu.
+   Promo Perso n'est pas servi aux magasins : le mode simplifié l'ignore. */
+const SIMPLE = /(?:^|[?&])mode=simple(?:&|$)/.test(location.search) && !PERSO_ONLY;
 
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -1287,6 +1295,7 @@ function setPlan(t) {
   updateMatchBtn();
   updateCoverage();
   renderTable();
+  if (SIMPLE) renderPreview();   // l'aperçu suit l'onglet actif
 }
 function updateMatchBtn() {
   const ready = state.promoProducts.length && state.storeKeys.size;
@@ -1621,11 +1630,13 @@ function doMatch() {
 }
 function runMatch() {
   doMatch();
+  renderPlanStatus();
+  // mode magasin : pas de tableau ni d'étape intermédiaire, l'aperçu suffit
+  if (SIMPLE) { renderPreview(); return; }
   document.getElementById('navStep1').classList.add('done');
   goStep(2);
   updateCoverage();
   renderTable();
-  renderPlanStatus();
   toast(state.products.length
     ? `✅ ${state.plans[state.plan].label} : ${state.products.length} produit(s) de votre magasin sont en offre`
     : `⚠️ ${state.plans[state.plan].label} : aucune correspondance avec votre magasin`);
@@ -2027,6 +2038,16 @@ function buildSheets() {
   return sheets;
 }
 
+/* Aperçu vide : en mode magasin il n'y a pas d'« étape 2 » à invoquer, on dit
+   donc ce qui manque réellement (plan promo, valorisation, ou correspondance). */
+function previewEmptyText() {
+  if (!SIMPLE) return "Sélectionnez au moins un produit à l'étape 2 pour voir l'aperçu.";
+  const pl = state.plans[state.plan];
+  if (!pl.promoProducts.length) return `Le ${esc(pl.label)} n'est pas encore publié par l'administrateur.`;
+  if (!state.storeKeys.size) return 'Chargement de la valorisation de votre magasin…';
+  return `Aucun produit de votre magasin n'est concerné par le ${esc(pl.label)}.`;
+}
+
 function renderPreview() {
   const wrap = document.getElementById('previewWrap');
   const sheets = buildSheets();
@@ -2034,7 +2055,7 @@ function renderPreview() {
   document.getElementById('previewInfo').textContent =
     sel ? `— ${sel} produit(s) → ${sheets.length} feuille(s)` : '';
   if (!sheets.length) {
-    wrap.innerHTML = `<div class="empty" style="background:var(--bg-1);border:1px solid var(--line-soft);border-radius:12px;width:100%"><div class="ic">🏷️</div>Sélectionnez au moins un produit à l'étape 2 pour voir l'aperçu.</div>`;
+    wrap.innerHTML = `<div class="empty" style="background:var(--bg-1);border:1px solid var(--line-soft);border-radius:12px;width:100%"><div class="ic">🏷️</div>${previewEmptyText()}</div>`;
     return;
   }
   wrap.innerHTML = sheets.map(s =>
@@ -2193,6 +2214,8 @@ async function fetchOnlineBase(verbose) {
    NAVIGATION
    ============================================================ */
 function goStep(n) {
+  // mode magasin : l'outil se résume à l'écran d'impression, rien à naviguer
+  if (SIMPLE) n = 3;
   // les réglages sont réservés à l'administrateur
   if (n === 4 && !state.adminOk) {
     const pwd = prompt('Section réservée à l\'administrateur.\nMot de passe :');
@@ -2210,13 +2233,43 @@ function goStep(n) {
 }
 
 /* ============================================================
+   MODE MAGASIN — « je choisis mon affiche et j'imprime »
+   ============================================================ */
+/* Le magasin ne charge aucun fichier (plans promo et valorisation arrivent
+   déjà chargés) et n'a rien à régler : les étapes 1, 2 et 4 et leur barre de
+   navigation disparaissent de l'écran, et il ne reste du panneau d'impression
+   que les trois choix demandés — type d'affiche, format, papier. */
+function applySimpleMode() {
+  // Les panneaux restent dans le document (tout le moteur continue d'y écrire :
+  // statut de la base, tableau produits, masques…) mais ne sont plus affichés
+  // ni atteignables — goStep() ramène toujours à l'écran d'impression.
+  document.querySelector('.steps').style.display = 'none';
+  for (const id of ['step1', 'step2', 'step4']) document.getElementById(id).classList.remove('active');
+  document.getElementById('step3').classList.add('active');
+  document.getElementById('optDates').style.display = 'none';  // dates du plan promo appliquées telles quelles
+  document.getElementById('appSub').textContent =
+    'Choisissez votre affiche, son format et votre papier — puis imprimez';
+  // « j'imprime » doit rester à un clic : un second bouton sous les trois choix,
+  // sans avoir à faire défiler tout l'aperçu pour retrouver celui du bas
+  const act = document.createElement('div');
+  act.className = 'bigaction';
+  act.style.marginTop = '18px';
+  act.innerHTML = '<button class="btn" onclick="doPrint()">🖨️ Imprimer les affiches</button>';
+  document.querySelector('#step3 .card').appendChild(act);
+}
+
+/* ============================================================
    MODE D'OUVERTURE (Plan Promo TV & PEM ou Promo Perso)
    ============================================================ */
 /* Appliqué tout de suite (le script est en fin de <body>, le DOM est prêt) :
    l'outil s'affiche d'emblée dans le bon mode, sans clignotement. */
 (function applyToolMode() {
   const tabPerso = document.getElementById('tabPerso');
-  if (!PERSO_ONLY) { if (tabPerso) tabPerso.style.display = 'none'; return; }
+  if (!PERSO_ONLY) {
+    if (tabPerso) tabPerso.style.display = 'none';
+    if (SIMPLE) applySimpleMode();
+    return;
+  }
   state.plan = 'perso';
   document.getElementById('appTitle').textContent = 'PROMO PERSO';
   document.getElementById('appSub').textContent =
@@ -2283,6 +2336,8 @@ function goStep(n) {
       }
     } catch (e) { /* idem */ }
   }
+  // mode magasin : l'écran d'impression est la page d'accueil de l'outil
+  if (SIMPLE) renderPreview();
 })();
 </script>
 </body>
