@@ -1146,6 +1146,7 @@ function parseBaseWorkbook(arrayBuffer) {
   const wb = XLSX.read(arrayBuffer, { type: 'array' });
   const eco = new Map();           // code normalisé -> éco-participation
   const info = new Map();          // code normalisé -> { name, price }
+  const refs = new Set();          // toutes les références lues (codes distincts), avec ou sans éco/libellé
   const addInfo = (code, name, price) => {
     const nm = name != null ? String(name).trim() : '';
     if (!nm && price == null) return;
@@ -1181,6 +1182,7 @@ function parseBaseWorkbook(arrayBuffer) {
         const row = rows[r] || [];
         const code = String(row[c.ean] ?? '').trim();
         if (!/^\d{8,13}$/.test(code)) continue;
+        refs.add(normCode(code));
         const dea = c.dea != null ? (parseFloat(row[c.dea]) || 0) : 0;
         const deee = c.deee != null ? (parseFloat(row[c.deee]) || 0) : 0;
         const e = Math.round((dea + deee) * 100) / 100;
@@ -1213,12 +1215,13 @@ function parseBaseWorkbook(arrayBuffer) {
       const row = rows[r] || [];
       const code = String(row[codeCol] ?? '').trim();
       if (!/^\d{8,13}$/.test(code)) continue;
+      refs.add(normCode(code));
       const e = parsePrice(row[ecoCol]);
       if (e !== null && e > 0) eco.set(normCode(code), e);
       addInfo(code, nameCol >= 0 ? row[nameCol] : null, priceCol >= 0 ? parsePrice(row[priceCol]) : null);
     }
   }
-  return { eco, info };
+  return { eco, info, refs };
 }
 
 function setLoaded(dropId, statusId, msg) {
@@ -1387,8 +1390,14 @@ async function handleBaseFile(fileOrBuffer, label) {
     state.ecoMap = parsed.eco;
     state.baseInfo = parsed.info;
     if (!state.ecoMap.size) throw new Error('Impossible de détecter les colonnes code / éco-participation.');
-    const withInfo = state.baseInfo.size ? ` · ${state.baseInfo.size} réf. avec libellé/prix` : '';
-    setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s)${withInfo}${label ? ' — ' + label : ''}`);
+    // nombre de références réellement présentes dans le classeur (codes distincts)
+    const nRefs = parsed.refs ? parsed.refs.size : state.baseInfo.size;
+    // « réf. avec libellé/prix » : utile seulement si toutes les références n'en ont pas
+    const withInfo = state.baseInfo.size && state.baseInfo.size !== nRefs ? ` · ${state.baseInfo.size} réf. avec libellé/prix` : '';
+    const fr = v => v.toLocaleString('fr-FR');
+    setBaseStatus(`✅ ${fr(nRefs)} référence(s) · ${fr(state.ecoMap.size)} éco-participation(s)${withInfo}${label ? ' — ' + label : ''}`);
+    // la coque affiche ce compte dans le ruban « Base NOSICA » de l'accueil
+    try { parent.postMessage({ type: 'gefec:base-count', refs: nRefs, eco: state.ecoMap.size, name: label || '' }, '*'); } catch (e) {}
     await kvSet('baseEco', [...state.ecoMap.entries()]);
     await kvSet('baseInfo', [...state.baseInfo.entries()]);
     for (const t of Object.keys(state.plans))

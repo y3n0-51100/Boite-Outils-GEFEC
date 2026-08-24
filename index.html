@@ -2784,7 +2784,23 @@ const state = { valoFile:null, valoEanCount:null, injected:new Set(), iframeRead
 /* Base NOSICA déposée à la main par l'administrateur (Réglages) : elle
    remplace la base automatique dans les outils, le ruban le dit. */
 let sharedBase=null;
-window.setSharedBaseInfo=function(meta){ sharedBase=meta||null; updateBaseStatus(); };
+/* Compte des références du classeur publié : la coque ne sait pas lire un
+   fichier Excel (pas de SheetJS ici), c'est l'outil Étiquettes — qui le relit
+   déjà pour alimenter les éco-participations — qui le remonte par postMessage. */
+let sharedBaseRefs=null, sharedBaseEco=null;
+window.setSharedBaseInfo=function(meta){
+  const prevAt=sharedBase&&sharedBase.updated_at;
+  sharedBase=meta||null;
+  // base retirée ou nouvelle version publiée : le compte précédent n'a plus cours
+  if(!sharedBase||sharedBase.updated_at!==prevAt){ sharedBaseRefs=null; sharedBaseEco=null; }
+  updateBaseStatus();
+};
+window.setSharedBaseCounts=function(refs,eco){
+  refs=+refs; eco=+eco;
+  sharedBaseRefs=refs>0?refs:null;
+  sharedBaseEco=eco>0?eco:null;
+  updateBaseStatus();
+};
 function updateBaseStatus(){
   const slot=document.getElementById('srBase');
   const ribbon=document.getElementById('statusRibbon');
@@ -2793,7 +2809,9 @@ function updateBaseStatus(){
     const d=new Date(sharedBase.updated_at);
     const ds=isNaN(d.getTime())?'date inconnue':d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
     const nm=sharedBase.file_name?`<span class="sr-sep">·</span><span>${String(sharedBase.file_name).replace(/[<>&]/g,'')}</span>`:'';
-    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span title="Fichier Excel déposé par l'administrateur — prioritaire sur la base automatique">fichier publié par l'administrateur le ${ds}</span>${nm}</div>`;
+    const ecoTip=sharedBaseEco?`${sharedBaseEco.toLocaleString('fr-FR')} portent une éco-participation`:'Références lues dans le classeur Excel publié par l\'administrateur';
+    const nb=sharedBaseRefs?`<span class="sr-sep">·</span><span title="${ecoTip}">${sharedBaseRefs.toLocaleString('fr-FR')} références</span>`:'';
+    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span>${nb}<span class="sr-sep">·</span><span title="Fichier Excel déposé par l'administrateur — prioritaire sur la base automatique">fichier publié par l'administrateur le ${ds}</span>${nm}</div>`;
     if(ribbon) ribbon.hidden=false;
     return;
   }
@@ -2973,10 +2991,15 @@ window.addEventListener('keydown',e=>{
   if (e.key==='Escape' && shell.dataset.view!=='home') switchView('home');
 });
 
-/* ── Passerelle SISTO Checker → Promo Perso ─────────────────── */
+/* ── Messages des outils vers la coque ─────────────────────── */
 window.addEventListener('message', e => {
   const d = e && e.data;
-  if (!d || d.type !== 'gefec:sisto-promo') return;
+  if (!d) return;
+  // Base article Excel relue par l'outil Étiquettes : le ruban affiche le
+  // nombre de références du classeur publié par l'administrateur.
+  if (d.type === 'gefec:base-count') { window.setSharedBaseCounts(d.refs, d.eco); return; }
+  // Passerelle SISTO Checker → Promo Perso
+  if (d.type !== 'gefec:sisto-promo') return;
   showToast(`${d.count} EAN enregistrés ✓ — ouvrez « Promo Perso » puis « Récupérer les EAN de votre SISTO filtré »`);
 });
 

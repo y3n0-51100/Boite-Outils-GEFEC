@@ -33,7 +33,11 @@ claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
   démarrage. En cas de panne de la mise à jour automatique, l'administrateur peut
   **déposer le fichier Excel NOSICA à la main** (⚙️ Réglages → « Base article
   NOSICA ») : il est alors injecté chez tous les magasins et remplace la base
-  automatique dans les deux outils d'étiquettes.
+  automatique dans les deux outils d'étiquettes. Dans les deux cas, le ruban
+  « Base NOSICA » de l'accueil affiche le **nombre de références** de la base
+  active : lu directement dans `base-eco.js` pour la base automatique, remonté
+  par l'outil Étiquettes (message `gefec:base-count`) après relecture du
+  classeur pour la base déposée à la main — la coque n'embarque pas SheetJS.
 
 ### SISTO Checker → Promo Perso
 
