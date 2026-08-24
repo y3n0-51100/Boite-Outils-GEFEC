@@ -17,6 +17,7 @@ moindre outil, pour qu'aucun cadre ne démarre dans le mauvais mode.
 | Plan Promo | Onglets TV / PEM, **trois choix** (type d'affiche, format, papier) et l'aperçu — croisement automatique, ni fichiers ni tableau produits ni réglages | Outil complet (étapes 1 à 4) |
 | Promo Perso · SISTO Checker | Hors périmètre : carte, onglet et vue retirés du document | Accessibles |
 | Soldes Magasin | Fichiers Média Centrale **publiés par l'administrateur** (lecture seule) ; le magasin n'apporte que son regroupement | Dépôt libre des deux jeux de fichiers |
+| Affiches par mail | Reçues par le directeur, prêtes à imprimer | **Bouton « ✉️ Affiches »** dans 📂 Valorisations : envoie le PDF de toutes les affiches du magasin |
 | Pop-ups | Aucun | Rappels « document partagé » à l'ouverture d'un outil |
 
 Le cloisonnement est **côté interface** : il retire ce qui n'a pas lieu d'être
@@ -95,6 +96,37 @@ Pour Plan Promo TV & PEM, il ne reste qu'à déposer les plans promo (TV et/ou P
 reconnus automatiquement) dans l'outil — ou à les publier depuis le compte
 administrateur pour tous les magasins. **Promo Perso**, **Soldes Magasin** et
 **SISTO Checker** s'ouvrent sans valorisation.
+
+### Le mail « vos affiches sont prêtes »
+
+Une fois qu'un magasin a déposé sa valorisation **et** que les plans promo TV et
+PEM sont publiés, plus rien n'oblige le directeur à ouvrir l'outil : depuis
+**📂 Valorisations**, l'administrateur clique sur **✉️ Affiches** en face du
+magasin, et le directeur reçoit un mail contenant **un seul lien**. Un clic, et
+tout le jeu d'affiches de son magasin arrive en PDF, prêt à imprimer — sans
+connexion, sans croisement à faire. Le bouton **« ✉️ Envoyer les affiches aux N
+magasin(s) prêt(s) »** fait la même chose pour tous les magasins d'un coup.
+
+Le PDF est fabriqué **dans le navigateur de l'administrateur**, par le moteur
+d'étiquettes lui-même : la coque charge `etiquette.html?export=1` dans un cadre
+invisible — l'outil complet, sans écran — lui passe les plans publiés et la
+valorisation du magasin, et récupère toutes les planches en un seul PDF. Ce sont
+donc exactement les affiches que le magasin verrait dans l'outil, avec les mêmes
+trois choix (type d'affiche, format A4 / A5 ×2, papier blanc ou pré-imprimé),
+faits ici par l'administrateur au moment de l'envoi.
+
+| Étape | Où | Détail |
+| --- | --- | --- |
+| Génération | Navigateur de l'admin | `gefecBuildAffiches()` : valorisation × plans promo → planches → PDF (html2canvas + jsPDF, chargés à la demande). Le rendu se fait dans un document réduit à la feuille de style de l'outil : html2canvas recopie le document à chaque planche, et recopier la page entière (masques embarqués compris) coûte des secondes par affiche au lieu d'un dixième de seconde. |
+| Dépôt | Bucket privé `affiches` | `<code magasin>/affiches.pdf`, remplacé à chaque envoi : les liens déjà partis restent valides et servent la dernière version. |
+| Lien | URL signée Supabase | Valable 30, 60 ou 90 jours au choix, avec l'option `download` pour que le clic télécharge au lieu d'afficher. |
+| Mail | Fonction Edge `send-affiches-mail` | Resend ou Brevo, clé côté serveur. **Sans clé configurée**, l'outil ne bloque pas : il prépare le message dans la messagerie de l'administrateur, lien inclus. |
+| Trace | Table `affiches_mails` | « affiches envoyées il y a 3 jours à … » sous chaque magasin. |
+
+Mise en place : exécuter [`supabase/add-affiches-mail.sql`](./supabase/add-affiches-mail.sql)
+puis déployer la fonction — tout est détaillé dans
+[`supabase/SETUP.md`](./supabase/SETUP.md), étape 6. L'adresse du directeur est
+demandée au premier envoi et mémorisée sur la fiche du magasin.
 
 ## Documentation
 

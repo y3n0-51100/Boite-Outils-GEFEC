@@ -439,10 +439,14 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
    IMPRESSION
    ============================================================ */
 #printArea{display:none}
+/* Cadre de rendu hors écran des planches pour l'export PDF (mode ?export=1) :
+   hors du champ de vision mais bel et bien mis en page — html2canvas a besoin
+   de dimensions réelles, un display:none donnerait des planches vides. */
+#exportFrame{position:fixed;left:-20000px;top:0;width:1200px;height:1600px;border:0;z-index:-1}
 @media print{
   body *{visibility:hidden}
   body{background:#fff}
-  header.app,nav.steps,main,.toast{display:none!important}
+  header.app,nav.steps,main,.toast,#exportFrame{display:none!important}
   #printArea{display:block;visibility:visible;position:absolute;left:0;top:0}
   #printArea *{visibility:visible}
   #printArea .sheet{box-shadow:none;page-break-after:always;margin:0}
@@ -1928,6 +1932,7 @@ function setBg(v) {
 }
 /* mémorisation des préférences d'impression (masque, format, papier, options) */
 async function savePrintPrefs() {
+  if (EXPORT_MODE) return;   // cadre d'export : ne touche pas aux réglages de l'utilisateur
   try {
     await kvSet('printPrefs', {
       tpl: state.tpl, fmt: state.fmt, printBg: state.printBg,
@@ -2075,6 +2080,186 @@ function doPrint() {
     : '@page{size:A4 landscape;margin:0}';
   window.print();
 }
+
+/* ============================================================
+   EXPORT PDF — « toutes les affiches d'un magasin »
+   ------------------------------------------------------------
+   La coque (app-auth.js) charge etiquette.html?export=1 dans un cadre
+   caché, puis appelle gefecBuildAffiches() : le même moteur croise les
+   plans promo publiés avec la valorisation d'UN magasin et rend toutes
+   les planches dans un seul PDF, sans qu'aucun écran ne soit affiché.
+   C'est ce PDF que l'administrateur envoie par mail au directeur.
+   ============================================================ */
+const EXPORT_MODE = /(?:^|[?&])export=1(?:&|$)/.test(location.search);
+const H2C_SRC   = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+const JSPDF_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+
+/* plans promo déjà analysés (jeton = date de publication) : quand
+   l'administrateur envoie les affiches à plusieurs magasins d'affilée, les
+   mêmes PDF n'ont aucune raison d'être relus à chaque fois */
+let lastPlansToken = null;
+
+/* résolue quand init() a fini (base article chargée) : l'export l'attend */
+let exportReady;
+const exportReadyP = new Promise(r => { exportReady = r; });
+
+function loadScriptOnce(src) {
+  return new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = src; sc.onload = res;
+    sc.onerror = () => rej(new Error('bibliothèque indisponible : ' + src));
+    document.head.appendChild(sc);
+  });
+}
+async function ensureExportLibs() {
+  // chargées à la demande : les magasins n'en ont pas besoin pour imprimer
+  if (!window.html2canvas) await loadScriptOnce(H2C_SRC);
+  if (!window.jspdf) await loadScriptOnce(JSPDF_SRC);
+  if (!window.html2canvas || !window.jspdf) throw new Error('bibliothèques PDF indisponibles');
+}
+/* Reconstruit un File DANS ce document : les objets venus de la coque
+   appartiennent à un autre realm JS et échouent aux tests instanceof
+   de pdf.js (même piège que l'injection des documents partagés). */
+function fileFromShell(data, name) {
+  const src = data && data.buffer
+    ? new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength)
+    : new Uint8Array(data);
+  const ab = new ArrayBuffer(src.byteLength);
+  new Uint8Array(ab).set(src);
+  return new File([ab], name || 'fichier.pdf', { type: 'application/pdf' });
+}
+function setChk(id, v) { const c = document.getElementById(id); if (c) c.checked = !!v; }
+async function waitImages(node) {
+  const imgs = [...node.querySelectorAll('img')];
+  await Promise.all(imgs.map(im => im.complete
+    ? Promise.resolve()
+    : new Promise(r => { im.onload = im.onerror = r; })));
+}
+/* Cadre de rendu minimal : html2canvas recopie tout le document à chaque
+   planche, et recopier CETTE page (masques officiels embarqués compris) coûte
+   des secondes par planche. Dans un document réduit à la feuille de style de
+   l'outil, la même planche sort en un dixième de seconde. */
+let renderFrameP = null;
+function getRenderFrame() {
+  if (renderFrameP) return renderFrameP;
+  renderFrameP = (async () => {
+    const fr = document.createElement('iframe');
+    fr.id = 'exportFrame';
+    fr.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(fr);
+    await new Promise(res => {
+      const d = fr.contentDocument;
+      if (d && d.readyState === 'complete') res(); else fr.onload = res;
+      setTimeout(res, 500);                        // about:blank : filet de sécurité
+    });
+    const fd = fr.contentDocument;
+    const st = fd.createElement('style');
+    st.textContent = [...document.querySelectorAll('style')].map(x => x.textContent).join('\n')
+      + '\nhtml,body{margin:0;padding:0;background:#fff}.sheet{box-shadow:none!important;margin:0}';
+    fd.head.appendChild(st);
+    return fr;
+  })();
+  return renderFrameP;
+}
+/* Les planches HTML -> un PDF (une planche = une page). Le rendu passe par
+   html2canvas : c'est exactement ce que le magasin voit dans l'aperçu. */
+async function sheetsToPdf(sheets, fmt, onPage) {
+  const { jsPDF } = window.jspdf;
+  const land = fmt === 'a5';                       // A5 x2 = planche A4 paysage
+  const W = land ? 297 : 210, H = land ? 210 : 297;
+  const pdf = new jsPDF({ orientation: land ? 'landscape' : 'portrait', unit: 'mm', format: 'a4', compress: true });
+  // au-delà d'une trentaine de planches on baisse la définition (~150 dpi au
+  // lieu de ~190) pour que le PDF reste téléchargeable en magasin
+  const scale = sheets.length > 30 ? 1.5 : 2;
+  const fd = (await getRenderFrame()).contentDocument;
+  for (let i = 0; i < sheets.length; i++) {
+    fd.body.innerHTML = sheets[i];
+    const node = fd.body.firstElementChild;
+    await waitImages(node);
+    if (!i) { try { await fd.fonts.ready; } catch (e) {} }   // 1re planche : polices chargées
+    const canvas = await html2canvas(node, { scale, backgroundColor: '#ffffff', logging: false, useCORS: true });
+    if (i) pdf.addPage('a4', land ? 'landscape' : 'portrait');
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.86), 'JPEG', 0, 0, W, H, undefined, 'FAST');
+    fd.body.innerHTML = '';
+    if (onPage) onPage(i + 1, sheets.length);
+    await new Promise(r => setTimeout(r, 0));      // laisse respirer le navigateur
+  }
+  return pdf.output('blob');
+}
+
+/* opts = {
+     valo, valoName,                         valorisation du magasin (ArrayBuffer)
+     plans: { tv:[{data,name}], pem:[…], auto:[…] },   plans promo publiés
+     masks,                                  masques perso publiés (facultatif)
+     tpl, fmt, printBg, showDates, showBrand, perProductDates,
+     onProgress(phase, i, n)
+   }
+   -> { blob, pages, products, plans:[{id,label,n}], refs }                */
+window.gefecBuildAffiches = async function (opts) {
+  const o = opts || {};
+  const say = typeof o.onProgress === 'function' ? o.onProgress : function () {};
+  // on attend la fin de init(), sans s'y enfermer si elle a échoué en route
+  await Promise.race([exportReadyP, new Promise(r => setTimeout(r, 15000))]);
+  say('libs');
+  await ensureExportLibs();
+  if (o.masks && o.masks.length) { try { applyCustomMasks(o.masks); } catch (e) {} }
+
+  // 1) la valorisation du magasin concerné
+  say('valo');
+  await handleValoFile(fileFromShell(o.valo, o.valoName || 'valorisation.pdf'));
+  if (!state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
+
+  // 2) les plans promo publiés par l'administrateur ('auto' = ancien format
+  //    unique, dont le type TV/PEM est reconnu PDF par PDF). Un envoi groupé
+  //    réutilise l'analyse déjà faite : seule la valorisation change.
+  const token = o.plansToken || null;
+  if (!token || token !== lastPlansToken) {
+    say('plans');
+    for (const t of ['tv', 'pem']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
+    for (const t of ['tv', 'pem', 'auto']) {
+      const list = (o.plans && o.plans[t]) || [];
+      if (!list.length) continue;
+      await handlePromoFile(list.map(f => fileFromShell(f.data, f.name)), t === 'auto' ? null : t);
+    }
+    lastPlansToken = token;
+  }
+
+  // 3) croisement, onglet par onglet
+  say('match');
+  const plans = [];
+  let promoTotal = 0;
+  for (const t of ['tv', 'pem']) {
+    const pl = state.plans[t];
+    if (!pl.promoProducts.length) continue;
+    promoTotal += pl.promoProducts.length;
+    withPlan(t, doMatch);
+    if (pl.products.length) plans.push({ id: t, label: pl.label, n: pl.products.length });
+  }
+  if (!promoTotal) throw new Error('aucun plan promo publié à croiser');
+  if (!plans.length)
+    throw new Error('aucun produit des plans promo n’est présent dans la valorisation de ce magasin');
+
+  // 4) réglages d'affiche — appliqués à l'état SANS passer par setTpl/setFmt :
+  //    ce cadre caché ne doit pas écraser les préférences d'impression
+  //    mémorisées (IndexedDB partagée avec l'outil visible).
+  state.tpl = o.tpl || 'bonplan';
+  state.fmt = (o.fmt === 'a5' && maskHasA5(state.tpl)) ? 'a5' : 'a4';
+  state.printBg = o.printBg !== false;
+  setChk('showDates', o.showDates !== false);
+  setChk('showBrand', o.showBrand !== false);
+  setChk('perProductDates', o.perProductDates !== false);
+
+  // 5) toutes les planches, plan après plan (TV puis PEM)
+  const sheets = [];
+  for (const p of plans) sheets.push(...withPlan(p.id, buildSheets));
+  say('pdf', 0, sheets.length);
+  const blob = await sheetsToPdf(sheets, state.fmt, (i, n) => say('pdf', i, n));
+  return {
+    blob, pages: sheets.length, plans,
+    products: plans.reduce((n, p) => n + p.n, 0),
+    refs: state.storeKeys.size,
+  };
+};
 
 /* ============================================================
    ÉTAPE 4 — RÉGLAGES
@@ -2295,7 +2480,8 @@ function applySimpleMode() {
     if (masks) state.masks = masks;
     const useImg = await kvGet('useMaskImages');
     if (useImg === false) { state.useMaskImages = false; document.getElementById('useMaskImages').checked = false; }
-    await applyPrintPrefs();   // réglages d'impression mémorisés
+    if (!EXPORT_MODE) await applyPrintPrefs();   // réglages d'impression mémorisés
+    // (le cadre d'export garde les réglages demandés par l'administrateur)
     cfg = await kvGet('baseCfg');
     ghCfg = await kvGet('ghCfg');
   } catch (e) { /* stockage indisponible : l'outil reste utilisable sans persistance */ }
@@ -2338,6 +2524,7 @@ function applySimpleMode() {
   }
   // mode magasin : l'écran d'impression est la page d'accueil de l'outil
   if (SIMPLE) renderPreview();
+  exportReady();   // le moteur est prêt : l'export PDF peut démarrer
 })();
 </script>
 </body>

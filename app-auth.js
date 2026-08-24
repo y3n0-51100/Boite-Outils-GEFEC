@@ -106,6 +106,18 @@
   .gmask-name{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2,#8a93a6);margin:8px 0}
   .gmask-name input{padding:9px 11px;border:1px solid var(--border,#2a334a);border-radius:9px;font-size:14px;font-weight:600;text-transform:uppercase;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0)}
 
+  /* Générateur d'affiches : l'outil Étiquettes chargé hors écran, sans
+     interface, pour fabriquer le PDF envoyé au directeur. */
+  #gefecExportFrame{position:fixed;left:-20000px;top:0;width:1200px;height:1600px;border:0;z-index:-1}
+  .affrow{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border-2,#1f2638);font-size:12.5px}
+  .affrow .gr-main{flex:1;min-width:0}
+  .affrow .st{font-weight:700;white-space:nowrap}
+  .affrow .st.wait{color:var(--text-3,#5c6478)} .affrow .st.run{color:#fbbf24}
+  .affrow .st.ok{color:#4ade80} .affrow .st.ko{color:#f87171}
+  .affbar{height:5px;border-radius:999px;background:var(--surface-3,#232b3d);overflow:hidden;margin-top:8px}
+  .affbar i{display:block;height:100%;background:var(--primary,#5b8cff);width:0;transition:width .2s}
+  .stmail{font-size:11px;font-weight:700;color:var(--text-3,#5c6478)}
+
   /* Portail « valorisation à jour » : barrage tant que le magasin n'a pas
      déposé une valorisation de moins de 4 semaines. */
   #valoGate{position:fixed;inset:0;z-index:9990;background:var(--bg,#0b0e14);
@@ -269,6 +281,56 @@
     document.body.appendChild(stores);
     stores.querySelector('[data-close]').addEventListener('click', () => stores.classList.remove('show'));
     stores.addEventListener('click', e => { if (e.target === stores) stores.classList.remove('show'); });
+
+    // modale « envoyer les affiches par mail » (admin)
+    const aff = document.createElement('div'); aff.className = 'gmodal'; aff.id = 'affModal';
+    aff.innerHTML = `
+      <div class="gmodal-card" style="max-width:660px">
+        <div class="gmodal-head"><h2>✉️ Envoyer les affiches</h2><button class="gmodal-close" data-close>✕</button></div>
+        <div class="gmodal-sub" id="affWho"></div>
+
+        <div class="gpromo">
+          <div class="gpromo-title">Destinataire</div>
+          <div class="gpromo-sub" id="affToHint">Adresse du directeur du magasin — elle est mémorisée pour les prochains envois.</div>
+          <label class="gmask-name" id="affToRow">Adresse e-mail
+            <input id="affTo" type="email" autocapitalize="none" spellcheck="false" placeholder="prenom.nom@but.fr" style="text-transform:none">
+          </label>
+          <div class="gmsg" id="affPlans">Vérification des plans promo publiés…</div>
+        </div>
+
+        <div class="gform">
+          <label>Type d'affiche<select id="affTpl">
+            <option value="bonplan">BON PLAN</option>
+            <option value="promo">PROMO DU MOMENT</option>
+          </select></label>
+          <label>Format<select id="affFmt">
+            <option value="a4">A4 — une affiche par page</option>
+            <option value="a5">A5 — deux affiches par page</option>
+          </select></label>
+          <label>Papier<select id="affBg">
+            <option value="1">Papier blanc — fond imprimé</option>
+            <option value="0">Papier pré-imprimé — contenu seul</option>
+          </select></label>
+          <label>Lien valable<select id="affDays">
+            <option value="30">30 jours</option>
+            <option value="60" selected>60 jours</option>
+            <option value="90">90 jours</option>
+          </select></label>
+        </div>
+
+        <div class="gpromo-actions">
+          <button class="gbtn" id="affSend">✉️ Générer et envoyer</button>
+          <button class="gbtn alt" id="affLink">🔗 Générer et copier le lien</button>
+        </div>
+        <div class="gmsg" id="affMsg"></div>
+        <div class="affbar" id="affBarWrap" hidden><i id="affBar"></i></div>
+        <div class="glist" id="affLog" hidden></div>
+      </div>`;
+    document.body.appendChild(aff);
+    aff.querySelector('[data-close]').addEventListener('click', () => aff.classList.remove('show'));
+    aff.addEventListener('click', e => { if (e.target === aff) aff.classList.remove('show'); });
+    el('affSend').addEventListener('click', () => runAffiches(true));
+    el('affLink').addEventListener('click', () => runAffiches(false));
 
     // pop-up générique affiché à l'ouverture d'un outil (plan promo / affiches / médias)
     const mod = document.createElement('div'); mod.className = 'gmodal'; mod.id = 'modModal';
@@ -1113,12 +1175,22 @@
     list.innerHTML = '<div class="gempty">Chargement…</div>';
     try {
       // 1) magasins (noms) + 2) métadonnées éventuelles
-      const { data: stores, error: serr } = await sb.from('stores').select('id, name, region').order('id');
+      // la colonne « email » n'existe qu'après la migration add-affiches-mail.sql
+      let stores = null, serr = null;
+      ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region, email').order('id'));
+      if (serr) ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region').order('id'));
       if (serr) throw serr;
       let metaBy = {};
       try {
         const { data: metas } = await sb.from('valorisations').select('store_id, ean_count, updated_at');
         (metas || []).forEach(m => { metaBy[m.store_id] = m; });
+      } catch (e) {}
+      // dernier envoi d'affiches par magasin (si la migration affiches est en place)
+      let mailBy = {};
+      try {
+        const { data: mails } = await sb.from('affiches_mails')
+          .select('store_id, email, sent_at, products, sent_via').order('sent_at', { ascending: false });
+        (mails || []).forEach(m => { if (!mailBy[m.store_id]) mailBy[m.store_id] = m; });
       } catch (e) {}
       // dernière connexion par magasin (si la migration last_seen est en place)
       let seenBy = {};
@@ -1147,7 +1219,7 @@
         const ageDays = (has && dt && !isNaN(dt.getTime())) ? Math.floor((Date.now() - dt.getTime()) / 86400000) : null;
         const status = !has ? 'never' : (ageDays != null && ageDays > 10 ? 'late' : 'ok');
         const seen = seenBy[s.id] ? new Date(seenBy[s.id]) : null;
-        return { s, has, meta, dt, ageDays, status, seen };
+        return { s, has, meta, dt, ageDays, status, seen, mail: mailBy[s.id] || null };
       });
       const nOk = enriched.filter(e => e.status === 'ok').length;
       const nLate = enriched.filter(e => e.status === 'late').length;
@@ -1156,7 +1228,15 @@
       // tri : le plus urgent d'abord (jamais déposée, puis le plus ancien)
       enriched.sort((a, b) => (b.status === 'never' ? 1e9 : (b.ageDays || 0)) - (a.status === 'never' ? 1e9 : (a.ageDays || 0)));
 
-      const summary = `<div class="stsum">
+      // envoi groupé : réservé à l'administrateur, sur les magasins dont la
+      // valorisation est déposée ET dont l'adresse du directeur est connue
+      const sendable = enriched.filter(e => e.has && e.s.email);
+      const bulk = (CURRENT && CURRENT.role === 'admin')
+        ? `<div class="gpromo-actions" style="margin:0 0 14px">
+             <button class="gbtn" id="stMailAll"${sendable.length ? '' : ' disabled'}>✉️ Envoyer les affiches aux ${sendable.length} magasin(s) prêt(s)</button>
+             <span class="gpromo-name">Valorisation déposée + adresse du directeur renseignée</span>
+           </div>` : '';
+      const summary = bulk + `<div class="stsum">
         <span class="pill ok">À jour<b>${nOk}</b></span>
         <span class="pill late">En retard<b>${nLate}</b></span>
         <span class="pill never">Jamais<b>${nNever}</b></span>
@@ -1171,12 +1251,18 @@
           ? `${e.meta && e.meta.ean_count != null ? e.meta.ean_count + ' EAN · ' : ''}maj ${e.dt ? e.dt.toLocaleDateString('fr-FR') : '?'}`
           : 'aucune valorisation déposée';
         const seenTxt = e.seen ? `connexion ${relAge(e.seen)}` : 'jamais connecté';
+        const mailTxt = e.mail
+          ? `✉️ affiches envoyées ${relAge(new Date(e.mail.sent_at))} à ${esc(e.mail.email)}`
+          : (e.s.email ? `✉️ ${esc(e.s.email)}` : '');
+        const isAdmin = CURRENT && CURRENT.role === 'admin';
         return `<div class="grow">
           ${badge}
           <div class="gr-main"><b>${esc(e.s.name || e.s.id)}</b>
-            <div class="gr-sub">${esc(e.s.id)}${e.s.region ? ' · ' + esc(e.s.region) : ''} — ${esc(sub)} · ${esc(seenTxt)}</div></div>
+            <div class="gr-sub">${esc(e.s.id)}${e.s.region ? ' · ' + esc(e.s.region) : ''} — ${esc(sub)} · ${esc(seenTxt)}</div>
+            ${mailTxt ? `<div class="stmail">${mailTxt}</div>` : ''}</div>
           ${e.has ? `<button data-load="${esc(e.s.id)}">Charger dans les outils</button>
                      <button data-dl="${esc(e.s.id)}">Télécharger</button>` : ''}
+          ${e.has && isAdmin ? `<button data-mail="${esc(e.s.id)}">✉️ Affiches</button>` : ''}
         </div>`;
       }).join('');
       list.innerHTML = summary + rowsHtml;
@@ -1184,6 +1270,12 @@
         await loadStoreValo(b.dataset.load, false); el('storesModal').classList.remove('show');
       }));
       list.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => downloadStoreValo(b.dataset.dl)));
+      list.querySelectorAll('[data-mail]').forEach(b => b.addEventListener('click', () => {
+        const e = enriched.find(x => String(x.s.id) === b.dataset.mail);
+        if (e) openAffiches('one', [e.s]);
+      }));
+      const all = el('stMailAll');
+      if (all) all.addEventListener('click', () => openAffiches('all', sendable.map(e => e.s)));
     } catch (e) {
       list.innerHTML = `<div class="gempty">Erreur : ${esc(e.message)}</div>`;
     }
@@ -1196,6 +1288,314 @@
       const a = document.createElement('a'); a.href = url; a.download = `valorisation-${storeId}.pdf`;
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
     } catch (e) { toast('Téléchargement impossible : ' + (e.message || e), true); }
+  }
+
+  /* ---------- Affiches prêtes à imprimer : le mail de téléchargement ----------
+     Quand un magasin a déposé sa valorisation et que les plans promo TV et PEM
+     sont publiés, l'administrateur envoie au directeur du magasin un mail qui
+     ne contient qu'une chose : un lien. Un clic, et tout le jeu d'affiches de
+     SON magasin arrive en PDF, prêt à imprimer.
+
+     Le PDF est fabriqué ici, dans le navigateur de l'administrateur : la coque
+     charge `etiquette.html?export=1` dans un cadre invisible — le moteur
+     d'étiquettes, sans écran — lui passe les plans publiés et la valorisation
+     du magasin, et récupère toutes les planches en un seul PDF. Ce PDF est
+     déposé dans le bucket privé « affiches », puis signé pour la durée choisie :
+     c'est cette URL signée que le mail transporte. Le directeur n'a ni compte à
+     saisir ni fichier à croiser. */
+  const AFF_BUCKET = 'affiches';
+  const affPath = (storeId) => `${storeId}/affiches.pdf`;
+  const isMail = (v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || '').trim());
+  let affTargets = [], affMode = 'one', affBusy = false;
+
+  // le générateur : l'outil Étiquettes, chargé une seule fois, hors écran
+  let exportFrameP = null;
+  function getExportFrame() {
+    if (exportFrameP) return exportFrameP;
+    exportFrameP = new Promise((res, rej) => {
+      const fr = document.createElement('iframe');
+      fr.id = 'gefecExportFrame';
+      fr.title = "Générateur d'affiches";
+      fr.setAttribute('aria-hidden', 'true');
+      fr.addEventListener('load', () => res(fr));
+      fr.addEventListener('error', () => rej(new Error("générateur d'affiches introuvable")));
+      fr.src = 'etiquette.html?export=1';
+      document.body.appendChild(fr);
+      setTimeout(() => rej(new Error("le générateur d'affiches n'a pas démarré")), 90000);
+    }).catch(e => { exportFrameP = null; throw e; });
+    return exportFrameP;
+  }
+
+  // Plans promo publiés, prêts à être passés au générateur. Le résultat est
+  // gardé tant que la publication n'a pas changé (jeton = dates de publication) :
+  // un envoi groupé ne relit pas les mêmes PDF magasin après magasin.
+  let planCache = null;
+  async function planFilesForExport() {
+    const metas = {};
+    for (const id of ['plan-promo-tv', 'plan-promo-pem', 'plan-promo']) metas[id] = await fetchSharedMeta(id);
+    const token = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo']
+      .map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
+    if (planCache && planCache.token === token) return planCache;
+    const plans = { tv: [], pem: [], auto: [] }, labels = [];
+    const hasNew = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
+    const pick = async (id, slot, label) => {
+      const m = metas[id];
+      if (!m || !m.file_path) return;
+      await ensureSharedLoaded(id, m);
+      const files = sharedFiles[id] || [];
+      if (!files.length) return;
+      for (const f of files) plans[slot].push({ data: await f.arrayBuffer(), name: f.name });
+      labels.push(label);
+    };
+    await pick('plan-promo-tv', 'tv', 'Plan Promo TV');
+    await pick('plan-promo-pem', 'pem', 'Plan Promo PEM');
+    // transition : l'ancien plan unique ne sert que si aucun des deux nouveaux
+    // n'est publié (le moteur reconnaît alors lui-même le type de chaque PDF)
+    if (!hasNew) await pick('plan-promo', 'auto', 'Plan promo (format unique)');
+    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.auto.length };
+    return planCache;
+  }
+
+  // Le PDF de TOUTES les affiches d'un magasin
+  async function buildAffichesPdf(store, plans, opts, onStep) {
+    const win = (await getExportFrame()).contentWindow;
+    if (!win || typeof win.gefecBuildAffiches !== 'function')
+      throw new Error("générateur d'affiches indisponible");
+    const { data, error } = await sb.storage.from('valorisations').download(valoPath(store.id));
+    if (error || !data) throw new Error('aucune valorisation déposée pour ce magasin');
+    return await win.gefecBuildAffiches({
+      valo: await data.arrayBuffer(), valoName: `valorisation-${store.id}.pdf`,
+      plans: plans.plans, plansToken: plans.token,
+      masks: customMasksData || [],
+      tpl: opts.tpl, fmt: opts.fmt, printBg: opts.printBg,
+      onProgress: onStep,
+    });
+  }
+
+  // Dépôt + lien signé. Un seul fichier par magasin, remplacé à chaque envoi :
+  // les liens déjà partis restent valides et servent la dernière version.
+  async function publishAffiches(store, blob, days) {
+    const path = affPath(store.id);
+    const up = await sb.storage.from(AFF_BUCKET)
+      .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+    if (up.error) throw new Error('dépôt du PDF : ' + up.error.message);
+    const name = `affiches-${slugify(store.name || store.id)}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    const { data, error } = await sb.storage.from(AFF_BUCKET)
+      .createSignedUrl(path, days * 86400, { download: name });
+    if (error || !data || !data.signedUrl)
+      throw new Error('lien de téléchargement : ' + ((error && error.message) || 'échec'));
+    return { path, url: data.signedUrl, expires: new Date(Date.now() + days * 86400000) };
+  }
+
+  // Envoi par la fonction Edge. Une erreur « pas de fournisseur configuré »
+  // n'en est pas vraiment une : la messagerie de l'administrateur prend le relais.
+  async function mailAffiches(store, to, link, info) {
+    const { data, error } = await sb.functions.invoke('send-affiches-mail', {
+      body: {
+        to, store_id: store.id, store_name: store.name || store.id, url: link.url,
+        pages: info.pages, products: info.products, plans: info.plansLabel,
+        expires: link.expires.toLocaleDateString('fr-FR'),
+      },
+    });
+    if (error) {
+      let m = error.message || 'Erreur';
+      try { const ctx = await error.context?.json?.(); if (ctx && ctx.error) m = ctx.error; } catch (e) {}
+      const err = new Error(m); err.fallback = true; throw err;
+    }
+    if (data && data.ok === false) { const err = new Error(data.error || 'envoi automatique non configuré'); err.fallback = true; throw err; }
+    if (data && data.error) { const err = new Error(data.error); err.fallback = true; throw err; }
+    return data;
+  }
+
+  // Repli : le message est préparé dans la messagerie de l'administrateur.
+  function mailtoAffiches(store, to, link, info) {
+    const lines = [
+      'Bonjour,', '',
+      `Les affiches prix de votre magasin (${store.name || store.id} — ${store.id}) sont prêtes :`,
+      'elles croisent les plans promo de la centrale avec la valorisation que vous avez déposée.',
+      '',
+      `• ${info.products} affiche(s) — ${info.plansLabel}`,
+      `• ${info.pages} page(s) à imprimer`,
+      `• Lien valable jusqu'au ${link.expires.toLocaleDateString('fr-FR')}`,
+      '', 'Télécharger le PDF :', link.url, '',
+      '— Boîte à Outils GEFEC',
+    ];
+    const subject = `Vos affiches promo sont prêtes — ${store.name || store.id}`;
+    window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
+  }
+
+  async function logAffichesMail(store, to, link, info, via) {
+    try {
+      await sb.from('affiches_mails').insert({
+        store_id: store.id, email: to, file_path: link.path,
+        link_expires_at: link.expires.toISOString(),
+        pages: info.pages, products: info.products, plans: info.plansLabel,
+        sent_via: via, sent_by: CURRENT.userId,
+      });
+    } catch (e) { /* journal facultatif : l'envoi, lui, a bien eu lieu */ }
+  }
+
+  async function saveStoreEmail(store, to) {
+    if (!to || store.email === to) return;
+    const { error } = await sb.from('stores').update({ email: to }).eq('id', store.id);
+    if (error) { toast("Adresse non mémorisée (migration add-affiches-mail.sql ?) : " + error.message, true); return; }
+    store.email = to;
+  }
+
+  /* ---------- Modale d'envoi ---------- */
+  function fillAffTpl() {
+    const sel = el('affTpl'); if (!sel) return;
+    const cur = sel.value || 'bonplan';
+    const opts = [['bonplan', 'BON PLAN'], ['promo', 'PROMO DU MOMENT']]
+      .concat((customMasksData || []).map(m => [m.id, m.name + ' (masque centrale)']));
+    sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    sel.value = opts.some(o => o[0] === cur) ? cur : 'bonplan';
+  }
+  async function openAffiches(mode, stores) {
+    affMode = mode; affTargets = (stores || []).slice(); affBusy = false;
+    const one = affMode === 'one' ? affTargets[0] : null;
+    el('affWho').innerHTML = one
+      ? `Magasin <b>${esc(one.name || one.id)}</b> (${esc(one.id)}) — les affiches sont fabriquées à partir des plans promo publiés et de la valorisation déposée par ce magasin.`
+      : `<b>${affTargets.length} magasin(s)</b> — un PDF par magasin, envoyé à l'adresse enregistrée pour son directeur.`;
+    el('affToRow').style.display = one ? '' : 'none';
+    el('affToHint').style.display = one ? '' : 'none';
+    el('affTo').value = (one && one.email) || '';
+    el('affMsg').className = 'gmsg'; el('affMsg').textContent = '';
+    el('affLog').hidden = true; el('affLog').innerHTML = '';
+    el('affBarWrap').hidden = true; el('affBar').style.width = '0';
+    el('affLink').hidden = !one;          // un lien à copier : un magasin à la fois
+    fillAffTpl();
+    el('affModal').classList.add('show');
+    const st = el('affPlans');
+    st.className = 'gmsg'; st.textContent = 'Vérification des plans promo publiés…';
+    try {
+      const plans = await planFilesForExport();
+      if (!plans.count) {
+        st.className = 'gmsg err';
+        st.textContent = "Aucun plan promo publié : déposez d'abord les plans TV et/ou PEM dans ⚙️ Réglages.";
+      } else {
+        st.className = 'gmsg ok';
+        st.textContent = `Plans pris en compte : ${plans.labels.join(' + ')} — ${plans.count} fichier(s).`;
+      }
+    } catch (e) { st.className = 'gmsg err'; st.textContent = 'Plans promo : ' + (e.message || e); }
+  }
+
+  const AFF_PHASE = {
+    libs: 'préparation du générateur…', valo: 'lecture de la valorisation…',
+    plans: 'lecture des plans promo…', match: 'croisement plan × valorisation…',
+  };
+  async function runAffiches(send) {
+    if (affBusy) return;
+    const msg = el('affMsg'), log = el('affLog'), bar = el('affBar');
+    const opts = {
+      tpl: el('affTpl').value, fmt: el('affFmt').value,
+      printBg: el('affBg').value === '1', days: parseInt(el('affDays').value, 10) || 60,
+    };
+    // destinataires
+    const jobs = [];
+    if (affMode === 'one') {
+      const store = affTargets[0];
+      if (!store) return;
+      const to = (el('affTo').value || '').trim();
+      if (send && !isMail(to)) { msg.className = 'gmsg err'; msg.textContent = "Indiquez l'adresse e-mail du directeur du magasin."; return; }
+      jobs.push({ store, to });
+    } else {
+      for (const store of affTargets) if (isMail(store.email)) jobs.push({ store, to: store.email });
+      if (!jobs.length) { msg.className = 'gmsg err'; msg.textContent = "Aucun magasin prêt : il faut une valorisation déposée et l'adresse de son directeur."; return; }
+      if (send && !confirm(`Envoyer les affiches à ${jobs.length} magasin(s) ?\nChaque directeur recevra le PDF de SON magasin.`)) return;
+    }
+
+    affBusy = true;
+    const btnS = el('affSend'), btnL = el('affLink');
+    btnS.disabled = btnL.disabled = true;
+    const oldS = btnS.textContent; btnS.textContent = 'En cours…';
+    msg.className = 'gmsg'; msg.textContent = '';
+    log.hidden = false;
+    log.innerHTML = jobs.map(j => `<div class="affrow" id="aff-st-${esc(j.store.id)}">
+        <div class="gr-main"><b>${esc(j.store.name || j.store.id)}</b>
+          <div class="gr-sub">${esc(j.to || 'lien seulement')}</div></div>
+        <span class="st wait">en attente</span></div>`).join('');
+    const setSt = (id, cls, txt) => {
+      const row = el('aff-st-' + id); if (!row) return;
+      const sp = row.querySelector('.st'); sp.className = 'st ' + cls; sp.textContent = txt;
+    };
+    el('affBarWrap').hidden = false;
+
+    let done = 0, failed = 0, manual = 0, stop = '';
+    try {
+      const plans = await planFilesForExport();
+      if (!plans.count) throw new Error("aucun plan promo publié : déposez les plans TV et/ou PEM dans ⚙️ Réglages");
+      const plansLabel = plans.labels.join(' + ');
+
+      for (const job of jobs) {
+        const { store, to } = job;
+        try {
+          setSt(store.id, 'run', 'génération…');
+          bar.style.width = '0';
+          const res = await buildAffichesPdf(store, plans, opts, (phase, i, n) => {
+            if (phase === 'pdf') {
+              setSt(store.id, 'run', n ? `affiche ${i}/${n}` : 'mise en page…');
+              bar.style.width = n ? Math.round(i / n * 100) + '%' : '0';
+            } else setSt(store.id, 'run', AFF_PHASE[phase] || 'en cours…');
+          });
+          const info = { pages: res.pages, products: res.products, plansLabel: (res.plans || []).map(p => p.label).join(' + ') || plansLabel };
+          setSt(store.id, 'run', 'dépôt du PDF…');
+          const link = await publishAffiches(store, res.blob, opts.days);
+          if (to) await saveStoreEmail(store, to);
+
+          if (!send) {
+            try { await navigator.clipboard.writeText(link.url); } catch (e) {}
+            setSt(store.id, 'ok', `${info.products} affiche(s) — lien copié`);
+            msg.className = 'gmsg ok';
+            msg.textContent = `Lien de téléchargement copié dans le presse-papiers — valable ${opts.days} jours.`;
+            done++;
+            continue;
+          }
+          setSt(store.id, 'run', 'envoi du mail…');
+          try {
+            await mailAffiches(store, to, link, info);
+            setSt(store.id, 'ok', `${info.products} affiche(s) envoyée(s)`);
+            await logAffichesMail(store, to, link, info, 'auto');
+            done++;
+          } catch (e) {
+            if (!e.fallback) throw e;
+            // pas d'envoi automatique : on passe la main à la messagerie de l'admin
+            if (affMode === 'all') {
+              setSt(store.id, 'ko', 'envoi automatique indisponible');
+              stop = e.message || 'envoi automatique indisponible';
+              break;
+            }
+            mailtoAffiches(store, to, link, info);
+            try { await navigator.clipboard.writeText(link.url); } catch (x) {}
+            setSt(store.id, 'ok', `${info.products} affiche(s) — message préparé`);
+            await logAffichesMail(store, to, link, info, 'manuel');
+            manual++;
+          }
+        } catch (e) {
+          setSt(store.id, 'ko', (e && e.message) || 'échec');
+          failed++;
+        }
+      }
+    } catch (e) {
+      msg.className = 'gmsg err'; msg.textContent = 'Échec : ' + ((e && e.message) || e);
+    } finally {
+      affBusy = false;
+      btnS.disabled = btnL.disabled = false; btnS.textContent = oldS;
+      el('affBarWrap').hidden = true;
+    }
+
+    if (stop) {
+      msg.className = 'gmsg err';
+      msg.textContent = `Envoi groupé interrompu — ${stop}. Tant que la fonction « send-affiches-mail » n'est pas configurée (voir supabase/SETUP.md), envoyez magasin par magasin : le message est alors préparé dans votre messagerie.`;
+    } else if (manual) {
+      msg.className = 'gmsg';
+      msg.textContent = "Envoi automatique non configuré : le message vient de s'ouvrir dans votre messagerie, lien inclus (également copié dans le presse-papiers).";
+    } else if (send && done) {
+      msg.className = 'gmsg ok';
+      msg.textContent = `${done} mail(s) envoyé(s)${failed ? ` · ${failed} échec(s)` : ''}.`;
+      toast(`Affiches envoyées à ${done} magasin(s) ✓`);
+    }
+    if (done || manual) { try { await openStores(); } catch (e) {} }
   }
 
   /* ---------- Démarrage ---------- */

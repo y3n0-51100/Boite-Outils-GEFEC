@@ -59,6 +59,46 @@ supabase functions deploy admin-create-user --project-ref <ref-du-projet>
 Dans **Authentication → URL Configuration**, ajouter l'URL du site GitHub Pages
 dans **Site URL** et **Redirect URLs** (ex : `https://<vous>.github.io/Boite-Outils-GEFEC/`).
 
+## 6. Le mail « vos affiches sont prêtes » (facultatif mais recommandé)
+
+Permet à l'administrateur d'envoyer au directeur d'un magasin, en un clic, le
+PDF de **toutes** les affiches de ce magasin (bouton **✉️ Affiches** dans
+📂 Valorisations). Le directeur reçoit un lien : il clique, le PDF se télécharge.
+
+### 6.1 Le schéma
+**SQL Editor → New query** → coller [`add-affiches-mail.sql`](./add-affiches-mail.sql)
+→ **Run**. Cela ajoute l'adresse mail sur la fiche magasin, le bucket privé
+`affiches` et le journal des envois.
+
+### 6.2 La fonction d'envoi
+**Edge Functions → Deploy a new function**, nom `send-affiches-mail`, coller
+[`functions/send-affiches-mail/index.ts`](./functions/send-affiches-mail/index.ts)
+→ **Deploy**. (En CLI : `supabase functions deploy send-affiches-mail --project-ref <ref>`.)
+
+### 6.3 La clé d'envoi
+Dans **Edge Functions → Secrets**, ajouter **au choix** :
+
+| Secret | Valeur |
+| --- | --- |
+| `RESEND_API_KEY` | clé d'API [Resend](https://resend.com) (3 000 mails/mois gratuits) |
+| `BREVO_API_KEY` | *ou* clé d'API [Brevo](https://www.brevo.com) (300 mails/jour gratuits) |
+| `MAIL_FROM` | expéditeur, ex : `Boîte à Outils GEFEC <affiches@mondomaine.fr>` |
+| `MAIL_REPLY_TO` | *(facultatif)* adresse de réponse |
+
+> L'adresse d'expédition doit appartenir à un **domaine vérifié** chez le
+> fournisseur — c'est la seule condition pour que les mails ne partent pas en
+> indésirables.
+
+**Sans ces secrets, rien ne casse** : l'outil génère quand même le PDF et le
+lien, puis ouvre le message tout rédigé dans la messagerie de l'administrateur,
+qui n'a plus qu'à l'envoyer (le lien est aussi copié dans le presse-papiers).
+Seul l'envoi groupé aux 16 magasins demande une clé.
+
+### 6.4 Les adresses des directeurs
+Elles ne sont pas dans les comptes (les identifiants de connexion utilisent un
+domaine interne, `@gefec.local`). L'adresse réelle est demandée **au premier
+envoi** pour chaque magasin, puis mémorisée sur sa fiche.
+
 ---
 
 ## Ce que vous me transmettez ensuite
