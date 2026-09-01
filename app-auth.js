@@ -1549,8 +1549,7 @@
   function fillAffTpl() {
     const sel = el('affTpl'); if (!sel) return;
     const cur = sel.value || 'bonplan';
-    const opts = [['bonplan', 'BON PLAN'], ['promo', 'PROMO DU MOMENT']]
-      .concat((customMasksData || []).map(m => [m.id, m.name + ' (masque centrale)']));
+    const opts = [['bonplan', 'BON PLAN'], ['promo', 'PROMO DU MOMENT']];
     sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
     sel.value = opts.some(o => o[0] === cur) ? cur : 'bonplan';
   }

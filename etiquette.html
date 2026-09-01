@@ -1863,6 +1863,7 @@ function addBlank() {
    ÉTAPE 3 — ÉTIQUETTES
    ============================================================ */
 function setTpl(t) {
+  if (!PERSO_ONLY && t !== 'bonplan' && t !== 'promo') t = 'bonplan';
   state.tpl = t;
   document.querySelectorAll('#tplChoices .choice').forEach(b =>
     b.classList.toggle('active', b.dataset.tpl === t));
@@ -1892,7 +1893,10 @@ function maskHasA5(t) {
    PRIVÉES…). Appelé par la coque (app-auth.js) avec des images en
    data-URL. Le moteur de rendu reste inchangé : seul le fond et le
    bouton « Type d'affiche » sont ajoutés ; le contenu se cale comme
-   le masque officiel indiqué (calage). */
+   le masque officiel indiqué (calage).
+   Remarque : ces masques ne sont proposés que dans l'outil Promo Perso
+   (plan=perso). Dans Plan Promo TV & PEM, seuls les masques officiels
+   BON PLAN et PROMO DU MOMENT sont disponibles. */
 window.applyCustomMasks = function (list) {
   if (!Array.isArray(list)) return;
   state.customMasks = list.map(m => ({ id: m.id, name: m.name, calage: m.calage || 'promo', a5: !!m.a5 }));
@@ -1901,14 +1905,17 @@ window.applyCustomMasks = function (list) {
     if (m.a5) state.masks[m.id + '-a5'] = m.a5;
   }
   renderTplChoices();
-  // si le masque mémorisé n'existe plus, repli sur BON PLAN
-  if (!document.querySelector(`#tplChoices .choice[data-tpl="${state.tpl}"]`)) state.tpl = 'bonplan';
+  // si le masque mémorisé n'existe plus ou n'est pas autorisé, repli sur BON PLAN
+  if (!PERSO_ONLY && state.tpl !== 'bonplan' && state.tpl !== 'promo') state.tpl = 'bonplan';
+  else if (!document.querySelector(`#tplChoices .choice[data-tpl="${state.tpl}"]`)) state.tpl = 'bonplan';
   setTpl(state.tpl);
 };
 function renderTplChoices() {
   const box = document.getElementById('tplChoices');
   if (!box) return;
   box.querySelectorAll('.choice[data-custom]').forEach(b => b.remove());
+  // Dans l'outil Plan Promo TV & PEM, seuls les masques officiels BON PLAN et PROMO DU MOMENT sont proposés
+  if (!PERSO_ONLY) return;
   for (const m of state.customMasks) {
     const b = document.createElement('button');
     b.className = 'choice'; b.dataset.tpl = m.id; b.dataset.custom = '1';
@@ -1947,7 +1954,10 @@ async function applyPrintPrefs() {
   try {
     const pp = await kvGet('printPrefs');
     if (!pp) return;
-    if (pp.tpl) setTpl(pp.tpl);
+    if (pp.tpl) {
+      if (!PERSO_ONLY && pp.tpl !== 'bonplan' && pp.tpl !== 'promo') pp.tpl = 'bonplan';
+      setTpl(pp.tpl);
+    }
     if (pp.fmt) setFmt(pp.fmt);
     if (typeof pp.printBg === 'boolean') setBg(pp.printBg);
     if (typeof pp.showDates === 'boolean') document.getElementById('showDates').checked = pp.showDates;
