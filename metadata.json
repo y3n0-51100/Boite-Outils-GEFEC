@@ -1,0 +1,8 @@
+{
+  "name": "Boîte à Outils GEFEC",
+  "description": "Suite d'outils PDF et d'étiquettes promotionnelles pour les magasins GEFEC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

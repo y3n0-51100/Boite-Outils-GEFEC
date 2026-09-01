@@ -197,6 +197,11 @@
         <div class="gpromo">
           <div class="gpromo-title">${esc(SHARED[id].name)}${SHARED[id].multi ? ' <span style="font-weight:600;font-size:11px;opacity:.7">· plusieurs fichiers possibles</span>' : ''}</div>
           ${SHARED[id].hint ? `<div class="gpromo-sub">${esc(SHARED[id].hint)}</div>` : ''}
+          ${SHARED[id].hasMediaNum ? `
+          <div style="margin:8px 0 6px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label for="ds-medianum-${id}" style="font-size:12px;font-weight:600;opacity:.9;color:#ff9e4a">Numéro de média / dépliant :</label>
+            <input type="text" id="ds-medianum-${id}" placeholder="ex : 888" style="padding:4px 8px;font-size:12px;font-family:inherit;font-weight:600;border-radius:6px;border:1px solid rgba(255,107,0,0.4);background:rgba(255,107,0,0.1);color:#fff;width:130px;outline:none">
+          </div>` : ''}
           <div class="gmsg" id="ds-status-${id}">Chargement…</div>
           <input type="file" id="ds-file-${id}" accept="${SHARED[id].accept}"${SHARED[id].multi ? ' multiple' : ''} style="display:none">
           <div class="gpromo-actions">
@@ -568,8 +573,17 @@
     for (const id of Object.keys(SHARED)) {
       if (!labels[id]) continue; // document hérité : pas de pastille dédiée
       const meta = await fetchSharedMeta(id);
-      if (meta && meta.file_path && meta.updated_at) chips.push({ st: 'ok', name: labels[id], val: new Date(meta.updated_at).toLocaleDateString('fr-FR') });
-      else chips.push({ st: 'none', name: labels[id], val: 'non publié' });
+      if (meta && meta.file_path && meta.updated_at) {
+        let labelName = labels[id];
+        if (id === 'affiches-cetelem' && meta.mediaNum) {
+          labelName = `CETELEM (Média ${meta.mediaNum})`;
+          window.CETELEM_MEDIA_NUM = meta.mediaNum;
+          broadcastMediaNum(meta.mediaNum);
+        }
+        chips.push({ st: 'ok', name: labelName, val: new Date(meta.updated_at).toLocaleDateString('fr-FR') });
+      } else {
+        chips.push({ st: 'none', name: labels[id], val: 'non publié' });
+      }
     }
 
     slot.innerHTML = chips.map(c =>
@@ -683,7 +697,7 @@
     'plan-promo-tv':    { name: 'Plan promo TV',           accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoTv', multi: true },
     'plan-promo-pem':   { name: 'Plan promo PEM',          accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoPem', multi: true },
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
-    'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true },
+    'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true, hasMediaNum: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
     // Base article NOSICA déposée à la main : le classeur est injecté dans les
     // deux outils d'étiquettes (Plan Promo et Promo Perso), qui le relisent et
@@ -709,10 +723,50 @@
     } catch (e) { return []; }
   }
 
+  function broadcastMediaNum(mediaNum) {
+    const num = String(mediaNum || '').trim();
+    window.CETELEM_MEDIA_NUM = num;
+    try {
+      const matchCard = document.querySelector('.tool-card[data-tool="match"]');
+      if (matchCard) {
+        const sub = matchCard.querySelector('.tc-sub');
+        if (sub) sub.textContent = num ? `Dépliant Média ${num} · A5 / A4` : 'Dépliant PDF · A5 / A4';
+      }
+      const matchTab = document.querySelector('.tab[data-tab="match"]');
+      if (matchTab) {
+        matchTab.innerHTML = `<span class="dot"></span>Affiches CETELEM${num ? ` <span style="font-size:10.5px;opacity:.9;font-weight:700">(${esc(num)})</span>` : ''}`;
+      }
+    } catch (e) {}
+    document.querySelectorAll('.tool-frame').forEach(frame => {
+      try {
+        if (frame.contentWindow) {
+          if (typeof frame.contentWindow.setMediaNum === 'function') {
+            frame.contentWindow.setMediaNum(num);
+          }
+          frame.contentWindow.postMessage({ type: 'gefec:medianum', mediaNum: num }, '*');
+        }
+      } catch (e) {}
+    });
+  }
+
   async function fetchSharedMeta(id) {
     try {
       const { data } = await sb.from('shared_docs').select('file_path, file_name, updated_at').eq('id', id).maybeSingle();
-      return data || null;
+      if (!data) return null;
+      let mediaNum = '';
+      const m = String(data.file_name || '').match(/^[mM][ée]dia\s*([0-9a-zA-Z_-]+)\s*[·–—:\-]/i);
+      if (m) mediaNum = m[1];
+      if (id === 'affiches-cetelem') {
+        try {
+          const { data: bData } = await sb.storage.from('shared').download('affiches-cetelem_meta.json');
+          if (bData) {
+            const txt = await bData.text();
+            const j = JSON.parse(txt);
+            if (j && j.mediaNum) mediaNum = String(j.mediaNum).trim();
+          }
+        } catch (ex) {}
+      }
+      return { ...data, mediaNum };
     } catch (e) { return null; }
   }
   async function injectSharedInto(id, frame) {
@@ -736,6 +790,10 @@
       }
       input.files = dt.files;
       input.dispatchEvent(new win.Event('change', { bubbles: true }));
+      try { if (typeof win.syncUserRole === 'function') win.syncUserRole(); } catch (e) {}
+      if (id === 'affiches-cetelem' && window.CETELEM_MEDIA_NUM) {
+        try { if (typeof win.setMediaNum === 'function') win.setMediaNum(window.CETELEM_MEDIA_NUM); } catch (e) {}
+      }
     } catch (e) { frame['__inj_' + id] = false; }
   }
   // un document partagé peut concerner plusieurs outils (ex. la base article,
@@ -860,8 +918,22 @@
     const meta = await fetchSharedMeta(id);
     if (meta && meta.file_path && meta.updated_at) {
       s.className = 'gmsg ok';
-      s.textContent = `Publié : ${meta.file_name || ''} — ${new Date(meta.updated_at).toLocaleString('fr-FR')}`;
-    } else { s.className = 'gmsg'; s.textContent = 'Aucun fichier publié pour le moment.'; }
+      const mBadge = meta.mediaNum ? `[Média ${meta.mediaNum}] ` : '';
+      s.textContent = `Publié : ${mBadge}${meta.file_name || ''} — ${new Date(meta.updated_at).toLocaleString('fr-FR')}`;
+      if (id === 'affiches-cetelem') {
+        const minput = el('ds-medianum-' + id);
+        if (minput && meta.mediaNum && !minput.value) minput.value = meta.mediaNum;
+        window.CETELEM_MEDIA_NUM = meta.mediaNum || '';
+        broadcastMediaNum(meta.mediaNum || '');
+      }
+    } else {
+      s.className = 'gmsg';
+      s.textContent = 'Aucun fichier publié pour le moment.';
+      if (id === 'affiches-cetelem') {
+        const minput = el('ds-medianum-' + id);
+        if (minput && !minput.value) minput.value = '';
+      }
+    }
   }
   function refreshAllSharedStatus() { Object.keys(SHARED).forEach(refreshSharedStatus); }
   async function onUploadShared(id) {
@@ -872,6 +944,11 @@
     const btn = document.querySelector(`[data-upload="${id}"]`);
     if (btn) { btn.disabled = true; btn.textContent = 'Téléversement…'; }
     try {
+      let mediaNum = '';
+      if (cfg.hasMediaNum) {
+        const minput = el('ds-medianum-' + id);
+        if (minput) mediaNum = minput.value.trim().replace(/^[mM][ée]dia\s*/i, '').trim();
+      }
       if (cfg.multi) {
         // document multi-fichiers : un dossier par id. On remplace tout le jeu.
         const old = await listShared(folderFor(id));
@@ -882,8 +959,9 @@
           const { error } = await sb.storage.from('shared').upload(p, f, { upsert: true, contentType: f.type || undefined });
           if (error) throw error;
         }
+        const displayName = (mediaNum ? `Média ${mediaNum} · ` : '') + (files.length + ' fichier(s)');
         await sb.from('shared_docs').upsert({
-          id, file_path: folderFor(id), file_name: files.length + ' fichier(s)',
+          id, file_path: folderFor(id), file_name: displayName,
           updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
         });
         sharedFiles[id] = files;
@@ -892,16 +970,26 @@
         const path = pathFor(id, f.name);
         const { error } = await sb.storage.from('shared').upload(path, f, { upsert: true, contentType: f.type || undefined });
         if (error) throw error;
+        const displayName = (mediaNum ? `Média ${mediaNum} · ` : '') + f.name;
         await sb.from('shared_docs').upsert({
-          id, file_path: path, file_name: f.name,
+          id, file_path: path, file_name: displayName,
           updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
         });
         sharedFiles[id] = [f];
       }
+      if (id === 'affiches-cetelem') {
+        try {
+          const metaPayload = JSON.stringify({ mediaNum, updatedAt: new Date().toISOString() });
+          await sb.storage.from('shared').upload('affiches-cetelem_meta.json', new Blob([metaPayload], { type: 'application/json' }), { upsert: true });
+        } catch (e) {}
+        window.CETELEM_MEDIA_NUM = mediaNum;
+        broadcastMediaNum(mediaNum);
+      }
       sharedLoadedAt[id] = null;
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       tryInjectShared(id);
-      toast(cfg.name + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
+      const mediaLabel = mediaNum ? ` (Média ${mediaNum})` : '';
+      toast(cfg.name + mediaLabel + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
       input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
       refreshSharedStatus(id);
       if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(await fetchSharedMeta(id));
@@ -923,6 +1011,13 @@
       // supprime le(s) fichier(s) : dossier complet (multi) ou fichier unique
       const toRemove = isFolder(meta.file_path) ? await listShared(meta.file_path) : [meta.file_path];
       if (toRemove.length) { try { await sb.storage.from('shared').remove(toRemove); } catch (e) {} }
+      if (id === 'affiches-cetelem') {
+        try { await sb.storage.from('shared').remove(['affiches-cetelem_meta.json']); } catch(e) {}
+        window.CETELEM_MEDIA_NUM = '';
+        broadcastMediaNum('');
+        const minput = el('ds-medianum-affiches-cetelem');
+        if (minput) minput.value = '';
+      }
       // On "vide" la fiche (file_path = '') plutôt que de la supprimer : l'UPDATE
       // est autorisé par les policies existantes, aucune migration SQL requise.
       // Un document à file_path vide est traité partout comme « non publié ».

@@ -1,2 +1,2 @@
 /* Date de dernière vérification de la base (GitHub Actions). Généré automatiquement. */
-window.BASE_CHECKED = "2026-09-01T04:22:37.029Z";
+window.BASE_CHECKED = "2026-08-29T06:27:04.461Z";

@@ -750,10 +750,26 @@ main{flex:1;position:relative;overflow:hidden}
     gap: 16px; flex-wrap: wrap;
     background: var(--bg-0);
   }
-  .main-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.005em; }
+  .main-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.005em; display: flex; align-items: center; }
   .main-subtitle {
     font-family: var(--font-mono); font-size: 11px; color: var(--text-mute);
     margin-top: 2px;
+  }
+  .media-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255, 107, 0, 0.15);
+    color: #ff8c33;
+    border: 1px solid rgba(255, 107, 0, 0.35);
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-left: 8px;
   }
   #globalStatus {
     font-family: var(--font-mono); font-size: 11px; color: var(--text-mute);
@@ -1140,8 +1156,8 @@ main{flex:1;position:relative;overflow:hidden}
 
       <div class="main-toolbar">
         <div>
-          <div class="main-title">Croisement & génération</div>
-          <div class="main-subtitle">Affiches Financemement CETELEM</div>
+          <div class="main-title">Croisement & génération <span class="media-tag" id="mediaTag" style="display:none;"></span></div>
+          <div class="main-subtitle" id="mainSubtitle">Affiches Financement CETELEM</div>
         </div>
         <div id="globalStatus">prêt</div>
       </div>
@@ -1152,7 +1168,7 @@ main{flex:1;position:relative;overflow:hidden}
           <div class="stat-value" id="statValo">0</div>
         </div>
         <div class="stat">
-          <div class="stat-label">Affiches du dépliant</div>
+          <div class="stat-label" id="statZipLabel">Affiches du dépliant</div>
           <div class="stat-value" id="statZip">0</div>
         </div>
         <div class="stat accent">
@@ -1196,7 +1212,7 @@ main{flex:1;position:relative;overflow:hidden}
           <div class="empty-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
-          <div class="empty-text">
+          <div class="empty-text" id="emptyText">
             Importer le <code>dépliant CETELEM</code> (PDF de la centrale).
             L'outil lit l'EAN de chaque affiche, les croise automatiquement avec la valorisation (importée depuis l'accueil) et prépare la liste des affiches à imprimer.
           </div>
@@ -1228,7 +1244,37 @@ main{flex:1;position:relative;overflow:hidden}
     matches: null,
     cachedPdfBytes: null,
     cachedSelectedKey: '',
+    mediaNum: '',
   };
+
+  function setMediaNum(num) {
+    state.mediaNum = String(num || '').trim();
+    const tag = document.getElementById('mediaTag');
+    const sub = document.getElementById('mainSubtitle');
+    const statLbl = document.getElementById('statZipLabel');
+    const emptyTxt = document.getElementById('emptyText');
+    const fnInput = document.getElementById('filenameInput');
+
+    if (state.mediaNum) {
+      if (tag) { tag.textContent = 'Média ' + state.mediaNum; tag.style.display = 'inline-flex'; }
+      if (sub) sub.textContent = 'Affiches Financement CETELEM — Dépliant Média n° ' + state.mediaNum;
+      if (statLbl) statLbl.textContent = 'Affiches Dépliant (Média ' + state.mediaNum + ')';
+      if (emptyTxt) {
+        emptyTxt.innerHTML = `Dépliant CETELEM — <code>Média ${state.mediaNum}</code> publié par la centrale.<br>L'outil lit l'EAN de chaque affiche, les croise avec votre valorisation et prépare les affiches de ce média correspondant aux produits exposés dans votre magasin.`;
+      }
+    } else {
+      if (tag) tag.style.display = 'none';
+      if (sub) sub.textContent = 'Affiches Financement CETELEM';
+      if (statLbl) statLbl.textContent = 'Affiches du dépliant';
+      if (emptyTxt) {
+        emptyTxt.innerHTML = `Importer le <code>dépliant CETELEM</code> (PDF de la centrale).<br>L'outil lit l'EAN de chaque affiche, les croise automatiquement avec la valorisation (importée depuis l'accueil) et prépare la liste des affiches à imprimer.`;
+      }
+    }
+    if (fnInput && !fnInput.dataset.touched) {
+      fnInput.value = defaultFileName();
+    }
+  }
+  window.setMediaNum = setMediaNum;
 
   function makeLogger(consoleId, statId, barId) {
     const body = document.getElementById(consoleId);
@@ -1282,7 +1328,14 @@ main{flex:1;position:relative;overflow:hidden}
   function defaultFileName() {
     const d = new Date();
     const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    return `Affiches_BUT_Conflans_${ymd}`;
+    let storeTag = 'Magasin';
+    try {
+      if (window.parent && window.parent.CURRENT) {
+        storeTag = (window.parent.CURRENT.storeId || window.parent.CURRENT.name || 'Magasin').replace(/[^\w.-]+/g, '_');
+      }
+    } catch(e) {}
+    const mTag = state.mediaNum ? `_Media${state.mediaNum}` : '';
+    return `Affiches_BUT_${storeTag}${mTag}_${ymd}`;
   }
 
   function setupDropzone(zoneId, inputId, handler) {
@@ -1576,7 +1629,7 @@ main{flex:1;position:relative;overflow:hidden}
         }
       });
 
-      setGlobalStatus(`${matches.length} match${matches.length > 1 ? 's' : ''}`);
+      setGlobalStatus(`${matches.length} match${matches.length > 1 ? 's' : ''}${state.mediaNum ? ' · Média ' + state.mediaNum : ''}`);
     }
 
     document.getElementById('filenameInput').value = defaultFileName();
@@ -1901,7 +1954,37 @@ main{flex:1;position:relative;overflow:hidden}
 
   setupDropzone('zone1', 'file1', handleValorisation);
   setupDropzone('zone2', 'file2', handleZip);
-  document.getElementById('filenameInput').value = defaultFileName();
+  const fnInput = document.getElementById('filenameInput');
+  if (fnInput) {
+    fnInput.addEventListener('input', () => { fnInput.dataset.touched = '1'; });
+    fnInput.value = defaultFileName();
+  }
+
+  window.syncUserRole = function() {
+    let isAdmin = false;
+    let parentMedia = '';
+    try {
+      if (window.parent && window.parent.CURRENT) {
+        isAdmin = window.parent.CURRENT.role === 'admin';
+      }
+      if (window.parent && window.parent.CETELEM_MEDIA_NUM) {
+        parentMedia = window.parent.CETELEM_MEDIA_NUM;
+      }
+    } catch(e) {}
+    if (parentMedia) setMediaNum(parentMedia);
+    if (!isAdmin) {
+      document.body.classList.add('hide-sidebar');
+    } else {
+      document.body.classList.remove('hide-sidebar');
+    }
+  };
+  try { window.syncUserRole(); } catch(e) {}
+
+  window.addEventListener('message', e => {
+    if (e.data && e.data.type === 'gefec:medianum') {
+      setMediaNum(e.data.mediaNum);
+    }
+  });
 <\/script>
 </body>
 </html>
@@ -2904,6 +2987,14 @@ function bootTools() {
       state.iframeReady.add(view);
       const loader = frame.closest('.view-tool').querySelector('.pane-loader');
       if (loader) loader.classList.add('hide');
+      try {
+        if (frame.contentWindow && typeof frame.contentWindow.syncUserRole === 'function') {
+          frame.contentWindow.syncUserRole();
+        }
+        if (view === 'match' && window.CETELEM_MEDIA_NUM && frame.contentWindow && typeof frame.contentWindow.setMediaNum === 'function') {
+          frame.contentWindow.setMediaNum(window.CETELEM_MEDIA_NUM);
+        }
+      } catch(e) {}
       maybeInject(frame);
     });
 

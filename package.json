@@ -2,11 +2,14 @@
   "name": "boite-outils-gefec",
   "version": "1.0.0",
   "description": "Suite d'outils PDF pour le magasin, réunis dans une interface unique à la charte claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC + Étiquettes 2.0) : l'ancien outil **Plan Promo** a été **remplacé par Étiquettes 2.0**.",
-  "main": "app-auth.js",
+  "main": "server.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
+    "dev": "node server.js",
+    "build": "echo 'Build complete'",
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -17,6 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "express": "^5.2.1",
     "pdfkit": "^0.19.1"
   }
 }
