@@ -2948,7 +2948,7 @@ document.addEventListener('DOMContentLoaded', updateBaseStatus);
    qu'un cadre d'outil ne démarre jamais dans le mauvais mode.
    ════════════════════════════════════════════════════════════════ */
 let USER_MODE = null;                                  // 'simple' (magasin) | 'full'
-const SIMPLE_TOOLS = ['match', 'etiquette', 'solde'];  // périmètre magasin
+const SIMPLE_TOOLS = ['match', 'etiquette', 'solde', 'sisto'];  // périmètre magasin
 const isSimple = () => USER_MODE === 'simple';
 
 window.applyUserMode = function(user){
@@ -2960,7 +2960,7 @@ window.applyUserMode = function(user){
   try { if (isSimple()) restrictToStoreScope(); } finally { bootTools(); }
 };
 function restrictToStoreScope(){
-  // Promo Perso et SISTO Checker sortent du périmètre magasin : on retire les
+  // Promo Perso sort du périmètre magasin : on retire les
   // nœuds (carte, onglet, vue + iframe) plutôt que de les masquer, pour
   // qu'aucun outil hors périmètre ne soit chargé ni atteignable.
   document.querySelectorAll('.tool-card,.tab,.view-tool').forEach(n => {
@@ -3125,7 +3125,7 @@ const shell=document.querySelector('.shell'), tabNav=document.getElementById('ta
 // ré-interroge à chaque fois plutôt que de garder une liste figée
 const tabsNow=()=>tabNav.querySelectorAll('.tab');
 function switchView(name){
-  // vue retirée du profil (Promo Perso, SISTO Checker en mode magasin) : rien à ouvrir
+  // vue retirée du profil (Promo Perso en mode magasin) : rien à ouvrir
   if (name!=='home' && !document.querySelector(`.view-tool[data-view="${name}"]`)) return;
   // pop-up "document partagé" avant d'ouvrir un outil (géré par app-auth.js)
   if (typeof window.moduleGate==='function' && !window.moduleGate(name)) return;
