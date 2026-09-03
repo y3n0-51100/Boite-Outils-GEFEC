@@ -2391,7 +2391,6 @@ window.gefecBuildCampagne = async function (opts) {
   // 4) réglages d'affiche — appliqués à l'état SANS passer par setTpl/setFmt,
   //    pour ne pas écraser les préférences d'impression mémorisées
   state.tpl = o.tpl || 'bonplan';
-  state.fmt = (o.fmt === 'a5' && maskHasA5(state.tpl)) ? 'a5' : 'a4';
   state.printBg = o.printBg !== false;
   setChk('showDates', o.showDates !== false);
   setChk('showBrand', o.showBrand !== false);
@@ -2399,13 +2398,18 @@ window.gefecBuildCampagne = async function (opts) {
 
   // 5) un fichier par plan : les planches sont montées d'abord (rapide), puis
   //    rendues, pour que la progression porte sur le total réel de la campagne
-  const byPlan = matched.map(p => ({ ...p, sheets: withPlan(p.id, buildSheets) }));
+  const byPlan = matched.map(p => {
+    const storeFmt = p.id === 'tv' ? (o.fmtTV || o.fmt) : p.id === 'pem' ? (o.fmtPEM || o.fmt) : o.fmt;
+    state.fmt = (storeFmt === 'a5' && maskHasA5(state.tpl)) ? 'a5' : 'a4';
+    return { ...p, sheets: withPlan(p.id, buildSheets), fmtUsed: state.fmt };
+  });
+  
   const total = byPlan.reduce((n, p) => n + p.sheets.length, 0);
   say('pdf', 0, total);
   let done = 0;
   const files = [];
   for (const p of byPlan) {
-    const blob = await sheetsToPdf(p.sheets, state.fmt, () => say('pdf', ++done, total));
+    const blob = await sheetsToPdf(p.sheets, p.fmtUsed, () => say('pdf', ++done, total));
     files.push({ id: p.id, label: p.label, blob, pages: p.sheets.length, products: p.n });
   }
   return {

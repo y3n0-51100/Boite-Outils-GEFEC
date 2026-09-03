@@ -141,15 +141,17 @@ textarea{resize:vertical;line-height:1.55;min-height:150px}
   <section class="card" id="cardOpts" hidden>
     <div class="card-title">1 · Réglages de la campagne</div>
     <div class="grid">
+      <label class="f full">Campagnes à générer et envoyer
+        <div style="display:flex;gap:15px;align-items:center;padding:5px 0;font-size:13px;font-weight:600;">
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkTV" checked> Plan Promo TV</label>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkPEM" checked> Plan Promo PEM</label>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkCET"> Affiches CETELEM</label>
+        </div>
+      </label>
       <label class="f">Type d'affiche
         <select id="optTpl">
           <option value="bonplan">BON PLAN</option>
           <option value="promo">PROMO DU MOMENT</option>
-        </select></label>
-      <label class="f">Format
-        <select id="optFmt">
-          <option value="a4">A4 — une affiche par page</option>
-          <option value="a5">A5 — deux affiches par page</option>
         </select></label>
       <label class="f">Papier
         <select id="optBg">

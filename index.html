@@ -1994,6 +1994,44 @@ main{flex:1;position:relative;overflow:hidden}
     fnInput.value = defaultFileName();
   }
 
+  window.gefecBuildCetelem = async function(opts) {
+    const o = opts || {};
+    const say = typeof o.onProgress === 'function' ? o.onProgress : function () {};
+    if (!o.valo || !o.plans || !o.plans.length) throw new Error("Paramètres manquants");
+    
+    say('libs');
+    while (!window.pdfjsLib || !window.PDFLib) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    
+    say('valo');
+    await handleValorisation(new File([o.valo], 'valo.pdf'));
+    if (!state.storeKeys || !state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
+    
+    say('plans');
+    const f = new File([o.plans[0].data], o.plans[0].name);
+    await handleZip(f);
+    
+    say('match');
+    const items = getSelectedItems();
+    if (!items.length) throw new Error('aucune affiche CETELEM ne correspond à votre valorisation');
+    
+    say('pdf');
+    const result = await buildOrReusePdf();
+    if (!result || !result.bytes || result.errors.length === items.length) {
+      throw new Error("Erreur lors de la génération des affiches CETELEM.");
+    }
+    
+    const blob = new Blob([result.bytes], { type: 'application/pdf' });
+    return [{
+       id: 'cetelem',
+       label: 'Affiches CETELEM',
+       blob,
+       pages: items.length,
+       products: items.length
+    }];
+  };
+
   window.syncUserRole = function() {
     let isAdmin = false;
     let parentMedia = '';

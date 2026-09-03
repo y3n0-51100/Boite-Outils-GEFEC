@@ -138,13 +138,13 @@
     } catch (e) { return []; }
   }
   async function planFiles() {
-    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo'];
+    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo', 'affiches-cetelem'];
     const metas = {};
     for (const id of ids) metas[id] = await fetchSharedMeta(id);
     const token = ids.map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
     if (planCache && planCache.token === token) return planCache;
 
-    const plans = { tv: [], pem: [], auto: [] }, labels = [];
+    const plans = { tv: [], pem: [], auto: [], cet: [] }, labels = [];
     const hasNew = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
     const pick = async (id, slot, label) => {
       const meta = metas[id];
@@ -162,11 +162,11 @@
     };
     await pick('plan-promo-tv', 'tv', 'Plan Promo TV');
     await pick('plan-promo-pem', 'pem', 'Plan Promo PEM');
+    await pick('affiches-cetelem', 'cet', 'Affiches CETELEM');
     // transition : l'ancien plan unique ne sert que si aucun des deux nouveaux
     // n'est publié (le moteur reconnaît alors lui-même le type de chaque PDF)
     if (!hasNew) await pick('plan-promo', 'auto', 'Plan promo (format unique)');
-
-    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.auto.length };
+    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.auto.length + plans.cet.length };
     return planCache;
   }
   async function refreshPlanStatus() {
@@ -220,12 +220,58 @@
     const { data, error } = await sb.storage.from('valorisations')
       .download(`${store.id}/valorisation.pdf`);
     if (error || !data) throw new Error('aucune valorisation déposée pour ce magasin');
-    return await win.gefecBuildCampagne({
-      valo: await data.arrayBuffer(), valoName: `valorisation-${store.id}.pdf`,
-      plans: plans.plans, plansToken: plans.token,
-      tpl: opts.tpl, fmt: opts.fmt, printBg: opts.printBg,
-      onProgress: onStep,
-    });
+    
+    const valoBuffer = await data.arrayBuffer();
+    let files = [];
+    let pages = 0;
+    let products = 0;
+
+    const filteredPlans = { tv: [], pem: [], auto: [] };
+    if (opts.chkTV) filteredPlans.tv = plans.plans.tv || [];
+    if (opts.chkPEM) filteredPlans.pem = plans.plans.pem || [];
+    filteredPlans.auto = plans.plans.auto || [];
+
+    if (filteredPlans.tv.length || filteredPlans.pem.length || filteredPlans.auto.length) {
+      const res = await win.gefecBuildCampagne({
+        valo: valoBuffer.slice(0), valoName: `valorisation-${store.id}.pdf`,
+        plans: filteredPlans, plansToken: plans.token,
+        tpl: opts.tpl, 
+        fmtTV: opts.storePrefs.tv || 'a4',
+        fmtPEM: opts.storePrefs.pem || 'a4',
+        printBg: opts.printBg,
+        onProgress: onStep,
+      });
+      files.push(...res.files);
+      pages += res.pages;
+      products += res.products;
+    }
+    
+    if (opts.chkCET && plans.plans.cet && plans.plans.cet.length) {
+      if (window.parent && typeof window.parent.gefecBuildCetelem === 'function') {
+        onStep('match', 0, 1); // Indique qu'on traite Cetelem
+        try {
+          const cetRes = await window.parent.gefecBuildCetelem({
+            valo: valoBuffer.slice(0),
+            plans: plans.plans.cet,
+            fmt: opts.storePrefs.cetelem || 'a4',
+            onProgress: onStep
+          });
+          files.push(...cetRes);
+          for (const c of cetRes) {
+            pages += c.pages;
+            products += c.products;
+          }
+        } catch (e) {
+          if (e.message !== 'aucune affiche CETELEM ne correspond à votre valorisation') {
+            throw e;
+          }
+        }
+      }
+    }
+    
+    if (files.length === 0) throw new Error("Aucun plan généré (aucun produit trouvé ou plans décochés).");
+
+    return { files, pages, products, plans: files.map(f => ({ id: f.id, label: f.label, n: f.products })) };
   }
 
   /* ---------- Dépôt des PDF (bucket privé « affiches ») ----------
@@ -326,7 +372,7 @@
     host.innerHTML = '<div class="empty">Chargement…</div>';
     try {
       let stores = null, serr = null;
-      ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region, email').order('id'));
+      ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region, email, mail_prefs').order('id'));
       if (serr) throw serr;
       if (!stores || !stores.length) {
         host.innerHTML = '<div class="empty">Aucun magasin enregistré.</div>';
@@ -408,6 +454,7 @@
                placeholder="${s.email === 'REFUSE' ? 'Ne souhaite pas de mails' : 'adresse du magasin'}" 
                value="${esc(s.email === 'REFUSE' ? '' : (s.email || ''))}">
         <div class="acts">
+          <button class="btn small" data-remind type="button"${s.status === 'ok' ? ' style="display:none"' : ''}>🔔 Relancer</button>
           <button class="btn small" data-pdf type="button"${blocked ? ' disabled' : ''}>⬇️ PDF</button>
           <button class="btn primary small" data-send type="button"${blocked ? ' disabled' : ''}>✉️ Générer &amp; envoyer</button>
         </div>
@@ -422,6 +469,8 @@
       if (!store) return;
       row.querySelector('[data-send]').addEventListener('click', () => runOne(store, true));
       row.querySelector('[data-pdf]').addEventListener('click', () => runOne(store, false));
+      const remindBtn = row.querySelector('[data-remind]');
+      if (remindBtn) remindBtn.addEventListener('click', () => remindStore(store));
       const inp = row.querySelector('[data-mail]');
       inp.addEventListener('change', async () => {
         const v = inp.value.trim();
@@ -436,6 +485,35 @@
       });
     });
     syncBulk();
+  }
+
+  async function remindStore(store) {
+    const row = rowOf(store);
+    const to = ((row && row.querySelector('[data-mail]').value) || store.email || '').trim();
+    if (!isMail(to)) {
+      setStatus(store, 'ko', "Adresse e-mail manquante pour la relance.");
+      return;
+    }
+    const age = store.ageDays != null ? store.ageDays : 'plusieurs';
+    const msg = `Bonjour,
+
+Votre valorisation magasin enregistrée date de ${age} jours. 
+Afin de pouvoir générer les affiches promotionnelles (TV, PEM, CETELEM) correspondant exactement à votre stock exposé, merci de vous connecter à l'outil pour y déposer votre nouvelle valorisation PDF issue de NOSICA.
+
+Ceci est un message automatique, merci de ne pas y répondre.`;
+
+    setStatus(store, 'run', `envoi de la relance à ${to}…`);
+    try {
+      await sendMail({
+        to, store_id: store.id, store_name: store.name || store.id,
+        subject: `Mise à jour de votre valorisation magasin nécessaire`,
+        message: msg,
+        files: []
+      });
+      setStatus(store, 'ok', `Relance envoyée avec succès à ${to}.`);
+    } catch (e) {
+      setStatus(store, 'ko', `Relance échouée : ${e.message}`);
+    }
   }
 
   // le mail vient de partir : on rafraîchit « dernière campagne » sans
@@ -485,10 +563,12 @@
   function currentOpts() {
     return {
       tpl: el('optTpl').value,
-      fmt: el('optFmt').value,
       printBg: el('optBg').value === '1',
       subject: el('optSubject').value || DEFAULT_SUBJECT,
       message: el('optMessage').value || DEFAULT_MESSAGE,
+      chkTV: el('chkTV').checked,
+      chkPEM: el('chkPEM').checked,
+      chkCET: el('chkCET').checked,
     };
   }
 
@@ -498,6 +578,8 @@
     if (store.status === 'never') throw new Error("ce magasin n'a pas déposé de valorisation");
     if (store.status === 'late')
       throw new Error(`valorisation de ${store.ageDays} jours — au-delà de ${VALO_MAX_DAYS} jours, elle ne reflète plus le stock exposé`);
+
+    opts.storePrefs = store.mail_prefs || {};
 
     let to = '';
     if (send) {

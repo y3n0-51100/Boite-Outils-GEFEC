@@ -183,12 +183,14 @@
         <span class="ac-info"><b id="acName"></b><span id="acRole"></span></span>
         <button id="acStores" hidden>📂 Valorisations</button>
         <button id="acAdmin" class="primary" hidden>⚙️ Réglages</button>
+        <button id="acMailPrefs" class="primary" hidden>✉️ Mes envois mail</button>
         <button id="acHelp" title="Aide et support">❔ Aide</button>
         <button id="acLogout">Déconnexion</button>`;
       right.appendChild(chip);
       el('acLogout').addEventListener('click', doLogout);
       el('acAdmin').addEventListener('click', openAdmin);
       el('acStores').addEventListener('click', openStores);
+      el('acMailPrefs').addEventListener('click', openMailPrefs);
       el('acHelp').addEventListener('click', openHelp);
     }
 
@@ -435,20 +437,36 @@
     eg.innerHTML = `
       <div class="vgate-card">
         <div class="vgate-title">Affiches par email</div>
-        <div class="vgate-sub">Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin automatiquement par mail ?</div>
+        <div class="vgate-sub" id="egSub">Souhaitez-vous recevoir vos affiches automatiquement par mail ?</div>
         <div style="display:flex;gap:12px;margin-top:20px" id="egChoices">
-          <button class="gbtn pri" id="egYes">Oui, recevoir les affiches</button>
+          <button class="gbtn pri" id="egYes">Oui, configurer mes envois</button>
           <button class="gbtn" id="egNo">Non merci</button>
         </div>
         <div id="egInputWrap" style="display:none;margin-top:20px;">
           <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">Adresse e-mail de réception</label>
           <input type="email" id="egInput" class="ginput" placeholder="directeur@... ou magasin@..." style="width:100%;box-sizing:border-box;margin-bottom:12px">
+          
+          <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">Formats souhaités</label>
+          <div style="display:flex;gap:15px;margin-bottom:12px;font-size:13px;">
+            <label><input type="radio" name="egFmtTV" value="a4" checked> TV en A4</label>
+            <label><input type="radio" name="egFmtTV" value="a5"> TV en A5</label>
+          </div>
+          <div style="display:flex;gap:15px;margin-bottom:12px;font-size:13px;">
+            <label><input type="radio" name="egFmtPEM" value="a4" checked> PEM en A4</label>
+            <label><input type="radio" name="egFmtPEM" value="a5"> PEM en A5</label>
+          </div>
+          <div style="display:flex;gap:15px;margin-bottom:20px;font-size:13px;">
+            <label><input type="radio" name="egFmtCET" value="a4" checked> CETELEM en A4</label>
+            <label><input type="radio" name="egFmtCET" value="a5"> CETELEM en A5</label>
+          </div>
+
           <div style="display:flex;gap:10px">
             <button class="gbtn pri" id="egSave">Enregistrer</button>
-            <button class="gbtn" id="egCancel">Annuler</button>
+            <button class="gbtn" id="egCancel" style="display:none">Annuler</button>
+            <button class="gbtn" id="egClose" style="display:none">Fermer</button>
           </div>
         </div>
-        <div class="vgate-msg" id="egMsg"></div>
+        <div class="vgate-msg" id="egMsg" style="margin-top:15px;font-weight:600;"></div>
       </div>`;
     document.body.appendChild(eg);
 
@@ -521,6 +539,7 @@
       : (ROLE_LABEL[CURRENT.role] || CURRENT.role);
     el('acAdmin').hidden = CURRENT.role !== 'admin';
     el('acStores').hidden = !(CURRENT.role === 'admin' || CURRENT.role === 'director');
+    el('acMailPrefs').hidden = CURRENT.role !== 'store';
 
     // profil d'accès : la coque n'ouvre aucun outil avant de savoir QUI se
     // connecte (magasin = version simplifiée, admin/directeur = outil complet)
@@ -584,6 +603,70 @@
   }
   function hideValoGate() { el('valoGate').classList.remove('show'); }
   
+  function openMailPrefs() {
+    if (!isSimpleUser()) return;
+    return new Promise(async resolve => {
+      el('emailGate').classList.add('show');
+      el('egClose').style.display = 'block';
+      el('egCancel').style.display = 'none';
+      const wrap = el('egInputWrap');
+      const choices = el('egChoices');
+      const input = el('egInput');
+      const msg = el('egMsg');
+      const sub = el('egSub');
+      
+      sub.textContent = 'Configurez vos préférences de réception automatique.';
+      choices.style.display = 'none';
+      wrap.style.display = 'block';
+      msg.textContent = '';
+      
+      try {
+        const { data } = await sb.from('stores').select('email, mail_prefs').eq('id', CURRENT.storeId).maybeSingle();
+        if (data) {
+          if (data.email && data.email !== 'REFUSE') input.value = data.email;
+          if (data.mail_prefs) {
+            const prefs = data.mail_prefs;
+            if (prefs.tv) document.querySelector(`input[name="egFmtTV"][value="${prefs.tv}"]`).checked = true;
+            if (prefs.pem) document.querySelector(`input[name="egFmtPEM"][value="${prefs.pem}"]`).checked = true;
+            if (prefs.cetelem) document.querySelector(`input[name="egFmtCET"][value="${prefs.cetelem}"]`).checked = true;
+          }
+        }
+      } catch (e) {}
+      
+      async function saveChoice(val, prefs = null) {
+        msg.className = 'vgate-msg wait'; msg.textContent = 'Enregistrement...';
+        try {
+          const payload = { email: val };
+          if (prefs) payload.mail_prefs = prefs;
+          await sb.from('stores').update(payload).eq('id', CURRENT.storeId);
+          CURRENT.email = val;
+          msg.className = 'vgate-msg ok'; msg.textContent = 'Enregistré avec succès !';
+          setTimeout(() => {
+            el('emailGate').classList.remove('show');
+            resolve(true);
+          }, 800);
+        } catch (e) {
+          msg.className = 'vgate-msg err'; msg.textContent = 'Erreur : ' + (e.message || e);
+        }
+      }
+
+      el('egClose').onclick = () => { el('emailGate').classList.remove('show'); resolve(true); };
+      
+      el('egSave').onclick = () => {
+        const val = input.value.trim();
+        if (!val || !val.includes('@')) { msg.className = 'vgate-msg err'; msg.textContent = 'Adresse e-mail invalide.'; return; }
+        
+        const prefs = {
+          tv: document.querySelector('input[name="egFmtTV"]:checked').value,
+          pem: document.querySelector('input[name="egFmtPEM"]:checked').value,
+          cetelem: document.querySelector('input[name="egFmtCET"]:checked').value
+        };
+        
+        saveChoice(val, prefs);
+      };
+    });
+  }
+
   async function enforceEmailGate() {
     if (!isSimpleUser()) return true;
     try {
@@ -595,21 +678,40 @@
     
     return new Promise(resolve => {
       el('emailGate').classList.add('show');
+      el('egClose').style.display = 'none';
+      el('egCancel').style.display = 'inline-block';
       const wrap = el('egInputWrap');
       const choices = el('egChoices');
       const input = el('egInput');
       const msg = el('egMsg');
+      const sub = el('egSub');
+      
+      sub.textContent = 'Souhaitez-vous recevoir vos affiches automatiquement par mail ?';
+      choices.style.display = 'flex';
+      wrap.style.display = 'none';
+      input.value = '';
+      msg.textContent = '';
       
       el('egYes').onclick = () => { choices.style.display = 'none'; wrap.style.display = 'block'; input.focus(); };
       el('egCancel').onclick = () => { wrap.style.display = 'none'; choices.style.display = 'flex'; input.value = ''; msg.textContent = ''; };
       
-      async function saveChoice(val) {
+      async function saveChoice(val, prefs = null) {
         msg.className = 'vgate-msg wait'; msg.textContent = 'Enregistrement...';
         try {
-          await sb.from('stores').update({ email: val }).eq('id', CURRENT.storeId);
-          CURRENT.email = val; // Mémoriser localement si besoin
-          el('emailGate').classList.remove('show');
-          resolve(true);
+          const payload = { email: val };
+          if (prefs) payload.mail_prefs = prefs;
+          await sb.from('stores').update(payload).eq('id', CURRENT.storeId);
+          CURRENT.email = val;
+          msg.className = 'vgate-msg ok'; 
+          if (val === 'REFUSE') {
+            msg.textContent = 'Choix enregistré.';
+          } else {
+            msg.textContent = 'Merci, vous recevrez vos affiches automatiquement par mail, bon business.';
+          }
+          setTimeout(() => {
+            el('emailGate').classList.remove('show');
+            resolve(true);
+          }, 2500);
         } catch (e) {
           msg.className = 'vgate-msg err'; msg.textContent = 'Erreur : ' + (e.message || e);
         }
@@ -619,7 +721,12 @@
       el('egSave').onclick = () => {
         const val = input.value.trim();
         if (!val || !val.includes('@')) { msg.className = 'vgate-msg err'; msg.textContent = 'Adresse e-mail invalide.'; return; }
-        saveChoice(val);
+        const prefs = {
+          tv: document.querySelector('input[name="egFmtTV"]:checked').value,
+          pem: document.querySelector('input[name="egFmtPEM"]:checked').value,
+          cetelem: document.querySelector('input[name="egFmtCET"]:checked').value
+        };
+        saveChoice(val, prefs);
       };
     });
   }

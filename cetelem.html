@@ -1,0 +1,1494 @@
+<script type="text/template" id="tool-match"><!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Affiches Financemement CETELEM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0: #0B0E14;
+    --bg-1: #11151E;
+    --bg-2: #1A2030;
+    --bg-3: #232B3D;
+    --line: #2A334A;
+    --line-soft: #1F2638;
+    --text: #E6E9F0;
+    --text-soft: #8A93A6;
+    --text-mute: #5C6478;
+    --accent: #FF6B00;
+    --accent-glow: rgba(255, 107, 0, 0.18);
+    --accent-soft: rgba(255, 107, 0, 0.10);
+    --navy: #4D7CFF;
+    --success: #4ADE80;
+    --success-soft: rgba(74, 222, 128, 0.10);
+    --warning: #FBBF24;
+    --warning-soft: rgba(251, 191, 36, 0.10);
+    --error: #F87171;
+    --error-soft: rgba(248, 113, 113, 0.10);
+    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+  }
+
+  html { font-size: 14px; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-0);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 50% -20%, rgba(255, 107, 0, 0.04), transparent 60%),
+      radial-gradient(ellipse 800px 400px at 80% 100%, rgba(77, 124, 255, 0.03), transparent 70%);
+  }
+
+  .app { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+  .topbar {
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+    background: rgba(11, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 32px; height: 32px;
+    background: var(--accent); color: #fff;
+    font-weight: 800; font-size: 13px; letter-spacing: -0.02em;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 4px 12px var(--accent-glow);
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+  .brand-title { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+  .brand-sub {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-mute);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin-top: 2px;
+  }
+  .topbar-meta {
+    display: flex; align-items: center; gap: 16px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-mute);
+  }
+  .topbar-meta .dot {
+    display: inline-block; width: 6px; height: 6px;
+    background: var(--success); border-radius: 50%;
+    box-shadow: 0 0 0 3px var(--success-soft);
+    margin-right: 6px; vertical-align: middle;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(380px, 460px) 1fr;
+    gap: 1px;
+    background: var(--line);
+    min-height: 0;
+  }
+  @media (max-width: 980px) { .workspace { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--bg-0); padding: 24px; overflow-y: auto; }
+  .sidebar { display: flex; flex-direction: column; gap: 20px; }
+  .main { display: flex; flex-direction: column; padding: 0; }
+
+  .section { display: flex; flex-direction: column; }
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .step-badge {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    color: var(--text-soft);
+    transition: all 0.2s;
+  }
+  .step-badge.active {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    box-shadow: 0 0 0 4px var(--accent-glow);
+  }
+  .step-badge.done {
+    background: var(--success-soft); border-color: var(--success); color: var(--success);
+  }
+  .step-badge.done::before { content: '✓'; }
+  .step-badge.done > span { display: none; }
+  .section-title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; color: var(--text); }
+  .section-hint {
+    font-size: 11px; color: var(--text-mute);
+    margin-left: auto; font-family: var(--font-mono);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  .dropzone {
+    position: relative;
+    background: var(--bg-1);
+    border: 1.5px dashed var(--line);
+    border-radius: var(--radius-md);
+    padding: 22px 18px; text-align: center;
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+  .dropzone::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%, var(--accent-soft), transparent 70%);
+    opacity: 0; transition: opacity 0.3s; pointer-events: none;
+  }
+  .dropzone:hover { border-color: var(--accent); background: var(--bg-2); transform: translateY(-1px); }
+  .dropzone:hover::before { opacity: 1; }
+  .dropzone.dragover { border-color: var(--accent); border-style: solid; background: var(--bg-2); }
+  .dropzone.loaded {
+    border-style: solid; border-color: var(--success);
+    background: var(--success-soft);
+  }
+  .dropzone.loaded::before {
+    background: linear-gradient(135deg, var(--success-soft), transparent 60%); opacity: 1;
+  }
+  .dropzone input[type="file"] { display: none; }
+
+  .dropzone-icon {
+    width: 36px; height: 36px;
+    margin: 0 auto 10px;
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-soft);
+    transition: all 0.2s;
+  }
+  .dropzone:hover .dropzone-icon {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+  }
+  .dropzone.loaded .dropzone-icon { color: var(--success); border-color: var(--success); background: transparent; }
+  .dropzone-icon svg { width: 18px; height: 18px; }
+  .dropzone-text { font-size: 13px; font-weight: 500; color: var(--text); word-break: break-all; }
+  .dropzone-info {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-mute); margin-top: 4px;
+  }
+  .dropzone.loaded .dropzone-info { color: var(--success); }
+
+  .console {
+    margin-top: 10px;
+    background: #06090F;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .console-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--line-soft);
+    font-family: var(--font-mono); font-size: 10px; color: var(--text-mute);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .console-bar .led {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--text-mute);
+    margin-right: 6px; transition: background 0.3s;
+  }
+  .console-bar.busy .led {
+    background: var(--accent);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .console-bar.ready .led { background: var(--success); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .console-body {
+    padding: 8px 10px;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.55;
+    color: var(--text-soft);
+    max-height: 140px; overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .console-body::-webkit-scrollbar { width: 6px; }
+  .console-body::-webkit-scrollbar-track { background: transparent; }
+  .console-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .console-line { display: flex; gap: 8px; padding: 1px 0; word-break: break-word; }
+  .console-line .ts { color: var(--text-mute); flex-shrink: 0; user-select: none; }
+  .console-line .lvl { flex-shrink: 0; width: 14px; text-align: center; user-select: none; }
+  .console-line.info .lvl { color: var(--navy); }
+  .console-line.success .lvl { color: var(--success); }
+  .console-line.warn .lvl { color: var(--warning); }
+  .console-line.error .lvl { color: var(--error); }
+  .console-line.error .msg { color: var(--error); }
+  .console-line .msg { flex: 1; }
+  .console-empty { color: var(--text-mute); font-style: italic; padding: 4px 0; }
+
+  .progress {
+    height: 2px; background: var(--line-soft);
+    overflow: hidden;
+    transition: opacity 0.2s;
+    margin-top: 8px;
+    border-radius: 1px;
+  }
+  .progress.hidden { opacity: 0; height: 0; margin-top: 0; }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), rgba(255, 107, 0, 0.5));
+    width: 0%; transition: width 0.2s ease;
+  }
+
+  .main-toolbar {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    background: var(--bg-0);
+  }
+  .main-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.005em; display: flex; align-items: center; }
+  .main-subtitle {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-mute);
+    margin-top: 2px;
+  }
+  .media-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255, 107, 0, 0.15);
+    color: #ff8c33;
+    border: 1px solid rgba(255, 107, 0, 0.35);
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-left: 8px;
+  }
+  #globalStatus {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-mute);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 4px 10px;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    align-self: center;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    padding: 16px 24px;
+    background: var(--bg-0);
+    border-bottom: 1px solid var(--line);
+  }
+  .stat {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    position: relative; overflow: hidden;
+  }
+  .stat::before {
+    content: ''; position: absolute;
+    left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--text-mute);
+  }
+  .stat.accent::before { background: var(--accent); }
+  .stat.success::before { background: var(--success); }
+  .stat-label {
+    font-family: var(--font-mono); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-mute); margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
+    line-height: 1; color: var(--text);
+  }
+  .stat.accent .stat-value { color: var(--accent); }
+  .stat.success .stat-value { color: var(--success); }
+
+  .empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 80px 24px; text-align: center;
+    color: var(--text-mute); flex: 1;
+  }
+  .empty-icon {
+    width: 56px; height: 56px;
+    border: 1.5px dashed var(--line); border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px; color: var(--text-mute);
+  }
+  .empty-icon svg { width: 24px; height: 24px; }
+  .empty-text {
+    font-size: 14px; color: var(--text-soft);
+    max-width: 320px; line-height: 1.6;
+  }
+  .empty-text code {
+    font-family: var(--font-mono); font-size: 12px;
+    background: var(--bg-2); padding: 1px 6px; border-radius: 4px;
+    color: var(--accent);
+  }
+
+  .action-bar {
+    padding: 14px 24px;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--line);
+    display: flex; flex-wrap: wrap;
+    gap: 8px; align-items: center;
+  }
+  .action-bar .group { display: flex; gap: 6px; align-items: center; }
+  .action-bar .sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
+  .action-bar .filename-input {
+    flex: 1; min-width: 180px;
+    background: var(--bg-0); border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--text);
+    transition: border-color 0.15s;
+  }
+  .action-bar .filename-input:focus { outline: none; border-color: var(--accent); }
+  .action-bar .filename-input::placeholder { color: var(--text-mute); }
+
+  .btn {
+    background: var(--bg-2); border: 1px solid var(--line);
+    color: var(--text);
+    padding: 7px 12px; border-radius: var(--radius-sm);
+    font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg-3); border-color: var(--text-mute); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .btn.primary:hover:not(:disabled) {
+    background: #FF7B1A; border-color: #FF7B1A;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
+  }
+  .btn.primary:disabled {
+    background: var(--bg-3); border-color: var(--line); color: var(--text-mute);
+    box-shadow: none;
+  }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--text-soft); }
+  .btn.ghost:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
+
+  .list-wrapper { flex: 1; overflow-y: auto; background: var(--bg-0); }
+  .list-wrapper::-webkit-scrollbar { width: 8px; }
+  .list-wrapper::-webkit-scrollbar-track { background: var(--bg-0); }
+  .list-wrapper::-webkit-scrollbar-thumb {
+    background: var(--line); border-radius: 4px;
+    border: 2px solid var(--bg-0);
+  }
+  .list-head, .list-row {
+    display: grid;
+    grid-template-columns: 36px 150px 1fr;
+    align-items: center; gap: 12px;
+    padding: 10px 24px;
+  }
+  .list-head {
+    position: sticky; top: 0;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-mute); font-weight: 500;
+    z-index: 10;
+  }
+  .list-row {
+    border-bottom: 1px solid var(--line-soft);
+    transition: background 0.1s; font-size: 12.5px;
+  }
+  .list-row:hover { background: var(--bg-1); }
+  .list-row input[type="checkbox"] {
+    appearance: none;
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--line);
+    border-radius: 4px;
+    background: var(--bg-1);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s;
+  }
+  .list-row input[type="checkbox"]:hover { border-color: var(--accent); }
+  .list-row input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+  .list-row input[type="checkbox"]:checked::after {
+    content: ''; position: absolute;
+    left: 4px; top: 1px; width: 5px; height: 9px;
+    border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .list-row .ean { font-family: var(--font-mono); font-size: 11px; color: var(--text-soft); }
+  .list-row .filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .list-row.no-match {
+    color: var(--text-mute); font-style: italic;
+    text-align: center; grid-template-columns: 1fr;
+    padding: 24px;
+  }
+
+  #masterCheck {
+    appearance: none; width: 16px; height: 16px;
+    border: 1.5px solid var(--line);
+    border-radius: 4px; background: var(--bg-1);
+    cursor: pointer; position: relative;
+    transition: all 0.15s;
+  }
+  #masterCheck:hover { border-color: var(--accent); }
+  #masterCheck:checked { background: var(--accent); border-color: var(--accent); }
+  #masterCheck:checked::after {
+    content: ''; position: absolute;
+    left: 4px; top: 1px; width: 5px; height: 9px;
+    border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  .alert {
+    margin: 12px 24px;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    border-left: 3px solid;
+    display: none;
+  }
+  .alert.visible { display: block; }
+  .alert.warning { background: var(--warning-soft); border-color: var(--warning); color: #FCD34D; }
+  .alert.error { background: var(--error-soft); border-color: var(--error); color: #FCA5A5; }
+
+  /* IMPRESSION */
+  .print-area { display: none; }
+  @media print {
+    @page {
+      margin: 0;
+      /* Les marges à 0 suppriment les en-têtes/pieds de page du navigateur */
+    }
+    body {
+      background: white !important; color: black !important;
+      background-image: none !important;
+    }
+    body > .app { display: none !important; }
+    .print-area { display: block !important; }
+    .print-page {
+      page-break-after: always;
+      overflow: hidden; position: relative;
+    }
+    .print-page:last-child { page-break-after: auto; }
+  }
+  /* Classes appliquées dynamiquement selon le format choisi */
+  .print-area.fmt-a5 .print-page { width: 148mm; height: 210mm; }
+  .print-area.fmt-a5 .print-page canvas { width: 148mm; height: 210mm; display: block; }
+  .print-area.fmt-a4 .print-page { width: 210mm; height: 297mm; }
+  .print-area.fmt-a4 .print-page canvas { width: 210mm; height: 297mm; display: block; object-fit: contain; }
+  @media print {
+    .print-area.fmt-a5 { --page-size: A5 portrait; }
+    .print-area.fmt-a4 { --page-size: A4 portrait; }
+  }
+
+  /* Format selector in action bar */
+  .format-select {
+    background: var(--bg-0); border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--text);
+    cursor: pointer; transition: border-color 0.15s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238A93A6' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 26px;
+  }
+  .format-select:focus { outline: none; border-color: var(--accent); }
+
+  /* Grouped rows (accordion) */
+  .group-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 24px;
+    background: var(--bg-1);
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    font-size: 12.5px;
+    user-select: none;
+    transition: background 0.12s;
+    position: sticky; top: 41px; z-index: 5;
+  }
+  .group-header:hover { background: var(--bg-2); }
+  .group-arrow {
+    width: 16px; height: 16px; flex-shrink: 0;
+    color: var(--text-mute);
+    transition: transform 0.18s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .group-header.collapsed .group-arrow { transform: rotate(-90deg); }
+  .group-ean {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-soft);
+    min-width: 105px;
+  }
+  .group-label { flex: 1; color: var(--text); }
+  .group-badge {
+    font-family: var(--font-mono); font-size: 10px;
+    background: var(--bg-3); border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 1px 7px; color: var(--text-mute);
+  }
+  .group-cb { flex-shrink: 0; }
+  .group-cb input[type="checkbox"] {
+    appearance: none; width: 16px; height: 16px;
+    border: 1.5px solid var(--line); border-radius: 4px;
+    background: var(--bg-1); cursor: pointer; position: relative; transition: all 0.15s;
+  }
+  .group-cb input[type="checkbox"]:hover { border-color: var(--accent); }
+  .group-cb input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+  .group-cb input[type="checkbox"]:checked::after {
+    content: ''; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px;
+    border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .group-cb input[type="checkbox"]:indeterminate { background: var(--accent-soft); border-color: var(--accent); }
+  .group-cb input[type="checkbox"]:indeterminate::after {
+    content: ''; position: absolute; left: 3px; top: 6px; width: 8px; height: 2px;
+    background: var(--accent); border: none; transform: none;
+  }
+  .group-body { overflow: hidden; transition: max-height 0.22s ease; }
+  .group-body.collapsed { max-height: 0 !important; }
+
+  @media (max-width: 980px) {
+    .panel { padding: 16px; }
+    .topbar { padding: 12px 16px; }
+    .main-toolbar, .stats, .action-bar { padding-left: 16px; padding-right: 16px; }
+    .list-head, .list-row, .group-header { padding-left: 16px; padding-right: 16px; }
+  }
+  @media (max-width: 540px) {
+    .list-head, .list-row { grid-template-columns: 28px 1fr; }
+    .list-head .col-ean, .list-row .ean { display: none; }
+    .topbar-meta { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">B</div>
+      <div class="brand-text">
+        <div class="brand-title">Matcher Affiches Financemement CETELEM</div>
+        <div class="brand-sub">BUT Cosy · Conflans</div>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <div><span class="dot"></span> Local · aucune donnée envoyée</div>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <aside class="panel sidebar">
+
+      <!-- Valorisation fournie depuis l'accueil de la suite : section masquée, l'input reste pour l'injection -->
+      <section class="section" style="display:none" aria-hidden="true">
+        <div class="section-header">
+          <div class="step-badge" id="badge1"><span>1</span></div>
+          <div class="section-title">PDF de valorisation</div>
+          <div class="section-hint">EXPO PAMPU</div>
+        </div>
+        <label class="dropzone" id="zone1">
+          <input type="file" id="file1" accept="application/pdf">
+          <div class="dropzone-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div class="dropzone-text" id="zone1-text">Déposer le PDF</div>
+          <div class="dropzone-info" id="zone1-info">.pdf · contient les EANs exposés</div>
+        </label>
+        <div class="progress hidden" id="prog1"><div class="progress-fill" id="progFill1"></div></div>
+        <div class="console">
+          <div class="console-bar" id="consoleBar1">
+            <div><span class="led"></span>Console — Valorisation</div>
+            <div id="consoleStat1">en attente</div>
+          </div>
+          <div class="console-body" id="console1">
+            <div class="console-empty">$ aucun fichier traité</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <div class="step-badge" id="badge2"><span>1</span></div>
+          <div class="section-title">Dépliant CETELEM</div>
+          <div class="section-hint">PDF unique · 1 affiche / page</div>
+        </div>
+        <label class="dropzone" id="zone2">
+          <input type="file" id="file2" accept=".pdf,application/pdf,.zip,application/zip,application/x-zip-compressed" multiple>
+          <div class="dropzone-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <div class="dropzone-text" id="zone2-text">Déposer le dépliant PDF</div>
+          <div class="dropzone-info" id="zone2-info">PDF de la centrale (ou ZIP le contenant) — EAN lu sur chaque page</div>
+        </label>
+        <div class="progress hidden" id="prog2"><div class="progress-fill" id="progFill2"></div></div>
+        <div class="console">
+          <div class="console-bar" id="consoleBar2">
+            <div><span class="led"></span>Console — Affiches</div>
+            <div id="consoleStat2">en attente</div>
+          </div>
+          <div class="console-body" id="console2">
+            <div class="console-empty">$ aucun fichier traité</div>
+          </div>
+        </div>
+      </section>
+
+    </aside>
+
+    <main class="panel main">
+
+      <div class="main-toolbar">
+        <div>
+          <div class="main-title">Croisement & génération <span class="media-tag" id="mediaTag" style="display:none;"></span></div>
+          <div class="main-subtitle" id="mainSubtitle">Affiches Financement CETELEM</div>
+        </div>
+        <div id="globalStatus">prêt</div>
+      </div>
+
+      <div class="stats" id="stats" style="display:none;">
+        <div class="stat">
+          <div class="stat-label">EANs valorisation</div>
+          <div class="stat-value" id="statValo">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label" id="statZipLabel">Affiches du dépliant</div>
+          <div class="stat-value" id="statZip">0</div>
+        </div>
+        <div class="stat accent">
+          <div class="stat-label">Matchs trouvés</div>
+          <div class="stat-value" id="statMatch">0</div>
+        </div>
+        <div class="stat success">
+          <div class="stat-label">Sélectionnés</div>
+          <div class="stat-value" id="statSelected">0</div>
+        </div>
+      </div>
+
+      <div class="alert warning" id="alertWarning"></div>
+      <div class="alert error" id="alertError"></div>
+
+      <div class="action-bar" id="actionBar" style="display:none;">
+        <div class="group">
+          <button class="btn ghost" id="btnAll" title="Tout sélectionner">Tout cocher</button>
+          <button class="btn ghost" id="btnNone" title="Tout désélectionner">Décocher</button>
+        </div>
+        <div class="sep"></div>
+        <input class="filename-input" id="filenameInput" type="text" placeholder="nom-du-fichier">
+        <div class="group">
+          <button class="btn" id="btnSave" disabled title="Télécharger le PDF fusionné">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Enregistrer
+          </button>
+          <select class="format-select" id="printFormat" title="Format d'impression">
+            <option value="a5">A5 portrait</option>
+            <option value="a4">A4 portrait</option>
+          </select>
+          <button class="btn primary" id="btnPrint" disabled title="Imprimer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimer
+          </button>
+        </div>
+      </div>
+
+      <div class="list-wrapper">
+        <div class="empty" id="empty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <div class="empty-text" id="emptyText">
+            Importer le <code>dépliant CETELEM</code> (PDF de la centrale).
+            L'outil lit l'EAN de chaque affiche, les croise automatiquement avec la valorisation (importée depuis l'accueil) et prépare la liste des affiches à imprimer.
+          </div>
+        </div>
+
+        <div id="resultsList" style="display:none;">
+          <div class="list-head">
+            <div><input type="checkbox" id="masterCheck"></div>
+            <div class="col-ean">EAN-13</div>
+            <div>Fichier</div>
+          </div>
+          <div id="rowsContainer"></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<div class="print-area" id="printArea"></div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const state = {
+    valoEans: null,
+    zipFiles: null,       // affiches indexées : [{ ean, srcId, pageIndex, filename }]
+    sources: null,        // Map srcId -> { name, bytes } : PDF sources (dépliant unique ou fichiers du ZIP)
+    matches: null,
+    cachedPdfBytes: null,
+    cachedSelectedKey: '',
+    mediaNum: '',
+  };
+
+  function setMediaNum(num) {
+    state.mediaNum = String(num || '').trim();
+    const tag = document.getElementById('mediaTag');
+    const sub = document.getElementById('mainSubtitle');
+    const statLbl = document.getElementById('statZipLabel');
+    const emptyTxt = document.getElementById('emptyText');
+    const fnInput = document.getElementById('filenameInput');
+
+    if (state.mediaNum) {
+      if (tag) { tag.textContent = 'Média ' + state.mediaNum; tag.style.display = 'inline-flex'; }
+      if (sub) sub.textContent = 'Affiches Financement CETELEM — Dépliant Média n° ' + state.mediaNum;
+      if (statLbl) statLbl.textContent = 'Affiches Dépliant (Média ' + state.mediaNum + ')';
+      if (emptyTxt) {
+        emptyTxt.innerHTML = `Dépliant CETELEM — <code>Média ${state.mediaNum}</code> publié par la centrale.<br>L'outil lit l'EAN de chaque affiche, les croise avec votre valorisation et prépare les affiches de ce média correspondant aux produits exposés dans votre magasin.`;
+      }
+    } else {
+      if (tag) tag.style.display = 'none';
+      if (sub) sub.textContent = 'Affiches Financement CETELEM';
+      if (statLbl) statLbl.textContent = 'Affiches du dépliant';
+      if (emptyTxt) {
+        emptyTxt.innerHTML = `Importer le <code>dépliant CETELEM</code> (PDF de la centrale).<br>L'outil lit l'EAN de chaque affiche, les croise automatiquement avec la valorisation (importée depuis l'accueil) et prépare la liste des affiches à imprimer.`;
+      }
+    }
+    if (fnInput && !fnInput.dataset.touched) {
+      fnInput.value = defaultFileName();
+    }
+  }
+  window.setMediaNum = setMediaNum;
+
+  function makeLogger(consoleId, statId, barId) {
+    const body = document.getElementById(consoleId);
+    const stat = document.getElementById(statId);
+    const bar = document.getElementById(barId);
+    let firstLog = true;
+    return {
+      log(level, msg) {
+        if (firstLog) { body.innerHTML = ''; firstLog = false; }
+        const now = new Date();
+        const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+        const lvlSymbol = { info: '›', success: '✓', warn: '!', error: '✕' }[level] || '·';
+        const line = document.createElement('div');
+        line.className = 'console-line ' + level;
+        line.innerHTML = `<span class="ts">${ts}</span><span class="lvl">${lvlSymbol}</span><span class="msg"></span>`;
+        line.querySelector('.msg').textContent = msg;
+        body.appendChild(line);
+        body.scrollTop = body.scrollHeight;
+      },
+      busy(label) { bar.classList.add('busy'); bar.classList.remove('ready'); stat.textContent = label; },
+      ready(label) { bar.classList.remove('busy'); bar.classList.add('ready'); stat.textContent = label; },
+      idle(label) { bar.classList.remove('busy', 'ready'); stat.textContent = label || 'en attente'; }
+    };
+  }
+  const log1 = makeLogger('console1', 'consoleStat1', 'consoleBar1');
+  const log2 = makeLogger('console2', 'consoleStat2', 'consoleBar2');
+
+  function setStepStatus(num, status) {
+    const el = document.getElementById('badge' + num);
+    el.classList.remove('active', 'done');
+    if (status) el.classList.add(status);
+  }
+  function setProgress(num, pct) {
+    const bar = document.getElementById('prog' + num);
+    const fill = document.getElementById('progFill' + num);
+    if (pct === null) { bar.classList.add('hidden'); }
+    else { bar.classList.remove('hidden'); fill.style.width = pct + '%'; }
+  }
+  function showAlert(type, msg) {
+    const el = document.getElementById('alert' + (type === 'warning' ? 'Warning' : 'Error'));
+    el.textContent = msg;
+    el.classList.add('visible');
+  }
+  function hideAlerts() {
+    document.getElementById('alertWarning').classList.remove('visible');
+    document.getElementById('alertError').classList.remove('visible');
+  }
+  function setGlobalStatus(text) {
+    document.getElementById('globalStatus').textContent = text;
+  }
+  function defaultFileName() {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    let storeTag = 'Magasin';
+    try {
+      if (window.parent && window.parent.CURRENT) {
+        storeTag = (window.parent.CURRENT.storeId || window.parent.CURRENT.name || 'Magasin').replace(/[^\w.-]+/g, '_');
+      }
+    } catch(e) {}
+    const mTag = state.mediaNum ? `_Media${state.mediaNum}` : '';
+    return `Affiches_BUT_${storeTag}${mTag}_${ymd}`;
+  }
+
+  function setupDropzone(zoneId, inputId, handler) {
+    const zone = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        input.files = e.dataTransfer.files;
+        handler(input.multiple ? [...e.dataTransfer.files] : e.dataTransfer.files[0]);
+      }
+    });
+    input.addEventListener('change', e => {
+      if (e.target.files.length > 0) handler(input.multiple ? [...e.target.files] : e.target.files[0]);
+    });
+  }
+
+  async function handleValorisation(file) {
+    if (!file || file.type !== 'application/pdf') {
+      log1.log('error', 'Format invalide — un fichier .pdf est attendu');
+      return;
+    }
+    hideAlerts();
+    setStepStatus(1, 'active');
+    log1.busy('lecture en cours');
+    log1.log('info', `Fichier : ${file.name} (${(file.size/1024).toFixed(0)} ko)`);
+
+    try {
+      const t0 = performance.now();
+      const arrBuf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrBuf }).promise;
+      log1.log('info', `Document chargé : ${pdf.numPages} pages`);
+
+      const eans = new Set();
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const textWithSpaces = textContent.items.map(it => it.str).join(' ');
+        const textNoSpaces = textContent.items.map(it => it.str).join('');
+        const re = /(?:^|[^0-9])(\d{13})(?:[^0-9]|$)/g;
+        let m;
+        while ((m = re.exec(textWithSpaces)) !== null) eans.add(m[1]);
+        re.lastIndex = 0;
+        while ((m = re.exec(textNoSpaces)) !== null) eans.add(m[1]);
+        setProgress(1, (i / pdf.numPages) * 100);
+        if (i % 5 === 0 || i === pdf.numPages) {
+          log1.log('info', `Page ${i}/${pdf.numPages} — ${eans.size} EANs trouvés`);
+        }
+      }
+      const dt = ((performance.now() - t0) / 1000).toFixed(2);
+
+      state.valoEans = eans;
+      const zone = document.getElementById('zone1');
+      zone.classList.add('loaded');
+      document.getElementById('zone1-text').textContent = file.name;
+      document.getElementById('zone1-info').textContent = `${eans.size} EANs détectés`;
+
+      log1.log('success', `${eans.size} EANs uniques extraits en ${dt}s`);
+      log1.ready('terminé');
+      setProgress(1, null);
+      setStepStatus(1, 'done');
+      tryMatch();
+    } catch (err) {
+      console.error(err);
+      log1.log('error', `Échec : ${err.message}`);
+      log1.idle('échec');
+      setProgress(1, null);
+      setStepStatus(1, null);
+    }
+  }
+
+  // EAN d'une affiche : le format actuel de la centrale imprime « EAN : 1234567890123 »
+  // sur chaque page ; repli sur n'importe quel groupe de 13 chiffres si besoin.
+  const EAN_TEXT_RE = /EAN\s*[:.]?\s*(\d{13})/i;
+  const EAN_ANY_RE = /(?:^|[^0-9])(\d{13})(?:[^0-9]|$)/;
+
+  // Récupère les PDF sources depuis l'entrée : dépliant CETELEM en PDF unique
+  // (une affiche par page) OU, rétro-compatibilité, ZIP(s) d'affiches EAN_*.pdf.
+  async function collectPdfSources(input) {
+    const files = (Array.isArray(input) ? input : [input]).filter(Boolean);
+    const out = [];
+    for (const f of files) {
+      const lower = (f.name || '').toLowerCase();
+      if (lower.endsWith('.zip')) {
+        const zip = await JSZip.loadAsync(f);
+        const names = Object.keys(zip.files)
+          .filter(n => !zip.files[n].dir && n.toLowerCase().endsWith('.pdf')).sort();
+        for (const n of names) {
+          out.push({ name: n.split('/').pop(), bytes: await zip.files[n].async('uint8array') });
+        }
+      } else if (lower.endsWith('.pdf')) {
+        out.push({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+      }
+    }
+    return out;
+  }
+
+  async function handleZip(input) {
+    hideAlerts();
+    setStepStatus(2, 'active');
+    log2.busy('lecture en cours');
+    try {
+      const t0 = performance.now();
+      const sources = await collectPdfSources(input);
+      if (!sources.length) {
+        log2.log('error', 'Format invalide — dépliant PDF ou ZIP d’affiches attendu');
+        log2.idle('échec'); setProgress(2, null); setStepStatus(2, null);
+        return;
+      }
+      log2.log('info', `${sources.length} PDF source(s) à indexer`);
+
+      const affiches = [];
+      const srcStore = new Map();
+      const seen = new Set();
+      let withoutEan = 0, totalPages = 0, donePages = 0;
+
+      // ouverture unique de chaque source (réutilisée pour l'indexation)
+      const opened = [];
+      for (const s of sources) {
+        const doc = await pdfjsLib.getDocument({ data: s.bytes.slice() }).promise;
+        totalPages += doc.numPages;
+        opened.push(doc);
+      }
+      log2.log('info', `${totalPages} page(s) / affiche(s) au total`);
+
+      for (let s = 0; s < sources.length; s++) {
+        const srcId = 's' + s;
+        srcStore.set(srcId, sources[s]);
+        const doc = opened[s];
+        // EAN de secours depuis le nom de fichier (ancien format 1 affiche/fichier)
+        const fnEan = (sources[s].name.match(/(\d{13})/) || [])[1] || null;
+        for (let p = 1; p <= doc.numPages; p++) {
+          const page = await doc.getPage(p);
+          const tc = await page.getTextContent();
+          const withSp = tc.items.map(i => i.str).join(' ');
+          const noSp = tc.items.map(i => i.str).join('');
+          const m = withSp.match(EAN_TEXT_RE) || noSp.match(EAN_TEXT_RE)
+                 || withSp.match(EAN_ANY_RE) || noSp.match(EAN_ANY_RE);
+          const ean = m ? m[1] : (doc.numPages === 1 ? fnEan : null);
+          // libellé produit lisible (texte en capitales précédant « EAN : »)
+          let label = '';
+          const lm = withSp.match(/([A-Z0-9][A-Z0-9 ._\/-]{2,40})\s+EAN\s*[:.]/i);
+          if (lm) label = lm[1].replace(/\s+/g, ' ').trim();
+          donePages++;
+          setProgress(2, (donePages / Math.max(totalPages, 1)) * 100);
+          if (!ean) { withoutEan++; continue; }
+          const key = srcId + '#' + (p - 1);
+          if (seen.has(key)) continue; seen.add(key);
+          affiches.push({ ean, srcId, pageIndex: p - 1, filename: label || `${ean} — p.${p}` });
+        }
+        try { await doc.cleanup(); await doc.destroy(); } catch (e) {}
+      }
+      const dt = ((performance.now() - t0) / 1000).toFixed(2);
+
+      state.sources = srcStore;
+      state.zipFiles = affiches;
+      const inputFiles = (Array.isArray(input) ? input : [input]).filter(Boolean);
+      const zone = document.getElementById('zone2');
+      zone.classList.add('loaded');
+      document.getElementById('zone2-text').textContent =
+        inputFiles.length === 1 ? inputFiles[0].name : `${inputFiles.length} fichiers`;
+      document.getElementById('zone2-info').textContent = `${affiches.length} affiches indexées`;
+
+      log2.log('success', `${affiches.length} affiches valides en ${dt}s`);
+      if (withoutEan > 0) log2.log('warn', `${withoutEan} page(s) sans EAN ignorée(s)`);
+      log2.ready('terminé');
+      setProgress(2, null);
+      setStepStatus(2, 'done');
+      tryMatch();
+    } catch (err) {
+      console.error(err);
+      log2.log('error', `Échec : ${err.message}`);
+      log2.idle('échec');
+      setProgress(2, null);
+      setStepStatus(2, null);
+    }
+  }
+
+  function tryMatch() {
+    if (!state.valoEans || !state.zipFiles) return;
+
+    document.getElementById('empty').style.display = 'none';
+    document.getElementById('resultsList').style.display = 'block';
+    document.getElementById('stats').style.display = 'grid';
+    document.getElementById('actionBar').style.display = 'flex';
+
+    const matches = state.zipFiles.filter(f => state.valoEans.has(f.ean));
+    state.matches = matches;
+    state.cachedPdfBytes = null;
+
+    document.getElementById('statValo').textContent = state.valoEans.size;
+    document.getElementById('statZip').textContent = state.zipFiles.length;
+    document.getElementById('statMatch').textContent = matches.length;
+
+    const rows = document.getElementById('rowsContainer');
+    rows.innerHTML = '';
+
+    if (matches.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'list-row no-match';
+      empty.textContent = 'Aucun EAN de la valorisation ne correspond à une affiche du dépliant.';
+      rows.appendChild(empty);
+      document.getElementById('btnSave').disabled = true;
+      document.getElementById('btnPrint').disabled = true;
+      showAlert('warning', 'Aucune correspondance entre les EANs exposés et les affiches du dépliant.');
+      setGlobalStatus('aucun match');
+    } else {
+      // Regrouper par EAN
+      const byEan = {};
+      matches.forEach((m, idx) => {
+        if (!byEan[m.ean]) byEan[m.ean] = [];
+        byEan[m.ean].push({ ...m, globalIdx: idx });
+      });
+
+      Object.keys(byEan).forEach(ean => {
+        const items = byEan[ean];
+        const groupId = 'grp_' + ean;
+        const bodyId = 'body_' + ean;
+
+        // Header du groupe
+        const header = document.createElement('div');
+        header.className = 'group-header';
+        header.innerHTML = `
+          <div class="group-cb"><input type="checkbox" class="group-check" id="gc_${ean}" data-ean="${ean}" checked></div>
+          <div class="group-arrow">
+            <svg viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1 1l4 4 4-4"/></svg>
+          </div>
+          <div class="group-ean">${ean}</div>
+          <div class="group-label">${items.length === 1 ? items[0].filename.replace(/^[0-9]+_?/, '') : items.length + ' affiches'}</div>
+          <div class="group-badge">${items.length}</div>
+        `;
+
+        // Toggle collapse au clic sur le header (sauf checkbox)
+        header.addEventListener('click', e => {
+          if (e.target.closest('.group-cb')) return;
+          const body = document.getElementById(bodyId);
+          const collapsed = header.classList.toggle('collapsed');
+          if (collapsed) {
+            body.style.maxHeight = body.scrollHeight + 'px';
+            requestAnimationFrame(() => { body.classList.add('collapsed'); });
+          } else {
+            body.classList.remove('collapsed');
+            body.style.maxHeight = body.scrollHeight + 'px';
+            setTimeout(() => { body.style.maxHeight = 'none'; }, 230);
+          }
+        });
+
+        // Body du groupe
+        const body = document.createElement('div');
+        body.className = 'group-body';
+        body.id = bodyId;
+
+        items.forEach(m => {
+          const row = document.createElement('div');
+          row.className = 'list-row';
+          const cb = document.createElement('div');
+          cb.innerHTML = `<input type="checkbox" class="match-check" data-idx="${m.globalIdx}" data-ean="${ean}" checked>`;
+          const eanEl = document.createElement('div');
+          eanEl.className = 'ean';
+          eanEl.textContent = m.ean;
+          const fn = document.createElement('div');
+          fn.className = 'filename';
+          fn.title = m.filename;
+          fn.textContent = m.filename;
+          row.appendChild(cb);
+          row.appendChild(eanEl);
+          row.appendChild(fn);
+          body.appendChild(row);
+        });
+
+        rows.appendChild(header);
+        rows.appendChild(body);
+      });
+
+      // Gestion checkbox groupe → enfants
+      rows.addEventListener('change', e => {
+        if (e.target.classList.contains('group-check')) {
+          const ean = e.target.dataset.ean;
+          rows.querySelectorAll(`.match-check[data-ean="${ean}"]`).forEach(cb => {
+            cb.checked = e.target.checked;
+          });
+          updateGroupCheckState(ean);
+          updateSelectedCount();
+        } else if (e.target.classList.contains('match-check')) {
+          const ean = e.target.dataset.ean;
+          updateGroupCheckState(ean);
+          updateSelectedCount();
+        }
+      });
+
+      setGlobalStatus(`${matches.length} match${matches.length > 1 ? 's' : ''}${state.mediaNum ? ' · Média ' + state.mediaNum : ''}`);
+    }
+
+    document.getElementById('filenameInput').value = defaultFileName();
+
+    document.getElementById('masterCheck').checked = true;
+    document.getElementById('masterCheck').onchange = e => {
+      document.querySelectorAll('.match-check').forEach(cb => cb.checked = e.target.checked);
+      document.querySelectorAll('.group-check').forEach(cb => cb.checked = e.target.checked);
+      updateSelectedCount();
+    };
+
+    updateSelectedCount();
+  }
+
+  function updateGroupCheckState(ean) {
+    const allCbs = document.querySelectorAll(`.match-check[data-ean="${ean}"]`);
+    const checked = [...allCbs].filter(c => c.checked).length;
+    const gc = document.getElementById('gc_' + ean);
+    if (!gc) return;
+    if (checked === 0) { gc.checked = false; gc.indeterminate = false; }
+    else if (checked === allCbs.length) { gc.checked = true; gc.indeterminate = false; }
+    else { gc.checked = false; gc.indeterminate = true; }
+  }
+
+  function updateSelectedCount() {
+    const count = document.querySelectorAll('.match-check:checked').length;
+    document.getElementById('statSelected').textContent = count;
+    const hasSelection = count > 0;
+    document.getElementById('btnSave').disabled = !hasSelection;
+    document.getElementById('btnPrint').disabled = !hasSelection;
+    state.cachedPdfBytes = null;
+  }
+
+  function getSelectedItems() {
+    const selected = [];
+    document.querySelectorAll('.match-check:checked').forEach(cb => {
+      const idx = parseInt(cb.dataset.idx);
+      selected.push(state.matches[idx]);
+    });
+    return selected;
+  }
+
+  document.getElementById('btnAll').addEventListener('click', () => {
+    document.querySelectorAll('.match-check').forEach(cb => cb.checked = true);
+    document.getElementById('masterCheck').checked = true;
+    updateSelectedCount();
+  });
+  document.getElementById('btnNone').addEventListener('click', () => {
+    document.querySelectorAll('.match-check').forEach(cb => cb.checked = false);
+    document.getElementById('masterCheck').checked = false;
+    updateSelectedCount();
+  });
+
+  function selectionKey(items) { return items.map(i => i.srcId + '#' + i.pageIndex).join('|'); }
+
+  async function generatePdf(items, statusCb) {
+    const { PDFDocument, StandardFonts, rgb, PDFName } = PDFLib;
+    const merged = await PDFDocument.create();
+    const helv = await merged.embedFont(StandardFonts.Helvetica);
+    const helvBold = await merged.embedFont(StandardFonts.HelveticaBold);
+
+    function parseDA(da) {
+      if (!da) return { fontSize: 0, color: rgb(0, 0, 0) };
+      const sizeMatch = da.match(/(\d+(?:\.\d+)?)\s+Tf/);
+      const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 0;
+      let color = rgb(0, 0, 0);
+      const rgbMatch = da.match(/(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+rg/);
+      if (rgbMatch) {
+        color = rgb(parseFloat(rgbMatch[1]), parseFloat(rgbMatch[2]), parseFloat(rgbMatch[3]));
+      } else {
+        const grayMatch = da.match(/(\d+(?:\.\d+)?)\s+g\b/);
+        if (grayMatch) {
+          const g = parseFloat(grayMatch[1]);
+          color = rgb(g, g, g);
+        }
+      }
+      return { fontSize, color };
+    }
+
+    const errors = [];
+
+    // Extrait (et retire) les champs de formulaire texte d'une page source pour
+    // les ré-imprimer en texte plat sur la page copiée (ancien format d'affiches
+    // à champs remplissables). Le dépliant actuel n'a aucun champ : renvoie []
+    // et la page est copiée telle quelle (montants déjà imprimés).
+    function extractPageFields(src, page) {
+      const annots = page.node.Annots();
+      if (!annots) return [];
+      const fields = [];
+      const indicesToRemove = [];
+      for (let k = 0; k < annots.size(); k++) {
+        const annot = src.context.lookup(annots.get(k));
+        if (!annot || !annot.get) continue;
+        const subtype = annot.get(PDFName.of('Subtype'));
+        if (!subtype || subtype.toString() !== '/Widget') continue;
+        let ft = annot.get(PDFName.of('FT'));
+        let value = annot.get(PDFName.of('V'));
+        let da = annot.get(PDFName.of('DA'));
+        let q = annot.get(PDFName.of('Q'));
+        let parent = annot.get(PDFName.of('Parent'));
+        while (parent && (!ft || !value || !da)) {
+          const parentObj = src.context.lookup(parent);
+          if (!parentObj || !parentObj.get) break;
+          if (!ft) ft = parentObj.get(PDFName.of('FT'));
+          if (!value) value = parentObj.get(PDFName.of('V'));
+          if (!da) da = parentObj.get(PDFName.of('DA'));
+          if (!q) q = parentObj.get(PDFName.of('Q'));
+          parent = parentObj.get(PDFName.of('Parent'));
+        }
+        if (!ft || ft.toString() !== '/Tx') continue;
+        indicesToRemove.push(k);
+        let valueStr = '';
+        if (value) {
+          if (typeof value.decodeText === 'function') valueStr = value.decodeText();
+          else if (value.value !== undefined) valueStr = value.value;
+          else valueStr = value.toString().replace(/^\(|\)$/g, '').replace(/^<|>$/g, '');
+        }
+        if (!valueStr) continue;
+        const rect = annot.get(PDFName.of('Rect'));
+        if (!rect || !rect.array) continue;
+        const r = rect.array.map(n => n.numberValue !== undefined ? n.numberValue : parseFloat(n.toString()));
+        let daStr = '';
+        if (da) {
+          if (typeof da.decodeText === 'function') daStr = da.decodeText();
+          else if (da.value !== undefined) daStr = da.value;
+          else daStr = da.toString().replace(/^\(|\)$/g, '');
+        }
+        const qNum = q ? (q.numberValue !== undefined ? q.numberValue : parseInt(q.toString())) : 0;
+        const { fontSize, color } = parseDA(daStr);
+        fields.push({ value: valueStr, x: r[0], y: r[1], width: r[2] - r[0], height: r[3] - r[1], fontSize, color, align: qNum });
+      }
+      for (let k = indicesToRemove.length - 1; k >= 0; k--) annots.remove(indicesToRemove[k]);
+      const seen = new Set();
+      return fields.filter(f => {
+        const key = `${f.value}|${f.x.toFixed(1)}|${f.y.toFixed(1)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function drawFields(p, fields) {
+      for (const fld of fields) {
+        let fontSize = fld.fontSize;
+        const font = (fontSize > 20 || fontSize === 0) ? helvBold : helv;
+        if (fontSize === 0) {
+          fontSize = fld.height * 0.7;
+          let textWidth = font.widthOfTextAtSize(fld.value, fontSize);
+          const maxWidth = fld.width - 2;
+          while (textWidth > maxWidth && fontSize > 4) {
+            fontSize *= 0.95;
+            textWidth = font.widthOfTextAtSize(fld.value, fontSize);
+          }
+        }
+        const textWidth = font.widthOfTextAtSize(fld.value, fontSize);
+        let drawX = fld.x + 1;
+        if (fld.align === 1) drawX = fld.x + (fld.width - textWidth) / 2;
+        else if (fld.align === 2) drawX = fld.x + fld.width - textWidth - 1;
+        const drawY = fld.y + (fld.height - fontSize) / 2 + fontSize * 0.18;
+        p.drawText(fld.value, { x: drawX, y: drawY, size: fontSize, font: font, color: fld.color });
+      }
+    }
+
+    // Regrouper les affiches sélectionnées par PDF source : une seule
+    // copyPages() par source déduplique les ressources partagées (logo, fonds)
+    // et garde le PDF de sortie compact.
+    const bySrc = new Map();
+    for (const it of items) {
+      if (!bySrc.has(it.srcId)) bySrc.set(it.srcId, []);
+      bySrc.get(it.srcId).push(it);
+    }
+    let done = 0;
+    for (const [srcId, group] of bySrc) {
+      const source = state.sources && state.sources.get(srcId);
+      if (!source) { group.forEach(it => { errors.push(it.filename); done++; }); continue; }
+      try {
+        const src = await PDFDocument.load(source.bytes, { ignoreEncryption: true });
+        const srcPages = src.getPages();
+        const pageIdxs = group.map(it => it.pageIndex);
+        const fieldsByPage = pageIdxs.map(idx => extractPageFields(src, srcPages[idx]));
+        const catalog = src.catalog;
+        if (catalog.has(PDFName.of('AcroForm'))) catalog.delete(PDFName.of('AcroForm'));
+        const copied = await merged.copyPages(src, pageIdxs);
+        copied.forEach((p, i) => {
+          merged.addPage(p);
+          drawFields(p, fieldsByPage[i]);
+          if (statusCb) statusCb(done, items.length, group[i].filename);
+          done++;
+        });
+      } catch (e) {
+        console.error(e);
+        group.forEach(it => { errors.push(it.filename); done++; });
+      }
+    }
+
+    return { bytes: await merged.save(), errors };
+  }
+
+  async function buildOrReusePdf() {
+    const items = getSelectedItems();
+    const key = selectionKey(items);
+    if (state.cachedPdfBytes && state.cachedSelectedKey === key) {
+      return { bytes: state.cachedPdfBytes, errors: [] };
+    }
+    const btnSave = document.getElementById('btnSave');
+    const btnPrint = document.getElementById('btnPrint');
+    btnSave.disabled = true; btnPrint.disabled = true;
+    setGlobalStatus(`fusion ${items.length} affiche(s)…`);
+
+    const result = await generatePdf(items, (i, total) => {
+      setGlobalStatus(`fusion ${i+1}/${total}…`);
+    });
+
+    btnSave.disabled = false; btnPrint.disabled = false;
+
+    if (result.errors.length > 0) {
+      showAlert('warning', `${result.errors.length} affiche(s) non fusionnées : ${result.errors.slice(0,3).join(', ')}${result.errors.length > 3 ? '…' : ''}`);
+    } else {
+      hideAlerts();
+    }
+
+    state.cachedPdfBytes = result.bytes;
+    state.cachedSelectedKey = key;
+    setGlobalStatus(`PDF prêt · ${(result.bytes.length/1024).toFixed(0)} ko`);
+    return result;
+  }
+
+  document.getElementById('btnSave').addEventListener('click', async () => {
+    try {
+      const { bytes } = await buildOrReusePdf();
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      let fname = document.getElementById('filenameInput').value.trim() || defaultFileName();
+      if (!fname.toLowerCase().endsWith('.pdf')) fname += '.pdf';
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setGlobalStatus(`✓ enregistré : ${fname}`);
+    } catch (err) {
+      console.error(err);
+      showAlert('error', 'Erreur lors de la génération : ' + err.message);
+      setGlobalStatus('échec');
+    }
+  });
+
+  document.getElementById('btnPrint').addEventListener('click', async () => {
+    const btn = document.getElementById('btnPrint');
+    const orig = btn.innerHTML;
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Préparation…';
+      setGlobalStatus('préparation impression…');
+
+      const format = document.getElementById('printFormat').value; // 'a5' or 'a4'
+      const isA4 = format === 'a4';
+      const mmW = isA4 ? 210 : 148;
+      const mmH = isA4 ? 297 : 210;
+
+      const { bytes } = await buildOrReusePdf();
+
+      btn.textContent = 'Rendu pages…';
+      const renderPdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+      const printArea = document.getElementById('printArea');
+      printArea.innerHTML = '';
+      printArea.className = 'print-area fmt-' + format;
+
+      const TARGET_DPI = 200;
+      const MM_TO_INCH = 1 / 25.4;
+      const targetWidth = Math.round(mmW * MM_TO_INCH * TARGET_DPI);
+      const targetHeight = Math.round(mmH * MM_TO_INCH * TARGET_DPI);
+
+      for (let p = 1; p <= renderPdf.numPages; p++) {
+        const page = await renderPdf.getPage(p);
+        const baseVp = page.getViewport({ scale: 1.0 });
+        const scale = Math.min(targetWidth / baseVp.width, targetHeight / baseVp.height);
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'print-page';
+        wrapper.appendChild(canvas);
+        printArea.appendChild(wrapper);
+
+        btn.textContent = `Rendu ${p}/${renderPdf.numPages}…`;
+      }
+      await renderPdf.cleanup(); await renderPdf.destroy();
+
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      setGlobalStatus(`impression · ${renderPdf.numPages} pages`);
+
+      // Injection dynamique de @page size pour forcer le bon format
+      let styleTag = document.getElementById('printStyleDynamic');
+      if (!styleTag) {
+        styleTag = document.createElement('style');
+        styleTag.id = 'printStyleDynamic';
+        document.head.appendChild(styleTag);
+      }
+      styleTag.textContent = `@media print { @page { size: ${mmW}mm ${mmH}mm portrait; margin: 0; } }`;
+
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => { document.getElementById('printArea').innerHTML = ''; }, 1500);
+      }, 100);
+    } catch (err) {
+      console.error(err);
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      showAlert('error', 'Erreur impression : ' + err.message);
+      setGlobalStatus('échec');
+    }
+  });
+
+  setupDropzone('zone1', 'file1', handleValorisation);
+  setupDropzone('zone2', 'file2', handleZip);
+  const fnInput = document.getElementById('filenameInput');
+  if (fnInput) {
+    fnInput.addEventListener('input', () => { fnInput.dataset.touched = '1'; });
+    fnInput.value = defaultFileName();
+  }
+
+  window.syncUserRole = function() {
+    let isAdmin = false;
+    let parentMedia = '';
+    try {
+      if (window.parent && window.parent.CURRENT) {
+        isAdmin = window.parent.CURRENT.role === 'admin';
+      }
+      if (window.parent && window.parent.CETELEM_MEDIA_NUM) {
+        parentMedia = window.parent.CETELEM_MEDIA_NUM;
+      }
+    } catch(e) {}
+    if (parentMedia) setMediaNum(parentMedia);
+    if (!isAdmin) {
+      document.body.classList.add('hide-sidebar');
+    } else {
+      document.body.classList.remove('hide-sidebar');
+    }
+  };
+  try { window.syncUserRole(); } catch(e) {}
+
+  window.addEventListener('message', e => {
+    if (e.data && e.data.type === 'gefec:medianum') {
+      setMediaNum(e.data.mediaNum);
+    }
+  });
+<\/script>
+</body>
+</html>
+</script>
