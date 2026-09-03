@@ -2171,6 +2171,74 @@ function getRenderFrame() {
   })();
   return renderFrameP;
 }
+/* html2canvas ne connaît pas « font-stretch » : il compose la police du
+   canevas avec la seule famille, la graisse et la taille (createFontStyle).
+   Sur une police variable comme ArchivoVF, il MESURE donc la mise en page
+   condensée — 75 % pour le prix, 87 % pour l'éco et le code — puis DESSINE
+   les glyphes en largeur normale. Résultat : les chiffres du prix débordent
+   sur les centimes et le €, et les espaces disparaissent.
+
+   Parade : une famille par largeur réellement utilisée, dont le descripteur
+   @font-face épingle l'axe (une plage réduite à une seule valeur), substituée
+   sur les éléments concernés juste avant la photo. Le DOM ne bouge pas — la
+   largeur reste celle du calage —, et l'aperçu comme l'impression du magasin
+   ne sont pas touchés : seul le cadre d'export l'est. */
+let vfSrc = null;                     // le src de la police, lu une fois
+async function pinFontStretch(root, fd) {
+  if (vfSrc === null) {
+    vfSrc = '';
+    for (const sheet of fd.styleSheets) {
+      let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
+      for (const r of rules) {
+        if (r.type === CSSRule.FONT_FACE_RULE
+            && /ArchivoVF/i.test(r.style.getPropertyValue('font-family'))) {
+          vfSrc = r.style.getPropertyValue('src'); break;
+        }
+      }
+      if (vfSrc) break;
+    }
+  }
+  if (!vfSrc) return;                 // police introuvable : ne rien aggraver
+
+  // Les familles doivent exister dans les DEUX documents : le cadre (pour la
+  // mise en page) ET la page principale, car html2canvas crée son canevas
+  // dans le document qui l'héberge — une famille déclarée seulement dans le
+  // cadre y serait inconnue, et le tracé retomberait sur la largeur normale.
+  const docs = fd === document ? [fd] : [fd, document];
+  const styles = docs.map((d) => {
+    let st = d.getElementById('vfPinned');
+    if (!st) { st = d.createElement('style'); st.id = 'vfPinned'; d.head.appendChild(st); }
+    return st;
+  });
+
+  const besoin = new Map();           // largeur -> nom de famille
+  for (const el of [root, ...root.querySelectorAll('*')]) {
+    const cs = fd.defaultView.getComputedStyle(el);
+    if (!/ArchivoVF/i.test(cs.fontFamily)) continue;
+    const m = String(cs.fontStretch).match(/^([\d.]+)%$/);
+    if (!m) continue;
+    const n = Math.round(parseFloat(m[1]));
+    if (n === 100) continue;          // largeur par défaut : rien à épingler
+    const fam = 'ArchivoVF-' + n;
+    besoin.set(n, fam);
+    el.style.fontFamily = `'${fam}',` + cs.fontFamily;
+  }
+  if (!besoin.size) return;
+
+  for (const st of styles) {
+    const manquantes = [...besoin].filter(([, fam]) => !st.textContent.includes(fam));
+    if (!manquantes.length) continue;
+    st.textContent += manquantes
+      .map(([n, fam]) => `@font-face{font-family:'${fam}';src:${vfSrc};font-stretch:${n}%;font-display:block}`)
+      .join('\n');
+  }
+  // sans attendre le chargement, la première planche sortirait en police de repli
+  try {
+    await Promise.all(docs.flatMap((d) =>
+      [...besoin.values()].map((fam) => d.fonts.load(`900 100px '${fam}'`))));
+  } catch (e) { /* le navigateur la chargera au tracé */ }
+}
+
 /* Les planches HTML -> un PDF (une planche = une page). Le rendu passe par
    html2canvas : c'est exactement ce que le magasin voit dans l'aperçu. */
 async function sheetsToPdf(sheets, fmt, onPage) {
@@ -2187,6 +2255,7 @@ async function sheetsToPdf(sheets, fmt, onPage) {
     const node = fd.body.firstElementChild;
     await waitImages(node);
     if (!i) { try { await fd.fonts.ready; } catch (e) {} }   // 1re planche : polices chargées
+    await pinFontStretch(node, fd);                          // largeurs condensées (cf. ci-dessus)
     const canvas = await html2canvas(node, { scale, backgroundColor: '#ffffff', logging: false, useCORS: true });
     if (i) pdf.addPage('a4', land ? 'landscape' : 'portrait');
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.86), 'JPEG', 0, 0, W, H, undefined, 'FAST');
