@@ -405,7 +405,8 @@
           ${last ? `<div class="last">${last}</div>` : ''}
         </div>
         <input class="mail" type="email" data-mail spellcheck="false" autocapitalize="none"
-               placeholder="adresse du magasin" value="${esc(s.email || '')}">
+               placeholder="${s.email === 'REFUSE' ? 'Ne souhaite pas de mails' : 'adresse du magasin'}" 
+               value="${esc(s.email === 'REFUSE' ? '' : (s.email || ''))}">
         <div class="acts">
           <button class="btn small" data-pdf type="button"${blocked ? ' disabled' : ''}>⬇️ PDF</button>
           <button class="btn primary small" data-send type="button"${blocked ? ' disabled' : ''}>✉️ Générer &amp; envoyer</button>

@@ -23,6 +23,11 @@ create policy "stores_admin_update" on public.stores
   for update using (public.app_role() = 'admin')
             with check (public.app_role() = 'admin');
 
+drop policy if exists "stores_self_update" on public.stores;
+create policy "stores_self_update" on public.stores
+  for update using (public.app_role() = 'store' and id = public.app_store())
+            with check (public.app_role() = 'store' and id = public.app_store());
+
 -- ---------- 2. Réglages de l'application (dont l'expéditeur des mails) ----------
 -- Une ligne par réglage, la valeur en JSON. La clé « mail » porte
 -- l'expéditeur choisi dans ⚙️ Réglages :
