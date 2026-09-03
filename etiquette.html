@@ -2271,6 +2271,81 @@ window.gefecBuildAffiches = async function (opts) {
   };
 };
 
+/* Même moteur, mais UN PDF PAR PLAN PROMO — c'est ce qui donne au mail de
+   campagne ses deux pièces jointes (Plan Promo TV / Plan Promo PEM) au lieu
+   d'un fichier unique. Appelé par l'outil « Envoi Campagne Mail »
+   (campagne.js) sur un cadre etiquette.html?export=1.
+
+   opts = idem gefecBuildAffiches()
+   -> { files:[{id,label,blob,pages,products}], pages, products, plans, refs } */
+window.gefecBuildCampagne = async function (opts) {
+  const o = opts || {};
+  const say = typeof o.onProgress === 'function' ? o.onProgress : function () {};
+  await Promise.race([exportReadyP, new Promise(r => setTimeout(r, 15000))]);
+  say('libs');
+  await ensureExportLibs();
+  if (o.masks && o.masks.length) { try { applyCustomMasks(o.masks); } catch (e) {} }
+
+  // 1) la valorisation du magasin concerné
+  say('valo');
+  await handleValoFile(fileFromShell(o.valo, o.valoName || 'valorisation.pdf'));
+  if (!state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
+
+  // 2) les plans promo publiés (relus une seule fois pour toute la campagne)
+  const token = o.plansToken || null;
+  if (!token || token !== lastPlansToken) {
+    say('plans');
+    for (const t of ['tv', 'pem']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
+    for (const t of ['tv', 'pem', 'auto']) {
+      const list = (o.plans && o.plans[t]) || [];
+      if (!list.length) continue;
+      await handlePromoFile(list.map(f => fileFromShell(f.data, f.name)), t === 'auto' ? null : t);
+    }
+    lastPlansToken = token;
+  }
+
+  // 3) croisement, plan par plan
+  say('match');
+  const matched = [];
+  let promoTotal = 0;
+  for (const t of ['tv', 'pem']) {
+    const pl = state.plans[t];
+    if (!pl.promoProducts.length) continue;
+    promoTotal += pl.promoProducts.length;
+    withPlan(t, doMatch);
+    if (pl.products.length) matched.push({ id: t, label: pl.label, n: pl.products.length });
+  }
+  if (!promoTotal) throw new Error('aucun plan promo publié à croiser');
+  if (!matched.length)
+    throw new Error('aucun produit des plans promo n’est présent dans la valorisation de ce magasin');
+
+  // 4) réglages d'affiche — appliqués à l'état SANS passer par setTpl/setFmt,
+  //    pour ne pas écraser les préférences d'impression mémorisées
+  state.tpl = o.tpl || 'bonplan';
+  state.fmt = (o.fmt === 'a5' && maskHasA5(state.tpl)) ? 'a5' : 'a4';
+  state.printBg = o.printBg !== false;
+  setChk('showDates', o.showDates !== false);
+  setChk('showBrand', o.showBrand !== false);
+  setChk('perProductDates', o.perProductDates !== false);
+
+  // 5) un fichier par plan : les planches sont montées d'abord (rapide), puis
+  //    rendues, pour que la progression porte sur le total réel de la campagne
+  const byPlan = matched.map(p => ({ ...p, sheets: withPlan(p.id, buildSheets) }));
+  const total = byPlan.reduce((n, p) => n + p.sheets.length, 0);
+  say('pdf', 0, total);
+  let done = 0;
+  const files = [];
+  for (const p of byPlan) {
+    const blob = await sheetsToPdf(p.sheets, state.fmt, () => say('pdf', ++done, total));
+    files.push({ id: p.id, label: p.label, blob, pages: p.sheets.length, products: p.n });
+  }
+  return {
+    files, pages: total, plans: matched,
+    products: matched.reduce((n, p) => n + p.n, 0),
+    refs: state.storeKeys.size,
+  };
+};
+
 /* ============================================================
    ÉTAPE 4 — RÉGLAGES
    ============================================================ */

@@ -41,6 +41,7 @@
   --c-solde:#4ade80;
   --c-sisto:#38bdf8;
   --c-perso:#fbbf24;
+  --c-campagne:#a78bfa;
   --shadow-sm:0 1px 2px rgba(0,0,0,.35);
   --shadow:0 2px 6px rgba(0,0,0,.35),0 14px 32px -14px rgba(0,0,0,.55);
   --shadow-lg:0 34px 80px -26px rgba(0,0,0,.65);
@@ -121,6 +122,7 @@ body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 .tab[data-tab="solde"] .dot{background:var(--c-solde)}
 .tab[data-tab="perso"] .dot{background:var(--c-perso)}
 .tab[data-tab="sisto"] .dot{background:var(--c-sisto)}
+.tab[data-tab="campagne"] .dot{background:var(--c-campagne)}
 .tab.active{color:var(--text)}
 .tab-indicator{position:absolute;top:5px;bottom:5px;border-radius:9px;
   background:var(--surface-3);border:1px solid var(--border-2);
@@ -200,12 +202,14 @@ main{flex:1;position:relative;overflow:hidden}
 .tool-card[data-tool="perso"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(245,158,11,.45)}
 .tool-card[data-tool="solde"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(21,163,74,.45)}
 .tool-card[data-tool="sisto"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(14,165,233,.45)}
+.tool-card[data-tool="campagne"]:hover{box-shadow:var(--shadow-lg),0 22px 44px -18px rgba(124,58,237,.45)}
 .tc-bar{position:absolute;top:0;left:0;right:0;height:5px;z-index:3}
 .tc-bar--orange{background:linear-gradient(90deg,#fdba74,#f97316)}
 .tc-bar--red{background:linear-gradient(90deg,#fb6470,#e6071a)}
 .tc-bar--amber{background:linear-gradient(90deg,#fcd34d,#f59e0b)}
 .tc-bar--green{background:linear-gradient(90deg,#4ade80,#15a34a)}
 .tc-bar--cyan{background:linear-gradient(90deg,#7dd3fc,#0284c7)}
+.tc-bar--violet{background:linear-gradient(90deg,#c4b5fd,#7c3aed)}
 .tc-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
 .tc-icon{width:50px;height:50px;border-radius:15px;display:flex;align-items:center;justify-content:center;
   box-shadow:0 12px 26px -8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .35s var(--spring)}
@@ -216,10 +220,12 @@ main{flex:1;position:relative;overflow:hidden}
 .tc-icon--amber{background:linear-gradient(140deg,#fcd34d,#f59e0b)}
 .tc-icon--green{background:linear-gradient(140deg,#4ade80,#15a34a)}
 .tc-icon--cyan{background:linear-gradient(140deg,#7dd3fc,#0284c7)}
+.tc-icon--violet{background:linear-gradient(140deg,#c4b5fd,#7c3aed)}
 .tc-badge{font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:999px;letter-spacing:.02em}
 .tc-badge--green{background:rgba(74,222,128,.14);color:#4ade80}
 .tc-badge--amber{background:rgba(251,191,36,.14);color:#fbbf24}
 .tc-badge--cyan{background:rgba(56,189,248,.14);color:#38bdf8}
+.tc-badge--violet{background:rgba(167,139,250,.16);color:#a78bfa}
 .tc-badge-ready{display:none}
 .tool-card.ready .tc-badge-lock{display:none}
 .tool-card.ready .tc-badge-ready{display:inline-block}
@@ -237,6 +243,7 @@ main{flex:1;position:relative;overflow:hidden}
 .tool-card[data-tool="perso"]:hover .tc-cta,.tool-card[data-tool="perso"]:hover .tc-arrow{color:var(--c-perso)}
 .tool-card[data-tool="solde"]:hover .tc-cta,.tool-card[data-tool="solde"]:hover .tc-arrow{color:var(--c-solde)}
 .tool-card[data-tool="sisto"]:hover .tc-cta,.tool-card[data-tool="sisto"]:hover .tc-arrow{color:var(--c-sisto)}
+.tool-card[data-tool="campagne"]:hover .tc-cta,.tool-card[data-tool="campagne"]:hover .tc-arrow{color:var(--c-campagne)}
 
 /* dropzone valorisation partagée — étape clé, mise en avant en haut d'accueil */
 .valo-section{max-width:860px;margin:0 auto 30px;animation:fadeUp .5s var(--ease) .08s both}
@@ -278,6 +285,7 @@ main{flex:1;position:relative;overflow:hidden}
 .view-tool[data-view="perso"] .loader-spinner{border-top-color:var(--c-perso)}
 .view-tool[data-view="solde"] .loader-spinner{border-top-color:var(--c-solde)}
 .view-tool[data-view="sisto"] .loader-spinner{border-top-color:var(--c-sisto)}
+.view-tool[data-view="campagne"] .loader-spinner{border-top-color:var(--c-campagne)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loader-text{color:var(--text-3);font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
 
@@ -325,6 +333,7 @@ main{flex:1;position:relative;overflow:hidden}
         <button class="tab" data-tab="perso" type="button"><span class="dot"></span>Promo Perso</button>
         <button class="tab" data-tab="solde" type="button"><span class="dot"></span>Soldes</button>
         <button class="tab" data-tab="sisto" type="button"><span class="dot"></span>SISTO Checker</button>
+        <button class="tab" data-tab="campagne" type="button"><span class="dot"></span>Envoi Campagne Mail</button>
       </nav>
       <div class="valo-pill" id="valoPill" hidden>
         <span class="valo-dot"></span>
@@ -451,6 +460,23 @@ main{flex:1;position:relative;overflow:hidden}
             <div class="tc-footer"><span class="tc-cta">Ouvrir l'outil</span>
               <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
           </button>
+
+          <!-- ENVOI CAMPAGNE MAIL — administrateur uniquement (retirée du DOM
+               pour tout autre profil par applyUserMode) -->
+          <button class="tool-card ready" data-tool="campagne" data-novalo data-admin type="button">
+            <div class="tc-bar tc-bar--violet"></div>
+            <div class="tc-header">
+              <div class="tc-icon tc-icon--violet">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 7 9 6 9-6"/></svg>
+              </div>
+              <span class="tc-badge tc-badge--violet">Administrateur</span>
+            </div>
+            <div class="tc-title">Envoi Campagne Mail</div>
+            <div class="tc-sub">Affiches en PDF &middot; envoi automatique</div>
+            <div class="tc-desc">Tous les magasins en liste, un bouton par magasin : l'outil contr&ocirc;le la valorisation (moins de 20 jours), croise les plans promo publi&eacute;s, g&eacute;n&egrave;re un PDF d'affiches par plan et envoie le mail au magasin, pi&egrave;ces jointes comprises.</div>
+            <div class="tc-footer"><span class="tc-cta">Ouvrir l'outil</span>
+              <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
+          </button>
         </div>
       </div>
     </section>
@@ -487,6 +513,14 @@ main{flex:1;position:relative;overflow:hidden}
       <div class="tool-pane">
         <div class="pane-loader"><div class="loader-spinner"></div><div class="loader-text">chargement de l'outil…</div></div>
         <iframe class="tool-frame" data-src="sisto.html" title="SISTO Checker" allow="clipboard-read; clipboard-write"></iframe>
+      </div>
+    </section>
+    <!-- Envoi Campagne Mail : outil administrateur, chargé à la première
+         ouverture seulement (il embarque son propre générateur d'affiches). -->
+    <section class="view view-tool" data-view="campagne" role="tabpanel" aria-label="Envoi Campagne Mail">
+      <div class="tool-pane">
+        <div class="pane-loader"><div class="loader-spinner"></div><div class="loader-text">chargement de l'outil…</div></div>
+        <iframe class="tool-frame" data-src="campagne.html" data-lazy title="Envoi Campagne Mail" allow="clipboard-read; clipboard-write"></iframe>
       </div>
     </section>
   </main>
@@ -2957,8 +2991,23 @@ window.applyUserMode = function(user){
   document.body.dataset.mode = USER_MODE;
   // le habillage ne doit jamais empêcher les outils de démarrer : ce serait
   // un magasin authentifié devant une coque vide
-  try { if (isSimple()) restrictToStoreScope(); } finally { bootTools(); }
+  try {
+    if (isSimple()) restrictToStoreScope();
+    if (!user || user.role !== 'admin') restrictAdminScope();
+  } finally { bootTools(); }
 };
+/* Outils d'administration (Envoi Campagne Mail) : ils pilotent les envois vers
+   TOUS les magasins. Comme pour le périmètre magasin, les nœuds sont retirés
+   du DOM plutôt que masqués — un directeur régional ne doit pas pouvoir les
+   atteindre, et leur cadre ne doit même pas être chargé. */
+function restrictAdminScope(){
+  document.querySelectorAll('.tool-card[data-admin]').forEach(card => {
+    const view = card.dataset.tool;
+    card.remove();
+    document.querySelectorAll(`.tab[data-tab="${view}"],.view-tool[data-view="${view}"]`)
+      .forEach(n => n.remove());
+  });
+}
 function restrictToStoreScope(){
   // Promo Perso sort du périmètre magasin : on retire les
   // nœuds (carte, onglet, vue + iframe) plutôt que de les masquer, pour

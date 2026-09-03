@@ -105,6 +105,12 @@
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
   .gmask-name{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2,#8a93a6);margin:8px 0}
   .gmask-name input{padding:9px 11px;border:1px solid var(--border,#2a334a);border-radius:9px;font-size:14px;font-weight:600;text-transform:uppercase;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0)}
+  .gmask-name textarea{padding:10px 12px;border:1px solid var(--border,#2a334a);border-radius:9px;font-size:13px;
+    font-family:inherit;line-height:1.55;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0);resize:vertical;outline:none}
+  .gmask-name textarea:focus{border-color:var(--primary,#5b8cff)}
+  .gmail-test{flex:1;min-width:180px;border:1.5px solid var(--border,#2a334a);border-radius:9px;padding:9px 11px;
+    font-size:13px;font-family:inherit;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0);outline:none}
+  .gmail-test:focus{border-color:var(--primary,#5b8cff)}
 
   /* Générateur d'affiches : l'outil Étiquettes chargé hors écran, sans
      interface, pour fabriquer le PDF envoyé au directeur. */
@@ -233,6 +239,27 @@
         </div>
 
         <hr class="gsep">
+        <div class="gpromo-sub" style="margin-top:0">Envoi des campagnes mail — l'adresse depuis laquelle part chaque mail de l'outil « ✉️ Envoi Campagne Mail », ainsi que l'objet et le message proposés par défaut. Ces réglages sont lus par la fonction d'envoi : les changer ici suffit, il n'y a rien à redéployer. Avec une voie SMTP, l'adresse d'expédition doit être celle du compte SMTP configuré (sinon le serveur refuse l'envoi).</div>
+        <div class="gpromo">
+          <div class="gform">
+            <label>Nom de l'expéditeur<input id="mailFromName" placeholder="ex : Boîte à Outils GEFEC"></label>
+            <label>Adresse d'expédition<input id="mailFromEmail" type="email" autocapitalize="none" spellcheck="false" placeholder="ex : promo@mondomaine.fr" style="text-transform:none"></label>
+            <label>Adresse de réponse (facultatif)<input id="mailReplyTo" type="email" autocapitalize="none" spellcheck="false" placeholder="ex : remi.schaff@but.fr" style="text-transform:none"></label>
+            <label>Objet par défaut<input id="mailSubject" placeholder="Votre plan promo — {plans} — {magasin}"></label>
+          </div>
+          <label class="gmask-name">Message par défaut
+            <textarea id="mailMessage" rows="8" placeholder="Bonjour,&#10;&#10;Voici la campagne promo à mettre en place…"></textarea>
+          </label>
+          <div class="gpromo-sub">Champs remplacés à l'envoi : <b>{magasin}</b> <b>{code}</b> <b>{plans}</b> <b>{affiches}</b> <b>{pages}</b> <b>{date}</b>.</div>
+          <div class="gpromo-actions">
+            <button class="gbtn" id="mailSave">💾 Enregistrer</button>
+            <input class="gmail-test" id="mailTestTo" type="email" autocapitalize="none" spellcheck="false" placeholder="adresse pour un mail de test">
+            <button class="gbtn alt" id="mailTest">✉️ Envoyer un test</button>
+          </div>
+          <div class="gmsg" id="mailMsg"></div>
+        </div>
+
+        <hr class="gsep">
 
         <div class="gmodal-sub">Créez les accès magasins (16) et directeurs régionaux (2). Identifiant + mot de passe.</div>
         <div class="gform">
@@ -274,6 +301,10 @@
     el('maskPickPdfA5').addEventListener('click', () => el('maskFilePdfA5').click());
     el('maskFilePdfA5').addEventListener('change', () => { const f = el('maskFilePdfA5').files[0]; el('maskNamePdfA5').textContent = f ? f.name : ''; });
     el('maskAdd').addEventListener('click', onAddMask);
+
+    // réglages d'envoi des campagnes mail (expéditeur + modèle de message)
+    el('mailSave').addEventListener('click', onSaveMailSettings);
+    el('mailTest').addEventListener('click', onTestMailSettings);
 
     // modale valorisations (admin + directeurs)
     const stores = document.createElement('div'); stores.className = 'gmodal'; stores.id = 'storesModal';
@@ -1190,7 +1221,129 @@
     el('adminModal').classList.add('show');
     refreshAllSharedStatus();
     refreshMasksList();
+    refreshMailSettings();
     refreshAccounts();
+  }
+
+  /* ---------- Réglages d'envoi des campagnes mail (admin) ----------
+     Stockés dans la table « app_settings », clé « mail » :
+       { from_name, from_email, reply_to, subject, message }
+     La fonction Edge « send-campagne-mail » les relit en service_role, ce qui
+     permet de changer l'adresse d'expédition sans redéployer la fonction.
+     Sans adresse ici, la fonction retombe sur son secret MAIL_FROM. */
+  const MAIL_SETTINGS_KEY = 'mail';
+  const MAIL_DEFAULT_SUBJECT = 'Votre plan promo — {plans} — {magasin}';
+  const MAIL_DEFAULT_MESSAGE = [
+    'Bonjour,',
+    '',
+    'Voici la campagne promo à mettre en place dans votre magasin : {plans}.',
+    '',
+    'Vous trouverez en pièces jointes les affiches prix correspondant aux produits',
+    'réellement présents chez vous ({affiches} affiche(s), {pages} page(s) à imprimer).',
+    'Elles ont été générées à partir de la valorisation que vous avez déposée.',
+    '',
+    "Il n'y a plus qu'à imprimer et à poser en rayon.",
+    '',
+    'Bonne vente,',
+  ].join('\n');
+
+  async function refreshMailSettings() {
+    const msg = el('mailMsg'); if (!msg) return;
+    msg.className = 'gmsg'; msg.textContent = '';
+    let v = {};
+    try {
+      const { data, error } = await sb.from('app_settings')
+        .select('value').eq('key', MAIL_SETTINGS_KEY).maybeSingle();
+      if (error) throw error;
+      v = (data && data.value) || {};
+    } catch (e) {
+      msg.className = 'gmsg err';
+      msg.textContent = "Réglages d'envoi illisibles — la migration « add-campagne-mail.sql » a-t-elle été exécutée ? (" + (e.message || e) + ')';
+    }
+    el('mailFromName').value = v.from_name || '';
+    el('mailFromEmail').value = v.from_email || '';
+    el('mailReplyTo').value = v.reply_to || '';
+    el('mailSubject').value = v.subject || MAIL_DEFAULT_SUBJECT;
+    el('mailMessage').value = v.message || MAIL_DEFAULT_MESSAGE;
+  }
+
+  function readMailSettings() {
+    return {
+      from_name: el('mailFromName').value.trim(),
+      from_email: el('mailFromEmail').value.trim(),
+      reply_to: el('mailReplyTo').value.trim(),
+      subject: el('mailSubject').value.trim() || MAIL_DEFAULT_SUBJECT,
+      message: el('mailMessage').value.trim() || MAIL_DEFAULT_MESSAGE,
+    };
+  }
+
+  async function onSaveMailSettings() {
+    const msg = el('mailMsg'), btn = el('mailSave');
+    const v = readMailSettings();
+    if (!isMail(v.from_email)) {
+      msg.className = 'gmsg err';
+      msg.textContent = "Renseignez une adresse d'expédition valide.";
+      return;
+    }
+    if (v.reply_to && !isMail(v.reply_to)) {
+      msg.className = 'gmsg err';
+      msg.textContent = 'Adresse de réponse invalide.';
+      return;
+    }
+    btn.disabled = true;
+    msg.className = 'gmsg'; msg.textContent = 'Enregistrement…';
+    try {
+      const { error } = await sb.from('app_settings').upsert({
+        key: MAIL_SETTINGS_KEY, value: v,
+        updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
+      }, { onConflict: 'key' });
+      if (error) throw error;
+      msg.className = 'gmsg ok';
+      msg.textContent = `Expéditeur enregistré : ${v.from_name ? v.from_name + ' <' + v.from_email + '>' : v.from_email} ✓`;
+      toast('Réglages d\'envoi enregistrés ✓');
+    } catch (e) {
+      msg.className = 'gmsg err';
+      msg.textContent = 'Échec : ' + (e.message || e);
+    } finally { btn.disabled = false; }
+  }
+
+  // Un vrai mail, sans pièce jointe, pour vérifier la voie d'envoi et
+  // l'expéditeur avant de lancer une campagne sur les 16 magasins.
+  async function onTestMailSettings() {
+    const msg = el('mailMsg'), btn = el('mailTest');
+    const to = el('mailTestTo').value.trim();
+    if (!isMail(to)) {
+      msg.className = 'gmsg err';
+      msg.textContent = 'Indiquez une adresse valide pour le test.';
+      return;
+    }
+    const v = readMailSettings();
+    btn.disabled = true;
+    msg.className = 'gmsg'; msg.textContent = 'Envoi du test…';
+    try {
+      const { data, error } = await sb.functions.invoke('send-campagne-mail', {
+        body: {
+          test: true, to, store_id: '', store_name: 'Test de configuration',
+          subject: 'Test — Boîte à Outils GEFEC',
+          message: 'Ceci est un test de configuration envoyé depuis ⚙️ Réglages.\n\n'
+            + 'Si vous lisez ce message, l\'envoi automatique des campagnes fonctionne : '
+            + 'expéditeur ' + (v.from_email || '(secret MAIL_FROM)') + '.',
+          files: [],
+        },
+      });
+      if (error) {
+        let m = error.message || 'Erreur';
+        try { const ctx = await error.context?.json?.(); if (ctx && ctx.error) m = ctx.error; } catch (x) {}
+        throw new Error(m);
+      }
+      if (data && data.ok === false) throw new Error(data.error || 'envoi non configuré');
+      if (data && data.error) throw new Error(data.error);
+      msg.className = 'gmsg ok';
+      msg.textContent = `Test envoyé à ${to} via ${(data && data.provider) || 'la voie configurée'} ✓`;
+    } catch (e) {
+      msg.className = 'gmsg err';
+      msg.textContent = 'Échec du test : ' + (e.message || e);
+    } finally { btn.disabled = false; }
   }
   async function callFn(body) {
     const { data, error } = await sb.functions.invoke('admin-create-user', { body });

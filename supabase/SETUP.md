@@ -116,6 +116,59 @@ envoi** pour chaque magasin, puis mémorisée sur sa fiche.
 
 ---
 
+## 7. L'outil « ✉️ Envoi Campagne Mail » (administrateur)
+
+L'administrateur ouvre l'outil, voit **tous les magasins en liste**, et pour
+chacun un bouton. Un clic et l'outil, seul : il contrôle que la valorisation du
+magasin a **moins de 20 jours**, croise les plans promo publiés avec cette
+valorisation, fabrique **un PDF d'affiches par plan** (Plan Promo TV et Plan
+Promo PEM) et envoie le mail au magasin, **les deux PDF en pièces jointes**.
+Aucune messagerie tierce : tout part de l'outil.
+
+### 7.1 Le schéma
+**SQL Editor → New query** → coller [`add-campagne-mail.sql`](./add-campagne-mail.sql)
+→ **Run**. Cela ajoute :
+- `stores.email` — l'adresse de chaque magasin (une par magasin, jamais générique) ;
+- `app_settings` — les réglages d'envoi, dont **l'adresse d'expédition** ;
+- `campagne_mails` — le journal des campagnes envoyées ;
+- le bucket privé `affiches` et ses règles (il peut déjà exister).
+
+### 7.2 La fonction d'envoi
+**Edge Functions → Deploy a new function**, nom `send-campagne-mail`, coller
+[`functions/send-campagne-mail/index.ts`](./functions/send-campagne-mail/index.ts)
+→ **Deploy**. (En CLI : `supabase functions deploy send-campagne-mail --project-ref <ref>`.)
+
+C'est elle qui relit les PDF dans le bucket et les attache au mail : les
+mégaoctets ne repassent jamais par le navigateur de l'administrateur.
+
+### 7.3 Par où les mails partent
+**Exactement les mêmes secrets qu'à l'étape 6.3** (`SMTP_HOST` / `SMTP_PORT` /
+`SMTP_USER` / `SMTP_PASS`, ou `BREVO_API_KEY`, ou `RESEND_API_KEY`) : si l'étape 6
+est déjà faite, il n'y a **rien à ajouter**. Contrairement au mail « affiches
+prêtes », il n'y a pas de repli sur la messagerie de l'administrateur : une
+campagne avec pièces jointes part de l'outil ou ne part pas.
+
+### 7.4 L'adresse d'expédition, réglée depuis l'interface
+Dans **⚙️ Réglages → « Envoi des campagnes mail »** : nom de l'expéditeur,
+**adresse d'expédition**, adresse de réponse, objet et message par défaut. Ces
+valeurs sont enregistrées dans `app_settings` et lues par la fonction — les
+changer ne demande **aucun redéploiement**. Le secret `MAIL_FROM` ne sert plus
+que de repli si le champ est laissé vide.
+
+> Avec une voie **SMTP**, l'adresse d'expédition doit être celle du compte SMTP
+> configuré (`SMTP_USER`) : les serveurs refusent d'expédier au nom d'une autre.
+
+Le bouton **« ✉️ Envoyer un test »**, juste à côté, envoie un vrai mail sans
+pièce jointe : de quoi valider la voie d'envoi et l'expéditeur avant de lancer
+une campagne sur les 16 magasins.
+
+### 7.5 Les adresses des magasins
+Elles se saisissent **dans l'outil**, sur la ligne de chaque magasin, et sont
+mémorisées sur sa fiche (`stores.email`). Un magasin sans adresse reste visible
+mais sort de l'envoi groupé.
+
+---
+
 ## Ce que vous me transmettez ensuite
 - **Project URL**
 - **anon public key**
