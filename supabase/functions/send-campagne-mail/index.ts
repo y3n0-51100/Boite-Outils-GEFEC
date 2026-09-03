@@ -66,6 +66,42 @@ function toBase64(bytes: Uint8Array) {
   }
 }
 
+const ENC = new TextEncoder();
+const b64text = (s: string) => toBase64(ENC.encode(s));
+
+// "Nom <adresse>" -> ses deux moitiés, sans nom inventé
+function splitAddr(v: string) {
+  const m = String(v ?? "").match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  return m ? { name: m[1] || "", email: m[2].trim() } : { name: "", email: String(v ?? "").trim() };
+}
+const bareAddr = (v: string) => splitAddr(v).email;
+
+// En-tête RFC 2047 : un accent ne passe pas en clair dans un en-tête SMTP.
+function encodeHeader(s: string) {
+  const t = String(s ?? "");
+  if (!/[^\x20-\x7e]/.test(t)) return t;
+  const words: string[] = [];
+  let cur = "";
+  for (const ch of t) {                       // par caractère : jamais couper un UTF-8
+    if (ENC.encode(cur + ch).length > 42) { words.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) words.push(cur);
+  return words.map((w) => `=?UTF-8?B?${b64text(w)}?=`).join("\r\n ");
+}
+function headerAddr(v: string) {
+  const a = splitAddr(v);
+  return a.name ? `${encodeHeader(a.name)} <${a.email}>` : `<${a.email}>`;
+}
+
+// base64 en lignes de 76 caractères (limite de longueur de ligne SMTP),
+// sans CRLF final : c'est l'appelant qui referme la dernière ligne.
+function wrap76(s: string) {
+  const out: string[] = [];
+  for (let i = 0; i < s.length; i += 76) out.push(s.slice(i, i + 76));
+  return out.join("\r\n");
+}
+
 const isMail = (v: unknown) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v ?? "").trim());
 
 // Seuls les PDF de campagne d'un magasin sont attachables : cette fonction
@@ -74,6 +110,147 @@ const PATH_RE = /^[A-Za-z0-9_-]{1,32}\/campagne\/[A-Za-z0-9_-]{1,40}\.pdf$/;
 
 // 20 Mo de pièces jointes : au-delà, la plupart des messageries rejettent.
 const MAX_TOTAL = 20 * 1024 * 1024;
+
+/* ── Client SMTP minimal ──────────────────────────────────────────────────
+   denomailer écrivait le message ligne par ligne : sur 7 Mo de base64 cela
+   fait près de 100 000 écritures, et le budget CPU d'une Edge Function (2 s)
+   partait avant la fin — constaté en production, « CPU Time exceeded » sur
+   5,4 Mo de pièces jointes alors que l'encodage, lui, prenait 11 ms.
+   On parle donc SMTP directement, et le corps part en quelques écritures. */
+class Smtp {
+  conn: Deno.Conn;
+  buf = "";
+  dec = new TextDecoder();
+  constructor(conn: Deno.Conn) { this.conn = conn; }
+
+  async fill() {
+    const chunk = new Uint8Array(8192);
+    const n = await this.conn.read(chunk);
+    if (n === null) throw new Error("connexion fermée par le serveur");
+    this.buf += this.dec.decode(chunk.subarray(0, n), { stream: true });
+  }
+  // une réponse SMTP = des lignes « 250-… » puis une ligne « 250 … »
+  async reply(): Promise<{ code: number; text: string }> {
+    const lines: string[] = [];
+    for (;;) {
+      const nl = this.buf.indexOf("\n");
+      if (nl < 0) { await this.fill(); continue; }
+      const line = this.buf.slice(0, nl).replace(/\r$/, "");
+      this.buf = this.buf.slice(nl + 1);
+      lines.push(line);
+      if (/^\d{3}(?: |$)/.test(line))
+        return { code: Number(line.slice(0, 3)), text: lines.join(" ").trim() };
+    }
+  }
+  async writeAll(bytes: Uint8Array) {
+    let off = 0;
+    while (off < bytes.length) {
+      const n = await this.conn.write(bytes.subarray(off));
+      if (n <= 0) throw new Error("écriture interrompue");
+      off += n;
+    }
+  }
+  async send(s: string) { await this.writeAll(ENC.encode(s)); }
+  // l'erreur cite `label`, jamais `line` : la ligne peut être le mot de passe
+  async cmd(line: string, ok: number[], label: string) {
+    await this.send(line + "\r\n");
+    const r = await this.reply();
+    if (!ok.includes(r.code)) throw new Error(`${label} refusé — ${r.text}`);
+    return r;
+  }
+}
+
+/* Le message complet, en quelques gros morceaux plutôt qu'en lignes. */
+function mimeParts(o: {
+  from: string; to: string; replyTo: string; subject: string;
+  text: string; html: string;
+  attachments: { filename: string; b64: string }[];
+}) {
+  const mix = `--gefec-mix-${crypto.randomUUID()}`;
+  const alt = `--gefec-alt-${crypto.randomUUID()}`;
+  const parts: string[] = [];
+
+  parts.push([
+    `From: ${headerAddr(o.from)}`,
+    `To: <${o.to}>`,
+    `Subject: ${encodeHeader(o.subject)}`,
+    ...(o.replyTo ? [`Reply-To: <${bareAddr(o.replyTo)}>`] : []),
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: <${crypto.randomUUID()}@boite-outils-gefec>`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${mix}"`,
+    "",
+    `--${mix}`,
+    `Content-Type: multipart/alternative; boundary="${alt}"`,
+    "",
+    `--${alt}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap76(b64text(o.text)),
+    `--${alt}`,
+    "Content-Type: text/html; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap76(b64text(o.html)),
+    `--${alt}--`,
+    "",
+  ].join("\r\n"));
+
+  for (const a of o.attachments) {
+    parts.push([
+      `--${mix}`,
+      `Content-Type: application/pdf; name="${a.filename}"`,
+      `Content-Disposition: attachment; filename="${a.filename}"`,
+      "Content-Transfer-Encoding: base64",
+      "", "",
+    ].join("\r\n"));
+    parts.push(wrap76(a.b64));      // le gros morceau : une seule écriture
+    parts.push("\r\n");
+  }
+  parts.push(`--${mix}--`);         // pas de CRLF final : le « \r\n.\r\n » suit
+  return parts;
+}
+
+async function sendSmtp(o: {
+  host: string; port: number; user: string; pass: string;
+  from: string; to: string; replyTo: string; subject: string;
+  text: string; html: string;
+  attachments: { filename: string; b64: string }[];
+}) {
+  let conn: Deno.Conn = o.port === 465
+    ? await Deno.connectTls({ hostname: o.host, port: o.port })
+    : await Deno.connect({ hostname: o.host, port: o.port });
+  try {
+    let s = new Smtp(conn);
+    const hello = await s.reply();
+    if (hello.code !== 220) throw new Error(`accueil du serveur — ${hello.text}`);
+    await s.cmd("EHLO boite-outils-gefec", [250], "EHLO");
+
+    if (o.port !== 465) {                       // 587 : chiffrement après coup
+      await s.cmd("STARTTLS", [220], "STARTTLS");
+      conn = await Deno.startTls(conn as Deno.TcpConn, { hostname: o.host });
+      s = new Smtp(conn);
+      await s.cmd("EHLO boite-outils-gefec", [250], "EHLO");
+    }
+    if (o.user) {
+      await s.cmd("AUTH LOGIN", [334], "AUTH LOGIN");
+      await s.cmd(b64text(o.user), [334], "identifiant SMTP");
+      await s.cmd(b64text(o.pass), [235], "mot de passe SMTP");
+    }
+    await s.cmd(`MAIL FROM:<${bareAddr(o.from)}>`, [250], "MAIL FROM");
+    await s.cmd(`RCPT TO:<${o.to}>`, [250, 251], "RCPT TO");
+    await s.cmd("DATA", [354], "DATA");
+
+    for (const part of mimeParts(o)) await s.send(part);
+    await s.send("\r\n.\r\n");
+    const done = await s.reply();
+    if (done.code !== 250) throw new Error(`message refusé — ${done.text}`);
+    try { await s.cmd("QUIT", [221], "QUIT"); } catch (_e) { /* peu importe */ }
+  } finally {
+    try { conn.close(); } catch (_e) { /* déjà fermée */ }
+  }
+}
 
 /* Le corps du message. Le texte est saisi par l'administrateur dans l'outil
    (⚙️ Réglages fournit le modèle par défaut) : on l'envoie tel quel en texte,
@@ -225,33 +402,17 @@ Deno.serve(async (req) => {
         error: "Aucune voie d'envoi (SMTP_HOST, RESEND_API_KEY ou BREVO_API_KEY) n'est définie pour la fonction — voir supabase/SETUP.md.",
       });
 
-    // SMTP : la messagerie que vous avez déjà. Le client est importé ici et non
-    // en tête de fichier — si deno.land était injoignable, la fonction
-    // continuerait de démarrer et de répondre aux autres voies.
+    // SMTP : la messagerie que vous avez déjà, parlée directement (voir Smtp).
     const tSend = Date.now();
     if (smtpHost) {
       const port = Number(Deno.env.get("SMTP_PORT") ?? 465);
       try {
-        const { SMTPClient } = await import("https://deno.land/x/denomailer@1.6.0/mod.ts");
-        const client = new SMTPClient({
-          connection: {
-            hostname: smtpHost,
-            port,
-            tls: port === 465,        // 465 = TLS direct ; 587 passe par STARTTLS
-            ...(smtpUser ? { auth: { username: smtpUser, password: smtpPass } } : {}),
-          },
+        await sendSmtp({
+          host: smtpHost, port, user: smtpUser, pass: smtpPass,
+          from, to, replyTo, subject,
+          text: mail.text, html: mail.html,
+          attachments: attachments.map((a) => ({ filename: a.filename, b64: a.b64 })),
         });
-        await client.send({
-          from, to, subject, content: mail.text, html: mail.html,
-          ...(replyTo ? { replyTo } : {}),
-          attachments: attachments.map((a) => ({
-            filename: a.filename,
-            contentType: "application/pdf",
-            encoding: "base64" as const,
-            content: a.b64,
-          })),
-        });
-        await client.close();
         console.log(`envoi SMTP termine en ${Date.now() - tSend} ms`);
         return json(200, { ok: true, provider: "smtp", bytes: total });
       } catch (e) {
