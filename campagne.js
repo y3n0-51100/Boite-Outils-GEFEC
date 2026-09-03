@@ -248,14 +248,46 @@
     return out;
   }
 
-  /* ---------- Le mail (fonction Edge) ---------- */
+  /* ---------- Le mail (fonction Edge) ----------
+     supabase-js ne remonte qu'un message générique (« Edge Function returned a
+     non-2xx status code ») : le motif réel est dans le CORPS de la réponse. Et
+     les erreurs de la plateforme elle-même (fonction absente, budget de calcul
+     dépassé) n'ont même pas le champ « error » de nos réponses — d'où la table
+     de correspondance par code HTTP. Sans cela, l'écran affiche une phrase qui
+     ne dit rien de ce qu'il faut corriger. */
+  const FN_HINT = {
+    401: 'session expirée — reconnectez-vous',
+    403: "action réservée au compte administrateur",
+    404: "la fonction « send-campagne-mail » n'est pas déployée (ou porte un autre nom)",
+    504: "la fonction a dépassé son temps d'exécution",
+    546: "la fonction a dépassé son budget de calcul : les pièces jointes sont trop lourdes — passez en format A5, ou envoyez un plan à la fois",
+  };
+  async function fnErrorMessage(error) {
+    const res = error && error.context;
+    const status = res && res.status;
+    let detail = '';
+    try {
+      if (res && typeof res.text === 'function') {
+        const raw = (await res.text()).trim();
+        if (raw) {
+          try {
+            const j = JSON.parse(raw);
+            detail = j.error || j.message || j.msg || (j.code ? 'code ' + j.code : '') || raw;
+          } catch (e) { detail = raw.slice(0, 300); }
+        }
+      }
+    } catch (e) { /* corps déjà lu ou illisible : on garde l'indice du code */ }
+    const hint = FN_HINT[status];
+    const parts = [];
+    if (hint) parts.push(hint);
+    if (detail && detail !== hint) parts.push(detail);
+    if (!parts.length) parts.push((error && error.message) || 'erreur inconnue');
+    return parts.join(' — ') + (status ? ` (HTTP ${status})` : '');
+  }
+
   async function sendMail(payload) {
     const { data, error } = await sb.functions.invoke('send-campagne-mail', { body: payload });
-    if (error) {
-      let m = error.message || 'Erreur';
-      try { const ctx = await (error.context && error.context.json && error.context.json()); if (ctx && ctx.error) m = ctx.error; } catch (e) {}
-      throw new Error(m);
-    }
+    if (error) throw new Error(await fnErrorMessage(error));
     if (data && data.ok === false) throw new Error(data.error || 'envoi non configuré');
     if (data && data.error) throw new Error(data.error);
     return data || {};
@@ -500,12 +532,15 @@
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
-      setStatus(store, 'ok', `${res.files.length} PDF téléchargé(s) — ${res.products} affiche(s), ${res.pages} page(s) · ${plansLabel}`);
+      const poids = res.files.reduce((n, f) => n + f.blob.size, 0) / 1048576;
+      setStatus(store, 'ok', `${res.files.length} PDF téléchargé(s) (${poids.toFixed(1)} Mo) — `
+        + `${res.products} affiche(s), ${res.pages} page(s) · ${plansLabel}`);
       return { sent: false };
     }
 
     setStatus(store, 'run', 'dépôt des PDF…');
     const files = await uploadPdfs(store, res.files, dateStr);
+    const mo = files.reduce((n, f) => n + (f.bytes || 0), 0) / 1048576;
     await saveStoreEmail(store, to);
 
     const vars = {
@@ -516,7 +551,7 @@
     const subject = fill(opts.subject, vars);
     const message = fill(opts.message, vars);
 
-    setStatus(store, 'run', `envoi du mail à ${to}…`);
+    setStatus(store, 'run', `envoi du mail à ${to} — ${mo.toFixed(1)} Mo de pièces jointes…`);
     const out = await sendMail({
       to, store_id: store.id, store_name: store.name || store.id,
       subject, message,
@@ -528,7 +563,8 @@
     });
     touchLast(store, to, plansLabel);
     setStatus(store, 'ok',
-      `Mail envoyé à ${to} — ${files.length} pièce(s) jointe(s), ${res.products} affiche(s), ${res.pages} page(s) · ${plansLabel}`);
+      `Mail envoyé à ${to} — ${files.length} pièce(s) jointe(s) (${mo.toFixed(1)} Mo), `
+      + `${res.products} affiche(s), ${res.pages} page(s) · ${plansLabel}`);
     return { sent: true };
   }
 

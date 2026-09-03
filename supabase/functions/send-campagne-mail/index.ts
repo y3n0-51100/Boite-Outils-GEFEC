@@ -20,6 +20,7 @@
 // MAIL_FROM / MAIL_REPLY_TO : repli si rien n'est renseigné dans ⚙️ Réglages.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Buffer } from "node:buffer";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -47,15 +48,22 @@ function parseFrom(from: string) {
     : { name: "Boîte à Outils GEFEC", email: from.trim() };
 }
 
-// Uint8Array -> base64, par tranches : un seul String.fromCharCode sur
-// plusieurs mégaoctets ferait sauter la pile d'appels.
+// Uint8Array -> base64. L'encodeur natif de node:buffer est une trentaine de
+// fois plus rapide que la boucle JS équivalente (≈20 ms contre ≈600 ms pour
+// 4 Mo) : sur le budget CPU d'une Edge Function, c'est la différence entre un
+// envoi qui passe et un « CPU Time exceeded ». La boucle reste en repli si le
+// module n'est pas disponible.
 function toBase64(bytes: Uint8Array) {
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  try {
+    return Buffer.from(bytes).toString("base64");
+  } catch (_e) {
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
   }
-  return btoa(bin);
 }
 
 const isMail = (v: unknown) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v ?? "").trim());
@@ -193,8 +201,12 @@ Deno.serve(async (req) => {
         return json(400, {
           error: "Pièces jointes trop lourdes (> 20 Mo) : choisissez le format A5 (2 affiches par page) ou envoyez un plan à la fois.",
         });
-      attachments.push({ filename: f.filename, b64: toBase64(bytes), bytes: bytes.length });
+      const t0 = Date.now();
+      const b64 = toBase64(bytes);
+      console.log(`piece jointe ${f.filename} : ${(bytes.length / 1048576).toFixed(2)} Mo, encodee en ${Date.now() - t0} ms`);
+      attachments.push({ filename: f.filename, b64, bytes: bytes.length });
     }
+    console.log(`total pieces jointes : ${(total / 1048576).toFixed(2)} Mo pour ${attachments.length} fichier(s)`);
 
     const mail = body({
       message, storeName, storeId,
@@ -216,6 +228,7 @@ Deno.serve(async (req) => {
     // SMTP : la messagerie que vous avez déjà. Le client est importé ici et non
     // en tête de fichier — si deno.land était injoignable, la fonction
     // continuerait de démarrer et de répondre aux autres voies.
+    const tSend = Date.now();
     if (smtpHost) {
       const port = Number(Deno.env.get("SMTP_PORT") ?? 465);
       try {
@@ -239,6 +252,7 @@ Deno.serve(async (req) => {
           })),
         });
         await client.close();
+        console.log(`envoi SMTP termine en ${Date.now() - tSend} ms`);
         return json(200, { ok: true, provider: "smtp", bytes: total });
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);

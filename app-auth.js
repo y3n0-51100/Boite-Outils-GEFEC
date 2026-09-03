@@ -1332,9 +1332,18 @@
         },
       });
       if (error) {
+        // le motif réel est dans le corps de la réponse : supabase-js n'en
+        // remonte qu'un message générique
         let m = error.message || 'Erreur';
-        try { const ctx = await error.context?.json?.(); if (ctx && ctx.error) m = ctx.error; } catch (x) {}
-        throw new Error(m);
+        try {
+          const raw = (await error.context?.text?.() || '').trim();
+          if (raw) {
+            try { const j = JSON.parse(raw); m = j.error || j.message || (j.code ? 'code ' + j.code : m); }
+            catch (x) { m = raw.slice(0, 300); }
+          }
+        } catch (x) {}
+        const st = error.context && error.context.status;
+        throw new Error(m + (st ? ` (HTTP ${st})` : ''));
       }
       if (data && data.ok === false) throw new Error(data.error || 'envoi non configuré');
       if (data && data.error) throw new Error(data.error);
