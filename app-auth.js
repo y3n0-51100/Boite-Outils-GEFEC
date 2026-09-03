@@ -126,9 +126,9 @@
 
   /* Portail « valorisation à jour » : barrage tant que le magasin n'a pas
      déposé une valorisation de moins de 4 semaines. */
-  #valoGate{position:fixed;inset:0;z-index:9990;background:var(--bg,#0b0e14);
+  #valoGate, #emailGate {position:fixed;inset:0;z-index:9990;background:var(--bg,#0b0e14);
     display:none;align-items:center;justify-content:center;padding:20px;font-family:var(--font,system-ui,sans-serif)}
-  #valoGate.show{display:flex}
+  #valoGate.show, #emailGate.show {display:flex}
   .vgate-card{width:100%;max-width:560px;background:var(--surface,#11151e);border:1px solid var(--border,#2a334a);
     border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.5);padding:34px 32px;animation:agFade .4s ease both;color:var(--text,#e6e9f0)}
   .vgate-badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
@@ -429,6 +429,29 @@
         </div>
       </div>`;
     document.body.appendChild(vg);
+    
+    // Portail « Email Affiches »
+    const eg = document.createElement('div'); eg.id = 'emailGate';
+    eg.innerHTML = `
+      <div class="vgate-card">
+        <div class="vgate-title">Affiches par email</div>
+        <div class="vgate-sub">Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin automatiquement par mail ?</div>
+        <div style="display:flex;gap:12px;margin-top:20px" id="egChoices">
+          <button class="gbtn pri" id="egYes">Oui, recevoir les affiches</button>
+          <button class="gbtn" id="egNo">Non merci</button>
+        </div>
+        <div id="egInputWrap" style="display:none;margin-top:20px;">
+          <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">Adresse e-mail de réception</label>
+          <input type="email" id="egInput" class="ginput" placeholder="directeur@... ou magasin@..." style="width:100%;box-sizing:border-box;margin-bottom:12px">
+          <div style="display:flex;gap:10px">
+            <button class="gbtn pri" id="egSave">Enregistrer</button>
+            <button class="gbtn" id="egCancel">Annuler</button>
+          </div>
+        </div>
+        <div class="vgate-msg" id="egMsg"></div>
+      </div>`;
+    document.body.appendChild(eg);
+
     el('vgDrop').addEventListener('click', () => el('vgFile').click());
     el('vgFile').addEventListener('change', e => { if (e.target.files[0]) onValoGateFile(e.target.files[0]); e.target.value = ''; });
     el('vgDrop').addEventListener('dragover', e => { e.preventDefault(); el('vgDrop').classList.add('over'); });
@@ -506,7 +529,10 @@
     hideGate();
 
     // magasin : valorisation obligatoire et de moins de 4 semaines
-    if (isSimpleUser()) await enforceValoGate();
+    if (isSimpleUser()) {
+      const hasValo = await enforceValoGate();
+      if (hasValo) await enforceEmailGate();
+    }
     // tout le monde : charger les documents partagés publiés par l'admin
     await loadAllSharedDocs();
     // masques personnalisés (SOLDES, etc.) → injectés dans Étiquettes
@@ -557,6 +583,46 @@
     el('valoGate').classList.add('show');
   }
   function hideValoGate() { el('valoGate').classList.remove('show'); }
+  
+  async function enforceEmailGate() {
+    if (!isSimpleUser()) return true;
+    try {
+      const { data } = await sb.from('stores').select('email').eq('id', CURRENT.storeId).single();
+      if (data && data.email !== null) return true;
+    } catch (e) {
+      return true; // Skip on error so we don't block
+    }
+    
+    return new Promise(resolve => {
+      el('emailGate').classList.add('show');
+      const wrap = el('egInputWrap');
+      const choices = el('egChoices');
+      const input = el('egInput');
+      const msg = el('egMsg');
+      
+      el('egYes').onclick = () => { choices.style.display = 'none'; wrap.style.display = 'block'; input.focus(); };
+      el('egCancel').onclick = () => { wrap.style.display = 'none'; choices.style.display = 'flex'; input.value = ''; msg.textContent = ''; };
+      
+      async function saveChoice(val) {
+        msg.className = 'vgate-msg wait'; msg.textContent = 'Enregistrement...';
+        try {
+          await sb.from('stores').update({ email: val }).eq('id', CURRENT.storeId);
+          CURRENT.email = val; // Mémoriser localement si besoin
+          el('emailGate').classList.remove('show');
+          resolve(true);
+        } catch (e) {
+          msg.className = 'vgate-msg err'; msg.textContent = 'Erreur : ' + (e.message || e);
+        }
+      }
+      
+      el('egNo').onclick = () => saveChoice('REFUSE');
+      el('egSave').onclick = () => {
+        const val = input.value.trim();
+        if (!val || !val.includes('@')) { msg.className = 'vgate-msg err'; msg.textContent = 'Adresse e-mail invalide.'; return; }
+        saveChoice(val);
+      };
+    });
+  }
 
   function vgMsg(text, cls) { const m = el('vgMsg'); if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; } }
 
@@ -572,7 +638,10 @@
   }
   document.addEventListener('gefec:valo-saved', () => {
     vgMsg('Valorisation enregistrée ✓', 'ok');
-    setTimeout(hideValoGate, 600);
+    setTimeout(() => {
+      hideValoGate();
+      if (isSimpleUser()) enforceEmailGate();
+    }, 600);
     renderHomeStatus();
   });
   document.addEventListener('gefec:valo-error', e => {
@@ -1487,11 +1556,11 @@
 
       // envoi groupé : réservé à l'administrateur, sur les magasins dont la
       // valorisation est déposée ET dont l'adresse du directeur est connue
-      const sendable = enriched.filter(e => e.has && e.s.email);
+      const sendable = enriched.filter(e => e.has && e.s.email && e.s.email !== 'REFUSE');
       const bulk = (CURRENT && CURRENT.role === 'admin')
         ? `<div class="gpromo-actions" style="margin:0 0 14px">
              <button class="gbtn" id="stMailAll"${sendable.length ? '' : ' disabled'}>✉️ Envoyer les affiches aux ${sendable.length} magasin(s) prêt(s)</button>
-             <span class="gpromo-name">Valorisation déposée + adresse du directeur renseignée</span>
+             <span class="gpromo-name">Valorisation déposée + adresse e-mail de réception renseignée</span>
            </div>` : '';
       const summary = bulk + `<div class="stsum">
         <span class="pill ok">À jour<b>${nOk}</b></span>
@@ -1510,7 +1579,7 @@
         const seenTxt = e.seen ? `connexion ${relAge(e.seen)}` : 'jamais connecté';
         const mailTxt = e.mail
           ? `✉️ affiches envoyées ${relAge(new Date(e.mail.sent_at))} à ${esc(e.mail.email)}`
-          : (e.s.email ? `✉️ ${esc(e.s.email)}` : '');
+          : (e.s.email === 'REFUSE' ? `<span style="color:#f87171">Ne souhaite pas d'affiches par mail</span>` : (e.s.email ? `✉️ ${esc(e.s.email)}` : ''));
         const isAdmin = CURRENT && CURRENT.role === 'admin';
         return `<div class="grow">
           ${badge}
@@ -1519,7 +1588,7 @@
             ${mailTxt ? `<div class="stmail">${mailTxt}</div>` : ''}</div>
           ${e.has ? `<button data-load="${esc(e.s.id)}">Charger dans les outils</button>
                      <button data-dl="${esc(e.s.id)}">Télécharger</button>` : ''}
-          ${e.has && isAdmin ? `<button data-mail="${esc(e.s.id)}">✉️ Affiches</button>` : ''}
+          ${e.has && isAdmin && e.s.email !== 'REFUSE' ? `<button data-mail="${esc(e.s.id)}">✉️ Affiches</button>` : ''}
         </div>`;
       }).join('');
       list.innerHTML = summary + rowsHtml;
