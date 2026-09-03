@@ -247,10 +247,15 @@
     }
     
     if (opts.chkCET && plans.plans.cet && plans.plans.cet.length) {
-      if (window.parent && typeof window.parent.gefecBuildCetelem === 'function') {
+      let cetWin = null;
+      if (window.parent) {
+        const cetFrame = window.parent.document.querySelector('iframe[data-tpl="tool-match"]');
+        if (cetFrame) cetWin = cetFrame.contentWindow;
+      }
+      if (cetWin && typeof cetWin.gefecBuildCetelem === 'function') {
         onStep('match', 0, 1); // Indique qu'on traite Cetelem
         try {
-          const cetRes = await window.parent.gefecBuildCetelem({
+          const cetRes = await cetWin.gefecBuildCetelem({
             valo: valoBuffer.slice(0),
             plans: plans.plans.cet,
             fmt: opts.storePrefs.cetelem || 'a4',
