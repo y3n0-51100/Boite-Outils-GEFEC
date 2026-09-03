@@ -174,6 +174,7 @@ celui-ci est déjà configuré, il n'y a rien à ajouter.
 | Document | Public | Régénération |
 | --- | --- | --- |
 | `docs/Tutoriel-Directeurs-GEFEC.pdf` | **Directeurs de magasin** — 9 pages : une page de présentation, puis deux pages par outil (à quoi il sert, la marche à suivre, une capture annotée, un mémo « 30 secondes »). | `node scripts/make-tutoriel.js` |
+| `docs/Tuto-Envoi-Campagne-Mail.pdf` | **Administrateur** — 11 pages : la mise en place de l'outil « Envoi Campagne Mail » (Supabase, réglages, voie d'envoi), le déroulé d'une campagne, un tableau de dépannage et une check-list. | `node scripts/make-tuto-campagne.js` |
 | `docs/Guide-Utilisation-GEFEC.pdf` | Magasins & directeurs régionaux — connexion, valorisation, principes généraux. | `node scripts/make-guide.js` |
 | `docs/Guide-Outil-Promo-GEFEC.pdf` | Outil promo (historique). | `node scripts/make-flyer.js` |
 
