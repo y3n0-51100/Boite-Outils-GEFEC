@@ -2004,21 +2004,26 @@ main{flex:1;position:relative;overflow:hidden}
       await new Promise(r => setTimeout(r, 100));
     }
     
+    // handleValorisation() refuse tout fichier dont le type n'est pas
+    // application/pdf : sans ce type explicite, elle sort sans rien lire.
     say('valo');
-    await handleValorisation(new File([o.valo], 'valo.pdf'));
-    if (!state.storeKeys || !state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
-    
+    await handleValorisation(new File([o.valo], 'valo.pdf', { type: 'application/pdf' }));
+    // le jeu d'EAN de la valorisation s'appelle valoEans dans CET outil
+    // (storeKeys est le nom utilisé par le moteur d'étiquettes, pas ici)
+    if (!state.valoEans || !state.valoEans.size) throw new Error('valorisation illisible (aucune référence trouvée)');
+
+    // le dépliant CETELEM peut être publié en plusieurs fichiers : on les
+    // passe tous, collectPdfSources() sait traiter une liste
     say('plans');
-    const f = new File([o.plans[0].data], o.plans[0].name);
-    await handleZip(f);
-    
+    await handleZip(o.plans.map(pl => new File([pl.data], pl.name)));
+
     say('match');
     const items = getSelectedItems();
     if (!items.length) throw new Error('aucune affiche CETELEM ne correspond à votre valorisation');
     
     say('pdf');
     const result = await buildOrReusePdf();
-    if (!result || !result.bytes || result.errors.length === items.length) {
+    if (!result || !result.bytes || (result.errors || []).length === items.length) {
       throw new Error("Erreur lors de la génération des affiches CETELEM.");
     }
     
@@ -3021,17 +3026,24 @@ document.addEventListener('DOMContentLoaded', updateBaseStatus);
    ════════════════════════════════════════════════════════════════ */
 let USER_MODE = null;                                  // 'simple' (magasin) | 'full'
 const SIMPLE_TOOLS = ['match', 'etiquette', 'solde', 'sisto'];  // périmètre magasin
+/* Magasin qui a demandé à recevoir ses affiches par mail : la centrale les
+   fabrique et les lui envoie. Il ne lui reste donc rien à croiser ni à
+   imprimer lui-même — seulement SISTO Checker, le dépôt de sa valorisation
+   (qui alimente justement les envois) et le choix du format de ses affiches. */
+const MAIL_TOOLS = ['sisto'];
 const isSimple = () => USER_MODE === 'simple';
 
 window.applyUserMode = function(user){
   if (USER_MODE) return;                               // profil déjà appliqué
   USER_MODE = (user && user.role === 'store') ? 'simple' : 'full';
   document.body.dataset.mode = USER_MODE;
+  if (user && user.mailOptIn) document.body.dataset.mail = 'auto';
   // le habillage ne doit jamais empêcher les outils de démarrer : ce serait
   // un magasin authentifié devant une coque vide
   try {
-    if (isSimple()) restrictToStoreScope();
+    if (isSimple()) restrictToStoreScope(user && user.mailOptIn);
     if (!user || user.role !== 'admin') restrictAdminScope();
+    else applyAdminHome();
   } finally { bootTools(); }
 };
 /* Outils d'administration (Envoi Campagne Mail) : ils pilotent les envois vers
@@ -3046,16 +3058,78 @@ function restrictAdminScope(){
       .forEach(n => n.remove());
   });
 }
-function restrictToStoreScope(){
-  // Promo Perso sort du périmètre magasin : on retire les
-  // nœuds (carte, onglet, vue + iframe) plutôt que de les masquer, pour
-  // qu'aucun outil hors périmètre ne soit chargé ni atteignable.
+/* Accueil administrateur : ce n'est pas un choix d'outil, c'est un poste de
+   pilotage. Les cases d'outils cèdent la place aux réglages (documents,
+   masques, envois, comptes, valorisations, campagne). Les outils eux-mêmes
+   restent atteignables : la barre d'onglets, d'ordinaire masquée sur
+   l'accueil, reste affichée pour l'administrateur. */
+let ADMIN_HOME = false;
+const ADMIN_CARDS = [
+  { action: 'docs',    couleur: 'orange', titre: 'Plans promo & documents', sous: 'Plan TV · Plan PEM · CETELEM · Soldes · base NOSICA',
+    desc: "Publiez les documents de la centrale : ils se chargent tout seuls chez tous les magasins et alimentent les campagnes.",
+    icone: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>' },
+  { action: 'stores',  couleur: 'green',  titre: 'Valorisations des magasins', sous: 'Suivi · fraîcheur · téléchargement',
+    desc: "Qui a déposé, quand, et avec combien de références. Chargez la valorisation d'un magasin dans vos outils.",
+    icone: '<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7L10 5H5a2 2 0 0 0-2 2z"/>' },
+  { action: 'campagne', couleur: 'violet', titre: 'Envoi Campagne Mail', sous: 'Affiches générées et postées aux magasins',
+    desc: "Un bouton par magasin : contrôle de la valorisation, génération des affiches et envoi du mail avec les PDF joints.",
+    icone: '<rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 7 9 6 9-6"/>' },
+  { action: 'mail',    couleur: 'cyan',   titre: "Réglages d'envoi", sous: 'Expéditeur · objet · message · test',
+    desc: "L'adresse d'où partent les mails, le modèle d'objet et de message, et un envoi de test pour valider la voie.",
+    icone: '<path d="M4 4h16v16H4z"/><path d="m4 7 8 6 8-6"/>' },
+  { action: 'comptes', couleur: 'amber',  titre: 'Comptes utilisateurs', sous: 'Magasins · directeurs régionaux',
+    desc: "Créez les accès, réinitialisez un mot de passe, retirez un compte. Identifiant et mot de passe, rien de plus.",
+    icone: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/>' },
+  { action: 'masks',   couleur: 'red',    titre: 'Masques personnalisés', sous: 'SOLDES · VENTES PRIVÉES · opérations',
+    desc: "Ajoutez un fond d'affiche pour une opération spéciale : il devient un choix de plus dans l'outil Promo Perso.",
+    icone: '<path d="M4 5h16v14H4z"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-5 4 4 3-2 4 3"/>' },
+];
+
+function applyAdminHome(){
+  const grid = document.querySelector('.tools-grid');
+  if (!grid) return;
+  ADMIN_HOME = true;
+  grid.innerHTML = ADMIN_CARDS.map(c => `
+    <button class="tool-card ready" data-admin-action="${c.action}" type="button">
+      <div class="tc-bar tc-bar--${c.couleur}"></div>
+      <div class="tc-header">
+        <div class="tc-icon tc-icon--${c.couleur}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${c.icone}</svg>
+        </div>
+        <span class="tc-badge tc-badge--${c.couleur === 'violet' ? 'violet' : 'green'}">Administration</span>
+      </div>
+      <div class="tc-title">${c.titre}</div>
+      <div class="tc-sub">${c.sous}</div>
+      <div class="tc-desc">${c.desc}</div>
+      <div class="tc-footer"><span class="tc-cta">Ouvrir</span>
+        <span class="tc-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg></span></div>
+    </button>`).join('');
+  // la barre d'onglets est masquée sur l'accueil par défaut : c'est ici le
+  // seul chemin vers les outils, on l'affiche donc dès l'arrivée
+  const nav = document.getElementById('tabNav');
+  if (nav) nav.hidden = false;
+  const t = document.querySelector('.hw-title');
+  if (t) t.textContent = 'Administration';
+  const sub = document.querySelector('.hw-sub');
+  if (sub) sub.textContent = 'Publiez, réglez, envoyez — les outils restent accessibles par les onglets en haut';
+  const lab = document.querySelector('.vs-label');
+  if (lab) lab.textContent = 'Valorisation de test — pour essayer un outil depuis votre poste (facultatif)';
+}
+
+function restrictToStoreScope(mailOptIn){
+  // Promo Perso sort du périmètre magasin, et tout le reste sort de celui du
+  // magasin servi par mail : on retire les nœuds (carte, onglet, vue + iframe)
+  // plutôt que de les masquer, pour qu'aucun outil hors périmètre ne soit
+  // chargé ni atteignable.
+  const garde = mailOptIn ? MAIL_TOOLS : SIMPLE_TOOLS;
   document.querySelectorAll('.tool-card,.tab,.view-tool').forEach(n => {
     const view = n.dataset.tool || n.dataset.tab || n.dataset.view;
-    if (view && SIMPLE_TOOLS.indexOf(view) < 0) n.remove();
+    if (view && garde.indexOf(view) < 0) n.remove();
   });
   const sub = document.querySelector('.hw-sub');
-  if (sub) sub.textContent = 'Votre valorisation est à jour — choisissez un outil';
+  if (sub) sub.textContent = mailOptIn
+    ? 'Vos affiches vous sont envoyées par mail — gardez seulement votre valorisation à jour'
+    : 'Votre valorisation est à jour — choisissez un outil';
   const lab = document.querySelector('.vs-label');
   if (lab) lab.textContent = 'Votre valorisation — déposez-en une nouvelle pour la mettre à jour';
   // retirer sa valorisation n'a pas de sens ici : elle est obligatoire
@@ -3195,6 +3269,13 @@ homeFile.addEventListener('change',e=>{if(e.target.files.length)setValoFile(e.ta
 const toolsGrid=document.querySelector('.tools-grid');
 toolsGrid.addEventListener('click',e=>{
   const card=e.target.closest('.tool-card'); if(!card) return;
+  const adm=card.dataset.adminAction;
+  if (adm){
+    if (adm==='campagne') switchView('campagne');
+    else if (adm==='stores') { if (window.openStoresModal) window.openStoresModal(); }
+    else if (window.openAdminSection) window.openAdminSection(adm);
+    return;
+  }
   if (card.hasAttribute('data-novalo')){ switchView(card.dataset.tool); return; }
   if (!card.classList.contains('ready')){ homeFile.click(); showToast("Importez d'abord la valorisation"); return; }
   switchView(card.dataset.tool);
@@ -3218,7 +3299,7 @@ function switchView(name){
   if (typeof window.moduleGate==='function' && !window.moduleGate(name)) return;
   shell.dataset.view=name;
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));
-  if (name==='home'){ tabNav.hidden=true; }
+  if (name==='home'){ tabNav.hidden=!ADMIN_HOME; if(ADMIN_HOME){tabsNow().forEach(t=>t.classList.remove('active'));tabIndicator.classList.remove('ready');} }
   else {
     tabNav.hidden=false;
     tabsNow().forEach(t=>{const on=t.dataset.tab===name;t.classList.toggle('active',on);t.setAttribute('aria-selected',on)});

@@ -105,6 +105,14 @@
   @media(max-width:560px){.gform{grid-template-columns:1fr}}
   .gmask-name{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2,#8a93a6);margin:8px 0}
   .gmask-name input{padding:9px 11px;border:1px solid var(--border,#2a334a);border-radius:9px;font-size:14px;font-weight:600;text-transform:uppercase;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0)}
+  .gate-input{width:100%;box-sizing:border-box;border:1.5px solid var(--border,#2a334a);border-radius:10px;
+    padding:11px 13px;font-size:14px;font-family:inherit;outline:none;
+    background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0)}
+  .gate-input:focus{border-color:var(--primary,#5b8cff)}
+  .gate-fmt{display:flex;gap:18px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--text-2,#8a93a6);font-weight:600}
+  .gate-fmt b{color:var(--text,#e6e9f0);font-weight:700;min-width:74px}
+  .gate-fmt label{display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text,#e6e9f0)}
+  .gate-lbl{display:block;font-size:12px;font-weight:700;color:var(--text-2,#8a93a6);margin-bottom:6px}
   .gmask-name textarea{padding:10px 12px;border:1px solid var(--border,#2a334a);border-radius:9px;font-size:13px;
     font-family:inherit;line-height:1.55;background:var(--surface-2,#1a2030);color:var(--text,#e6e9f0);resize:vertical;outline:none}
   .gmask-name textarea:focus{border-color:var(--primary,#5b8cff)}
@@ -182,13 +190,11 @@
       chip.innerHTML = `
         <span class="ac-info"><b id="acName"></b><span id="acRole"></span></span>
         <button id="acStores" hidden>📂 Valorisations</button>
-        <button id="acAdmin" class="primary" hidden>⚙️ Réglages</button>
         <button id="acMailPrefs" class="primary" hidden>✉️ Mes envois mail</button>
         <button id="acHelp" title="Aide et support">❔ Aide</button>
         <button id="acLogout">Déconnexion</button>`;
       right.appendChild(chip);
       el('acLogout').addEventListener('click', doLogout);
-      el('acAdmin').addEventListener('click', openAdmin);
       el('acStores').addEventListener('click', openStores);
       el('acMailPrefs').addEventListener('click', openMailPrefs);
       el('acHelp').addEventListener('click', openHelp);
@@ -198,8 +204,9 @@
     const admin = document.createElement('div'); admin.className = 'gmodal'; admin.id = 'adminModal';
     admin.innerHTML = `
       <div class="gmodal-card">
-        <div class="gmodal-head"><h2>⚙️ Réglages</h2><button class="gmodal-close" data-close>✕</button></div>
+        <div class="gmodal-head"><h2 id="admTitle">⚙️ Réglages</h2><button class="gmodal-close" data-close>✕</button></div>
 
+        <div data-adm="docs">
         <div class="gpromo-sub" style="margin-top:0">Documents communs (centrale) — publiés une fois, chargés automatiquement chez tous les magasins :</div>
         ${Object.keys(SHARED).filter(id => !SHARED[id].legacy).map(id => `
         <div class="gpromo">
@@ -220,7 +227,9 @@
           </div>
         </div>`).join('')}
 
-        <hr class="gsep">
+        </div>
+
+        <div data-adm="masks">
         <div class="gpromo-sub" style="margin-top:0">Masques personnalisés (Étiquettes) — opérations spéciales (SOLDES, VENTES PRIVÉES…), disponibles chez tous les magasins. Déposez le PDF A4 du masque (obligatoire) : sa première page devient le fond. Vous pouvez aussi déposer un PDF A5 (optionnel — planche A4 paysage avec les 2 étiquettes A5 côte à côte) pour activer le format A5 pour ce masque ; sans lui, le choix A5 reste grisé dans l'outil. Le contenu produit se cale automatiquement comme « PROMO DU MOMENT ».</div>
         <div class="gpromo">
           <div class="glist" id="masksList"><div class="gempty">Chargement…</div></div>
@@ -240,7 +249,9 @@
           <div class="gmsg" id="maskMsg"></div>
         </div>
 
-        <hr class="gsep">
+        </div>
+
+        <div data-adm="mail">
         <div class="gpromo-sub" style="margin-top:0">Envoi des campagnes mail — l'adresse depuis laquelle part chaque mail de l'outil « ✉️ Envoi Campagne Mail », ainsi que l'objet et le message proposés par défaut. Ces réglages sont lus par la fonction d'envoi : les changer ici suffit, il n'y a rien à redéployer. Avec une voie SMTP, l'adresse d'expédition doit être celle du compte SMTP configuré (sinon le serveur refuse l'envoi).</div>
         <div class="gpromo">
           <div class="gform">
@@ -261,8 +272,9 @@
           <div class="gmsg" id="mailMsg"></div>
         </div>
 
-        <hr class="gsep">
+        </div>
 
+        <div data-adm="comptes">
         <div class="gmodal-sub">Créez les accès magasins (16) et directeurs régionaux (2). Identifiant + mot de passe.</div>
         <div class="gform">
           <label>Identifiant<input id="naUser" autocapitalize="none" spellcheck="false" placeholder="ex : reims"></label>
@@ -279,6 +291,7 @@
         <button class="gbtn" id="naCreate">＋ Créer le compte</button>
         <div class="gmsg" id="naMsg"></div>
         <div class="glist" id="naList"><div class="gempty">Chargement…</div></div>
+        </div>
       </div>`;
     document.body.appendChild(admin);
     admin.querySelector('[data-close]').addEventListener('click', () => admin.classList.remove('show'));
@@ -432,41 +445,49 @@
       </div>`;
     document.body.appendChild(vg);
     
-    // Portail « Email Affiches »
+    // Portail « Affiches par mail » : posé une fois après la valorisation,
+    // puis rouvrable par le magasin depuis « ✉️ Mes envois mail ».
     const eg = document.createElement('div'); eg.id = 'emailGate';
     eg.innerHTML = `
       <div class="vgate-card">
-        <div class="vgate-title">Affiches par email</div>
-        <div class="vgate-sub" id="egSub">Souhaitez-vous recevoir vos affiches automatiquement par mail ?</div>
-        <div style="display:flex;gap:12px;margin-top:20px" id="egChoices">
-          <button class="gbtn pri" id="egYes">Oui, configurer mes envois</button>
-          <button class="gbtn" id="egNo">Non merci</button>
+        <div class="vgate-title" id="egTitle">Vos affiches par mail</div>
+        <div class="vgate-sub" id="egSub">Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin automatiquement par mail ?</div>
+        <div style="display:flex;gap:12px;margin-top:22px" id="egChoices">
+          <button class="gbtn" id="egYes">Oui, je veux les recevoir</button>
+          <button class="gbtn alt" id="egNo">Non merci</button>
         </div>
-        <div id="egInputWrap" style="display:none;margin-top:20px;">
-          <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">Adresse e-mail de réception</label>
-          <input type="email" id="egInput" class="ginput" placeholder="directeur@... ou magasin@..." style="width:100%;box-sizing:border-box;margin-bottom:12px">
-          
-          <label style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">Formats souhaités</label>
-          <div style="display:flex;gap:15px;margin-bottom:12px;font-size:13px;">
-            <label><input type="radio" name="egFmtTV" value="a4" checked> TV en A4</label>
-            <label><input type="radio" name="egFmtTV" value="a5"> TV en A5</label>
+        <div id="egInputWrap" style="display:none;margin-top:22px">
+          <label class="gate-lbl" for="egInput">Adresse e-mail de réception</label>
+          <input type="email" id="egInput" class="gate-input" autocapitalize="none" spellcheck="false"
+                 placeholder="magasin@but.fr" style="margin-bottom:18px">
+
+          <div class="gate-lbl">Format d'impression souhaité</div>
+          <div class="gate-fmt"><b>Plan TV</b>
+            <label><input type="radio" name="egFmtTV" value="a4" checked> A4</label>
+            <label><input type="radio" name="egFmtTV" value="a5"> A5 (2 par page)</label>
           </div>
-          <div style="display:flex;gap:15px;margin-bottom:12px;font-size:13px;">
-            <label><input type="radio" name="egFmtPEM" value="a4" checked> PEM en A4</label>
-            <label><input type="radio" name="egFmtPEM" value="a5"> PEM en A5</label>
+          <div class="gate-fmt"><b>Plan PEM</b>
+            <label><input type="radio" name="egFmtPEM" value="a4" checked> A4</label>
+            <label><input type="radio" name="egFmtPEM" value="a5"> A5 (2 par page)</label>
           </div>
-          <div style="display:flex;gap:15px;margin-bottom:20px;font-size:13px;">
-            <label><input type="radio" name="egFmtCET" value="a4" checked> CETELEM en A4</label>
-            <label><input type="radio" name="egFmtCET" value="a5"> CETELEM en A5</label>
+          <div class="gate-fmt" style="margin-bottom:20px"><b>CETELEM</b>
+            <label><input type="radio" name="egFmtCET" value="a4" checked> A4</label>
+            <label><input type="radio" name="egFmtCET" value="a5"> A5 (2 par page)</label>
           </div>
 
-          <div style="display:flex;gap:10px">
-            <button class="gbtn pri" id="egSave">Enregistrer</button>
-            <button class="gbtn" id="egCancel" style="display:none">Annuler</button>
-            <button class="gbtn" id="egClose" style="display:none">Fermer</button>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="gbtn" id="egSave">Enregistrer</button>
+            <button class="gbtn alt" id="egCancel" style="display:none">Annuler</button>
+            <button class="gbtn alt" id="egClose" style="display:none">Fermer</button>
+          </div>
+          <div id="egOptOutWrap" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid var(--border,#2a334a)">
+            <button class="gbtn danger" id="egOptOut">Ne plus recevoir mes affiches par mail</button>
+            <div style="font-size:11.5px;color:var(--text-3,#5c6478);font-weight:600;margin-top:8px">
+              Vous reprendrez la main sur les outils Plan Promo, CETELEM et Soldes pour les imprimer vous-même.
+            </div>
           </div>
         </div>
-        <div class="vgate-msg" id="egMsg" style="margin-top:15px;font-weight:600;"></div>
+        <div class="vgate-msg" id="egMsg" style="margin-top:16px;font-weight:600"></div>
       </div>`;
     document.body.appendChild(eg);
 
@@ -528,6 +549,11 @@
     }
     CURRENT = { userId: user.id, role: prof.role, storeId: prof.store_id, name: prof.display_name || user.email };
 
+    // La fiche du magasin (adresse de réception + formats) décide du périmètre
+    // servi : elle doit donc être lue AVANT applyUserMode(), qui retire du
+    // document les outils hors périmètre et ne repasse jamais deux fois.
+    if (CURRENT.role === 'store' && CURRENT.storeId) await loadStoreRow();
+
     // horodatage de connexion (tableau de bord) — sans bloquer si la migration SQL n'est pas faite
     try { sb.rpc('mark_seen'); } catch (e) {}
 
@@ -537,13 +563,15 @@
     el('acRole').textContent = CURRENT.role === 'store'
       ? `Magasin ${CURRENT.storeId || ''}`.trim()
       : (ROLE_LABEL[CURRENT.role] || CURRENT.role);
-    el('acAdmin').hidden = CURRENT.role !== 'admin';
     el('acStores').hidden = !(CURRENT.role === 'admin' || CURRENT.role === 'director');
     el('acMailPrefs').hidden = CURRENT.role !== 'store';
 
     // profil d'accès : la coque n'ouvre aucun outil avant de savoir QUI se
     // connecte (magasin = version simplifiée, admin/directeur = outil complet)
-    if (window.applyUserMode) window.applyUserMode({ role: CURRENT.role, storeId: CURRENT.storeId, name: CURRENT.name });
+    if (window.applyUserMode) window.applyUserMode({
+      role: CURRENT.role, storeId: CURRENT.storeId, name: CURRENT.name,
+      mailOptIn: isMailOptIn(),
+    });
 
     hideGate();
 
@@ -559,6 +587,24 @@
     // panneau "état de préparation" sur l'accueil
     renderHomeStatus();
   }
+
+  /* ---------- Fiche du magasin connecté (adresse de réception + formats) ----------
+     stores.email porte trois états : NULL = la question n'a pas encore été
+     posée, 'REFUSE' = le magasin ne veut pas d'envoi, une adresse = il est
+     servi par mail. Le troisième état réduit son périmètre à SISTO Checker. */
+  const MAIL_REFUSE = 'REFUSE';
+  let STORE_ROW = null;
+
+  async function loadStoreRow() {
+    try {
+      const { data } = await sb.from('stores')
+        .select('email, mail_prefs').eq('id', CURRENT.storeId).maybeSingle();
+      STORE_ROW = data || null;
+    } catch (e) { STORE_ROW = null; }
+    return STORE_ROW;
+  }
+  const storeEmail = () => (STORE_ROW && STORE_ROW.email) || null;
+  const isMailOptIn = () => { const e = storeEmail(); return !!e && e !== MAIL_REFUSE; };
 
   /* ---------- Profil magasin : valorisation à jour obligatoire ----------
      Le magasin ne travaille bien qu'avec une photo récente de son stock : une
@@ -603,133 +649,149 @@
   }
   function hideValoGate() { el('valoGate').classList.remove('show'); }
   
+  /* ---------- Portail « affiches par mail » ----------
+     Deux entrées pour le même écran : le portail posé une seule fois après la
+     première valorisation (enforceEmailGate) et le panneau rouvrable depuis
+     l'en-tête (openMailPrefs). Le choix décide du périmètre servi au magasin,
+     d'où le rechargement quand il bascule. */
+  function egReadPrefs() {
+    const v = (name) => {
+      const r = document.querySelector(`input[name="${name}"]:checked`);
+      return r ? r.value : 'a4';
+    };
+    return { tv: v('egFmtTV'), pem: v('egFmtPEM'), cetelem: v('egFmtCET') };
+  }
+  function egFillPrefs(prefs) {
+    if (!prefs) return;
+    const set = (name, val) => {
+      const r = document.querySelector(`input[name="${name}"][value="${val}"]`);
+      if (r) r.checked = true;
+    };
+    if (prefs.tv) set('egFmtTV', prefs.tv);
+    if (prefs.pem) set('egFmtPEM', prefs.pem);
+    if (prefs.cetelem) set('egFmtCET', prefs.cetelem);
+  }
+  // -> true si le périmètre servi au magasin vient de changer (donc rechargement)
+  async function egSave(email, prefs) {
+    const avant = isMailOptIn();        // relevé AVANT l'appel : l'état de départ
+    const payload = { email };
+    if (prefs) payload.mail_prefs = prefs;
+    // supabase-js ne lève pas : sans ce test, un refus RLS passerait pour un succès
+    const { error } = await sb.from('stores').update(payload).eq('id', CURRENT.storeId);
+    if (error) throw new Error(error.message || 'enregistrement refusé');
+    STORE_ROW = Object.assign({}, STORE_ROW || {}, payload);
+    CURRENT.email = email;
+    return avant !== isMailOptIn();
+  }
+  function egMsg(text, cls) {
+    const m = el('egMsg');
+    if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; }
+  }
+
+  // Panneau des préférences, rouvrable : adresse, formats, et la porte de
+  // sortie vers la gestion manuelle.
   function openMailPrefs() {
     if (!isSimpleUser()) return;
-    return new Promise(async resolve => {
-      el('emailGate').classList.add('show');
-      el('egClose').style.display = 'block';
-      el('egCancel').style.display = 'none';
-      const wrap = el('egInputWrap');
-      const choices = el('egChoices');
-      const input = el('egInput');
-      const msg = el('egMsg');
-      const sub = el('egSub');
-      
-      sub.textContent = 'Configurez vos préférences de réception automatique.';
-      choices.style.display = 'none';
-      wrap.style.display = 'block';
-      msg.textContent = '';
-      
-      try {
-        const { data } = await sb.from('stores').select('email, mail_prefs').eq('id', CURRENT.storeId).maybeSingle();
-        if (data) {
-          if (data.email && data.email !== 'REFUSE') input.value = data.email;
-          if (data.mail_prefs) {
-            const prefs = data.mail_prefs;
-            if (prefs.tv) document.querySelector(`input[name="egFmtTV"][value="${prefs.tv}"]`).checked = true;
-            if (prefs.pem) document.querySelector(`input[name="egFmtPEM"][value="${prefs.pem}"]`).checked = true;
-            if (prefs.cetelem) document.querySelector(`input[name="egFmtCET"][value="${prefs.cetelem}"]`).checked = true;
-          }
-        }
-      } catch (e) {}
-      
-      async function saveChoice(val, prefs = null) {
-        msg.className = 'vgate-msg wait'; msg.textContent = 'Enregistrement...';
-        try {
-          const payload = { email: val };
-          if (prefs) payload.mail_prefs = prefs;
-          await sb.from('stores').update(payload).eq('id', CURRENT.storeId);
-          CURRENT.email = val;
-          msg.className = 'vgate-msg ok'; msg.textContent = 'Enregistré avec succès !';
-          setTimeout(() => {
-            el('emailGate').classList.remove('show');
-            resolve(true);
-          }, 800);
-        } catch (e) {
-          msg.className = 'vgate-msg err'; msg.textContent = 'Erreur : ' + (e.message || e);
-        }
-      }
+    el('emailGate').classList.add('show');
+    el('egTitle').textContent = 'Vos envois par mail';
+    el('egSub').textContent = "Adresse de réception et format d'impression de vos affiches.";
+    el('egChoices').style.display = 'none';
+    el('egInputWrap').style.display = 'block';
+    el('egCancel').style.display = 'none';
+    el('egClose').style.display = 'inline-block';
+    el('egOptOutWrap').style.display = isMailOptIn() ? 'block' : 'none';
+    egMsg('');
 
-      el('egClose').onclick = () => { el('emailGate').classList.remove('show'); resolve(true); };
-      
-      el('egSave').onclick = () => {
-        const val = input.value.trim();
-        if (!val || !val.includes('@')) { msg.className = 'vgate-msg err'; msg.textContent = 'Adresse e-mail invalide.'; return; }
-        
-        const prefs = {
-          tv: document.querySelector('input[name="egFmtTV"]:checked').value,
-          pem: document.querySelector('input[name="egFmtPEM"]:checked').value,
-          cetelem: document.querySelector('input[name="egFmtCET"]:checked').value
-        };
-        
-        saveChoice(val, prefs);
-      };
-    });
+    const input = el('egInput');
+    input.value = isMailOptIn() ? storeEmail() : '';
+    egFillPrefs(STORE_ROW && STORE_ROW.mail_prefs);
+
+    el('egClose').onclick = () => el('emailGate').classList.remove('show');
+    el('egSave').onclick = async () => {
+      const val = input.value.trim();
+      if (!isMail(val)) { egMsg('Adresse e-mail invalide.', 'err'); return; }
+      egMsg('Enregistrement…', 'wait');
+      try {
+        const bascule = await egSave(val, egReadPrefs());
+        egMsg('Enregistré ✓', 'ok');
+        setTimeout(() => bascule ? location.reload() : el('emailGate').classList.remove('show'), 800);
+      } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
+    };
+    // repasser en gestion manuelle : le magasin retrouve ses outils
+    el('egOptOut').onclick = async () => {
+      if (!confirm("Ne plus recevoir vos affiches par mail ?\n\nVous devrez les générer et les imprimer vous-même depuis les outils.")) return;
+      egMsg('Enregistrement…', 'wait');
+      try {
+        await egSave(MAIL_REFUSE, null);
+        egMsg('Envois désactivés — rechargement…', 'ok');
+        setTimeout(() => location.reload(), 900);
+      } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
+    };
   }
 
+  // Portail posé une seule fois : tant que stores.email vaut NULL, la question
+  // n'a jamais été posée à ce magasin.
   async function enforceEmailGate() {
     if (!isSimpleUser()) return true;
-    try {
-      const { data } = await sb.from('stores').select('email').eq('id', CURRENT.storeId).single();
-      if (data && data.email !== null) return true;
-    } catch (e) {
-      return true; // Skip on error so we don't block
-    }
-    
+    if (!STORE_ROW) await loadStoreRow();
+    // fiche introuvable : on n'a rien à demander, et surtout rien à bloquer
+    if (!STORE_ROW || STORE_ROW.email !== null) return true;
+
     return new Promise(resolve => {
       el('emailGate').classList.add('show');
-      el('egClose').style.display = 'none';
+      el('egTitle').textContent = 'Vos affiches par mail';
+      el('egSub').textContent = 'Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin automatiquement par mail ?';
+      el('egChoices').style.display = 'flex';
+      el('egInputWrap').style.display = 'none';
       el('egCancel').style.display = 'inline-block';
-      const wrap = el('egInputWrap');
-      const choices = el('egChoices');
-      const input = el('egInput');
-      const msg = el('egMsg');
-      const sub = el('egSub');
-      
-      sub.textContent = 'Souhaitez-vous recevoir vos affiches automatiquement par mail ?';
-      choices.style.display = 'flex';
-      wrap.style.display = 'none';
-      input.value = '';
-      msg.textContent = '';
-      
-      el('egYes').onclick = () => { choices.style.display = 'none'; wrap.style.display = 'block'; input.focus(); };
-      el('egCancel').onclick = () => { wrap.style.display = 'none'; choices.style.display = 'flex'; input.value = ''; msg.textContent = ''; };
-      
-      async function saveChoice(val, prefs = null) {
-        msg.className = 'vgate-msg wait'; msg.textContent = 'Enregistrement...';
+      el('egClose').style.display = 'none';
+      el('egOptOutWrap').style.display = 'none';
+      el('egInput').value = '';
+      egMsg('');
+
+      el('egYes').onclick = () => {
+        el('egChoices').style.display = 'none';
+        el('egInputWrap').style.display = 'block';
+        el('egInput').focus();
+      };
+      el('egCancel').onclick = () => {
+        el('egInputWrap').style.display = 'none';
+        el('egChoices').style.display = 'flex';
+        el('egInput').value = '';
+        egMsg('');
+      };
+
+      const terminer = (bascule, texte) => {
+        egMsg(texte, 'ok');
+        setTimeout(() => {
+          // le « oui » réduit le périmètre à SISTO Checker : on recharge pour
+          // que la coque se reconstruise dans le bon profil, plutôt que de
+          // retirer des cartes déjà posées
+          if (bascule) { location.reload(); return; }
+          el('emailGate').classList.remove('show');
+          resolve(true);
+        }, bascule ? 1800 : 1200);
+      };
+
+      el('egNo').onclick = async () => {
+        egMsg('Enregistrement…', 'wait');
         try {
-          const payload = { email: val };
-          if (prefs) payload.mail_prefs = prefs;
-          await sb.from('stores').update(payload).eq('id', CURRENT.storeId);
-          CURRENT.email = val;
-          msg.className = 'vgate-msg ok'; 
-          if (val === 'REFUSE') {
-            msg.textContent = 'Choix enregistré.';
-          } else {
-            msg.textContent = 'Merci, vous recevrez vos affiches automatiquement par mail, bon business.';
-          }
-          setTimeout(() => {
-            el('emailGate').classList.remove('show');
-            resolve(true);
-          }, 2500);
-        } catch (e) {
-          msg.className = 'vgate-msg err'; msg.textContent = 'Erreur : ' + (e.message || e);
-        }
-      }
-      
-      el('egNo').onclick = () => saveChoice('REFUSE');
-      el('egSave').onclick = () => {
-        const val = input.value.trim();
-        if (!val || !val.includes('@')) { msg.className = 'vgate-msg err'; msg.textContent = 'Adresse e-mail invalide.'; return; }
-        const prefs = {
-          tv: document.querySelector('input[name="egFmtTV"]:checked').value,
-          pem: document.querySelector('input[name="egFmtPEM"]:checked').value,
-          cetelem: document.querySelector('input[name="egFmtCET"]:checked').value
-        };
-        saveChoice(val, prefs);
+          const bascule = await egSave(MAIL_REFUSE, null);
+          terminer(bascule, 'Choix enregistré.');
+        } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
+      };
+      el('egSave').onclick = async () => {
+        const val = el('egInput').value.trim();
+        if (!isMail(val)) { egMsg('Adresse e-mail invalide.', 'err'); return; }
+        egMsg('Enregistrement…', 'wait');
+        try {
+          const bascule = await egSave(val, egReadPrefs());
+          terminer(bascule, 'Merci — vos affiches vous seront envoyées par mail.');
+        } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
       };
     });
   }
+
 
   function vgMsg(text, cls) { const m = el('vgMsg'); if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; } }
 
@@ -760,21 +822,14 @@
     const slot = el('srDocs');
     const ribbon = el('statusRibbon');
     if (!slot || !CURRENT) return;
+    // Le ruban est un outil de pilotage : il n'a d'intérêt que pour
+    // l'administrateur. La boucle des documents partagés, elle, tourne pour
+    // tout le monde — c'est elle qui diffuse le numéro de média aux outils.
+    const pourAdmin = CURRENT.role === 'admin';
     const chips = [];
 
-    if (CURRENT.role === 'store' && CURRENT.storeId) {
-      let upd = null, ean = null;
-      try {
-        const { data } = await sb.from('valorisations').select('updated_at, ean_count').eq('store_id', CURRENT.storeId).maybeSingle();
-        if (data) { upd = data.updated_at ? new Date(data.updated_at) : null; ean = data.ean_count; }
-      } catch (e) {}
-      if (!upd) upd = await getValoUpdatedAt(CURRENT.storeId);
-      const st = !upd ? 'never' : (Math.floor((Date.now() - upd.getTime()) / 86400000) > 10 ? 'late' : 'ok');
-      const val = upd
-        ? upd.toLocaleDateString('fr-FR') + (st === 'late' ? ' — à actualiser' : '')
-        : 'non déposée';
-      chips.push({ st, name: 'Valorisation', val });
-    }
+    // (la pastille « Valorisation » ne concernait que le magasin, qui ne voit
+    //  plus le ruban : son état lui est rappelé par le portail de dépôt)
 
     const labels = { 'plan-promo-tv': 'Plan promo TV', 'plan-promo-pem': 'Plan promo PEM', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
     for (const id of Object.keys(SHARED)) {
@@ -796,7 +851,7 @@
     slot.innerHTML = chips.map(c =>
       `<div class="sr-chip"><span class="sr-dot ${c.st}"></span><span class="sr-name">${esc(c.name)}</span><span class="sr-sep">·</span><span>${esc(c.val)}</span></div>`
     ).join('');
-    if (ribbon) ribbon.hidden = false;
+    if (ribbon) ribbon.hidden = !pourAdmin;
   }
 
   function showGate() { const g = el('authGate'); if (g) g.classList.remove('hide'); }
@@ -1392,14 +1447,28 @@
   }
 
   /* ---------- Modale admin : comptes ---------- */
-  async function openAdmin() {
-    syncStoreFields();
+  /* Une seule modale, quatre sections : chaque case de l'accueil administrateur
+     ouvre la sienne. Rien n'est rechargé inutilement — on ne rafraîchit que la
+     section demandée. */
+  const ADM_SECTIONS = {
+    docs:    { titre: '📤 Plans promo & documents partagés', charge: refreshAllSharedStatus },
+    masks:   { titre: '🎭 Masques personnalisés',            charge: refreshMasksList },
+    mail:    { titre: "✉️ Réglages d'envoi des campagnes",   charge: refreshMailSettings },
+    comptes: { titre: '👥 Comptes utilisateurs',             charge: () => { syncStoreFields(); refreshAccounts(); } },
+  };
+  async function openAdmin(section) {
+    const cle = ADM_SECTIONS[section] ? section : 'docs';
+    const conf = ADM_SECTIONS[cle];
+    el('admTitle').textContent = conf.titre;
+    document.querySelectorAll('#adminModal [data-adm]').forEach(bloc => {
+      bloc.style.display = bloc.dataset.adm === cle ? '' : 'none';
+    });
     el('adminModal').classList.add('show');
-    refreshAllSharedStatus();
-    refreshMasksList();
-    refreshMailSettings();
-    refreshAccounts();
+    try { await conf.charge(); } catch (e) { /* la section reste ouverte */ }
   }
+  // ouvertes depuis les cases de l'accueil administrateur (coque)
+  window.openAdminSection = openAdmin;
+  window.openStoresModal = () => openStores();
 
   /* ---------- Réglages d'envoi des campagnes mail (admin) ----------
      Stockés dans la table « app_settings », clé « mail » :

@@ -207,6 +207,45 @@
     return genFrameP;
   }
 
+  /* ---------- Le générateur CETELEM, hors écran lui aussi ----------
+     L'outil « Affiches CETELEM » vit dans un gabarit de la coque
+     (<script type="text/template" id="tool-match">), pas dans un fichier à
+     part : on le recharge donc ici dans NOTRE propre cadre caché, à partir du
+     texte du gabarit. Viser directement l'iframe visible de la coque
+     reviendrait à détourner l'outil que l'administrateur a sous les yeux —
+     sa valorisation et ses résultats seraient écrasés à chaque magasin. */
+  let cetFrameP = null;
+  function getCetelemFrame() {
+    if (cetFrameP) return cetFrameP;
+    cetFrameP = new Promise((res, rej) => {
+      let tpl = null;
+      try { tpl = window.parent.document.getElementById('tool-match'); }
+      catch (e) { /* origine différente : traité juste après */ }
+      if (!tpl) { rej(new Error("générateur CETELEM introuvable dans la coque")); return; }
+
+      const fr = document.createElement('iframe');
+      fr.id = 'cetFrame';
+      fr.title = 'Générateur CETELEM';
+      fr.setAttribute('aria-hidden', 'true');
+      fr.addEventListener('load', () => {
+        // le gabarit charge pdf.js, JSZip et pdf-lib depuis le CDN : on attend
+        // que son script ait publié la fonction avant de rendre la main
+        const t0 = Date.now();
+        (function attendre() {
+          const w = fr.contentWindow;
+          if (w && typeof w.gefecBuildCetelem === 'function') return res(fr);
+          if (Date.now() - t0 > 60000) return rej(new Error("le générateur CETELEM n'a pas démarré"));
+          setTimeout(attendre, 100);
+        })();
+      });
+      fr.addEventListener('error', () => rej(new Error('générateur CETELEM introuvable')));
+      fr.srcdoc = tpl.textContent.replace(/<\\\/script/g, '</script');
+      document.body.appendChild(fr);
+      setTimeout(() => rej(new Error("le générateur CETELEM n'a pas démarré")), 90000);
+    }).catch(e => { cetFrameP = null; throw e; });
+    return cetFrameP;
+  }
+
   const PHASE = {
     libs: 'préparation du générateur…', valo: 'lecture de la valorisation…',
     plans: 'lecture des plans promo…', match: 'croisement plan × valorisation…',
@@ -247,30 +286,24 @@
     }
     
     if (opts.chkCET && plans.plans.cet && plans.plans.cet.length) {
-      let cetWin = null;
-      if (window.parent) {
-        const cetFrame = window.parent.document.querySelector('iframe[data-tpl="tool-match"]');
-        if (cetFrame) cetWin = cetFrame.contentWindow;
-      }
-      if (cetWin && typeof cetWin.gefecBuildCetelem === 'function') {
-        onStep('match', 0, 1); // Indique qu'on traite Cetelem
-        try {
-          const cetRes = await cetWin.gefecBuildCetelem({
-            valo: valoBuffer.slice(0),
-            plans: plans.plans.cet,
-            fmt: opts.storePrefs.cetelem || 'a4',
-            onProgress: onStep
-          });
-          files.push(...cetRes);
-          for (const c of cetRes) {
-            pages += c.pages;
-            products += c.products;
-          }
-        } catch (e) {
-          if (e.message !== 'aucune affiche CETELEM ne correspond à votre valorisation') {
-            throw e;
-          }
+      const cetWin = (await getCetelemFrame()).contentWindow;
+      onStep('match', 0, 1);
+      try {
+        const cetRes = await cetWin.gefecBuildCetelem({
+          valo: valoBuffer.slice(0),
+          plans: plans.plans.cet,
+          fmt: opts.storePrefs.cetelem || 'a4',
+          onProgress: onStep
+        });
+        files.push(...cetRes);
+        for (const c of cetRes) {
+          pages += c.pages;
+          products += c.products;
         }
+      } catch (e) {
+        // « aucune affiche pour ce magasin » n'est pas une panne : le magasin
+        // n'expose simplement aucun produit du dépliant. Tout le reste l'est.
+        if (e.message !== 'aucune affiche CETELEM ne correspond à votre valorisation') throw e;
       }
     }
     
@@ -513,7 +546,8 @@ Ceci est un message automatique, merci de ne pas y répondre.`;
         to, store_id: store.id, store_name: store.name || store.id,
         subject: `Mise à jour de votre valorisation magasin nécessaire`,
         message: msg,
-        files: []
+        files: [],
+        no_attachment: true,   // relance : un message seul, sans affiche jointe
       });
       setStatus(store, 'ok', `Relance envoyée avec succès à ${to}.`);
     } catch (e) {

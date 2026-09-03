@@ -357,9 +357,12 @@ Deno.serve(async (req) => {
         pages: Number(f.pages ?? 0),
         products: Number(f.products ?? 0),
       })) : [];
-    // un test de configuration part sans pièce jointe
-    const isTest = b.test === true;
-    if (!isTest && !wanted.length)
+    // Un envoi sans pièce jointe n'est légitime que dans deux cas, et l'appelant
+    // doit le dire : le test de configuration (⚙️ Réglages) et la relance
+    // « déposez votre valorisation ». Ailleurs, une campagne sans pièce jointe
+    // est une erreur d'appel — mieux vaut la refuser que poster un mail vide.
+    const sansPieces = b.test === true || b.no_attachment === true;
+    if (!sansPieces && !wanted.length)
       return json(400, { error: "Aucune pièce jointe à envoyer." });
 
     const attachments: { filename: string; b64: string; bytes: number }[] = [];

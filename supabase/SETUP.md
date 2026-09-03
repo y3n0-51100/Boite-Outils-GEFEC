@@ -162,10 +162,39 @@ Le bouton **« ✉️ Envoyer un test »**, juste à côté, envoie un vrai mail
 pièce jointe : de quoi valider la voie d'envoi et l'expéditeur avant de lancer
 une campagne sur les 16 magasins.
 
-### 7.5 Les adresses des magasins
-Elles se saisissent **dans l'outil**, sur la ligne de chaque magasin, et sont
-mémorisées sur sa fiche (`stores.email`). Un magasin sans adresse reste visible
-mais sort de l'envoi groupé.
+### 7.5 Les adresses des magasins — c'est le magasin qui décide
+
+Vous n'avez aucune adresse à saisir vous-même. À sa première connexion, juste
+après avoir déposé sa valorisation, chaque magasin voit une question :
+
+> « Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin
+> automatiquement par mail ? »
+
+- **Oui** → il saisit son adresse et le format voulu (A4 ou A5) pour chacun des
+  trois jeux d'affiches. Son périmètre se réduit alors à **SISTO Checker** : la
+  centrale fabrique et lui envoie ses affiches, il n'a plus à les croiser
+  lui-même. Il garde le dépôt de sa valorisation et peut revenir sur son choix
+  à tout moment par **✉️ Mes envois mail**.
+- **Non** → `stores.email` vaut `REFUSE`. L'outil de campagne l'affiche comme
+  « Ne souhaite pas d'affiches par mail » et l'exclut des envois groupés ; le
+  magasin garde ses outils pour imprimer lui-même.
+
+Tant que la question n'a pas été posée, `stores.email` reste `NULL`.
+
+### 7.6 Les migrations complémentaires
+
+Trois scripts se sont ajoutés après la mise en place initiale. Ils sont
+idempotents : les rejouer ne casse rien.
+
+| Script | Ce qu'il fait |
+| --- | --- |
+| [`update-campagne-mail-prefs.sql`](./update-campagne-mail-prefs.sql) | Colonne `stores.mail_prefs` : le format choisi par le magasin pour chaque jeu d'affiches. |
+| [`fix-delete-user.sql`](./fix-delete-user.sql) | Passe les clés étrangères `…_by` en `on delete set null` : sans cela, la suppression d'un compte échouait sur les traces qu'il avait laissées. |
+| [`update-campagne-mail-cetelem.sql`](./update-campagne-mail-cetelem.sql) | Reprend les deux précédents en un seul passage. |
+
+`add-campagne-mail.sql` a par ailleurs gagné la policy **`stores_self_update`**,
+sans laquelle un magasin ne peut pas enregistrer sa propre adresse : si vous
+aviez exécuté ce fichier avant, rejouez-le.
 
 ---
 

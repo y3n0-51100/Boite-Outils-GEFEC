@@ -10,6 +10,10 @@ Le rôle du compte connecté (table `profiles`) décide de l'interface servie �
 `app-auth.js` appelle `applyUserMode()` **avant** que la coque ne charge le
 moindre outil, pour qu'aucun cadre ne démarre dans le mauvais mode.
 
+> Depuis la mise en place de l'envoi automatique, le magasin a **trois états**
+> possibles, décidés par lui-même à la première connexion (voir « Le magasin
+> choisit »). Le tableau ci-dessous décrit le magasin qui imprime lui-même.
+
 | | **Magasin** (`role = store`) | **Administrateur / directeur régional** |
 | --- | --- | --- |
 | Valorisation | **Obligatoire et de moins de 4 semaines** : un portail bloque tout accès tant qu'elle n'est pas déposée | Aucun barrage |
@@ -19,6 +23,8 @@ moindre outil, pour qu'aucun cadre ne démarre dans le mauvais mode.
 | Soldes Magasin | Fichiers Média Centrale **publiés par l'administrateur** (lecture seule) ; le magasin n'apporte que son regroupement | Dépôt libre des deux jeux de fichiers |
 | Affiches par mail | Reçues par le directeur, prêtes à imprimer | **Bouton « ✉️ Affiches »** dans 📂 Valorisations : envoie le PDF de toutes les affiches du magasin |
 | Envoi Campagne Mail | Hors périmètre : carte, onglet et vue retirés du document | **Réservé à l'administrateur** (les directeurs régionaux ne l'ont pas) : la liste des magasins, un bouton par magasin, les affiches en pièces jointes |
+| Ruban d'état (valorisation, documents) | Masqué | Affiché pour l'**administrateur** seul |
+| Accueil | Cartes des outils | **Cases de réglages** : documents, valorisations, campagne, envois, comptes, masques — les outils restent sur la barre d'onglets |
 | Pop-ups | Aucun | Rappels « document partagé » à l'ouverture d'un outil |
 
 Le cloisonnement est **côté interface** : il retire ce qui n'a pas lieu d'être
@@ -132,6 +138,28 @@ Mise en place : exécuter [`supabase/add-affiches-mail.sql`](./supabase/add-affi
 puis déployer la fonction — tout est détaillé dans
 [`supabase/SETUP.md`](./supabase/SETUP.md), étape 6. L'adresse du directeur est
 demandée au premier envoi et mémorisée sur la fiche du magasin.
+
+## Le magasin choisit : imprimer lui-même, ou être servi par mail
+
+À sa première connexion, une fois sa valorisation déposée, le magasin répond à
+une question avant d'atteindre ses outils : **souhaite-t-il recevoir ses
+affiches automatiquement par mail ?** C'est lui qui décide, et l'administrateur
+n'a aucune adresse à saisir.
+
+| Réponse | `stores.email` | Ce que le magasin voit | Ce que l'administrateur voit |
+| --- | --- | --- | --- |
+| Pas encore posée | `NULL` | Le portail s'ouvre après la valorisation | Aucune adresse — le magasin sort des envois groupés |
+| **Oui** + adresse | l'adresse | **SISTO Checker seul**, plus le dépôt de sa valorisation et le choix du format de ses affiches (A4 / A5, par jeu) | Le magasin est prêt : ses affiches partent avec les autres |
+| **Non** | `REFUSE` | Ses outils au complet, pour imprimer lui-même | « Ne souhaite pas d'affiches par mail » — exclu des envois |
+
+Le magasin qui a dit oui n'a plus rien à croiser : la centrale fabrique ses
+affiches et les lui envoie. Son périmètre se réduit donc à ce qui lui reste
+utile. Il revient sur son choix quand il veut par **✉️ Mes envois mail**, qui
+lui rend aussitôt ses outils s'il repasse en manuel.
+
+Le format retenu par chaque magasin (`stores.mail_prefs`) est celui qu'emploie
+l'outil de campagne : c'est le magasin qui décide s'il imprime en A4 ou en A5,
+plan par plan.
 
 ## L'outil « ✉️ Envoi Campagne Mail » (administrateur)
 
