@@ -75,6 +75,24 @@ seule barrière sur les données (valorisations, documents partagés, comptes).
   par l'outil Étiquettes (message `gefec:base-count`) après relecture du
   classeur pour la base déposée à la main — la coque n'embarque pas SheetJS.
 
+#### Source de la base article (secrets GitHub)
+
+Le téléchargement de nuit (`.github/workflows/update-base.yml`) n'embarque
+**aucune URL en clair** : l'adresse du classeur Excel et les identifiants vivent
+dans les secrets du dépôt (Settings → Secrets and variables → Actions) :
+
+| Secret | Contenu |
+| --- | --- |
+| `BASE_URL` | lien de téléchargement direct du classeur Excel de la base article, récupéré depuis le **portail NOSICA** (lien d'export de la base article) |
+| `BASE_USER` | identifiant du compte utilisé pour cet export |
+| `BASE_PASS` | mot de passe associé |
+
+GitHub ne réaffiche **jamais** la valeur d'un secret après sa création : la page
+des secrets ne liste que les noms. Si l'URL est perdue, il faut donc la
+**reprendre depuis le portail NOSICA** puis réenregistrer `BASE_URL` — elle
+n'est récupérable ni depuis ce dépôt, ni depuis les logs d'exécution
+(le workflow masque les secrets).
+
 ### SISTO Checker → Promo Perso
 
 Le passage d'un outil à l'autre se fait par le **stockage local du navigateur**
