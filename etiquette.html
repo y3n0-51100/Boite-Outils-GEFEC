@@ -358,14 +358,28 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
   text-decoration-color:var(--but-red);text-decoration-thickness:.12em;
 }
 .lbl.fa4 .crossed{font-size:14mm;margin-top:2mm}
+/* Produits Star en promo : prix barré + pastille rouge avec le montant de la
+   remise, côte à côte. display:flex (pas inline-flex) : doit toujours passer
+   à la ligne sous le prix en A5 (où .pricegroup est inline-block) ;
+   justify-content:center recentre le contenu, un conteneur flex ne suivant
+   pas le text-align de son parent. */
+.lbl .crossed-row{display:flex;justify-content:center;align-items:baseline;gap:3mm}
+.lbl .discount-badge{
+  background:var(--but-red);color:#fff;font-family:'ArchivoVF';font-weight:900;font-stretch:75%;
+  display:inline-flex;align-items:baseline;border-radius:1mm;line-height:1;white-space:nowrap;
+}
+.lbl .discount-badge .dsign{font-size:.55em;margin-right:.12em}
+.lbl .discount-badge .deur{font-size:.55em;margin-left:.06em}
+.lbl.fa4 .crossed-row{margin-top:5mm}
+.lbl.fa4 .discount-badge{font-size:15mm;padding:2.5mm 6mm}
 .lbl .eco{font-family:'ArchivoVF';font-weight:400;font-stretch:87%;color:var(--but-dark);align-self:flex-start;text-align:left}
 .lbl.fa4 .eco{font-size:4.6mm;margin-top:3mm}
 .lbl .pname{font-family:'ArchivoVF';color:var(--but-dark)}
 .lbl .pcat{font-weight:500;font-stretch:87%}
 .lbl .pref{font-weight:500;font-stretch:87%}
 /* Produits Star : petit repère visuel à côté de la référence, pour que le
-   vendeur sache qu'il s'agit d'un produit star (masque PROMO DU MOMENT
-   inchangé par ailleurs). */
+   vendeur sache qu'il s'agit d'un produit star (BON PLAN ou PROMO DU MOMENT
+   selon le produit — voir labelHtml()). */
 .lbl .star-mark{font-size:.8em;color:var(--but-red);margin-left:1mm;vertical-align:.04em}
 .lbl.fa4 .pname{margin-top:11mm}
 .lbl.fa4 .pcat{font-size:9.5mm;line-height:1.04}
@@ -406,6 +420,8 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 .lbl.fa5 .centcol .eur{font-size:20.8mm;line-height:.72}
 .lbl.fa5 .centcol .cents{font-size:14.8mm;line-height:.9}
 .lbl.fa5 .crossed{font-size:11mm;margin-top:1mm}
+.lbl.fa5 .crossed-row{margin-top:1mm;gap:1.5mm}
+.lbl.fa5 .discount-badge{font-size:7mm;padding:1.2mm 3mm}
 .lbl.fa5 .eco{position:absolute;left:35.3mm;top:calc(var(--boxtop) + 78.4mm);font-size:4.2mm;margin:0}
 /* libellé + code : centrés ; libellé sur 2 lignes max, le code suit dessous */
 .lbl.fa5 .a5namecode{position:absolute;left:0;right:0;top:calc(var(--boxtop) + 84.4mm);padding:0 11mm;text-align:center}
@@ -746,8 +762,9 @@ const state = {
     tv:    { label: 'Plan Promo TV',  icon: '📺', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
     pem:   { label: 'Plan Promo PEM', icon: '🍳', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
     // Produits Star : plan publié par l'admin sous forme de fichier EXCEL (pas
-    // PDF) ; n'imprime jamais que le masque officiel PROMO DU MOMENT (forcé
-    // dans setTpl()), avec un petit repère ★ à côté de la référence.
+    // PDF) ; masque choisi automatiquement par produit dans labelHtml() —
+    // BON PLAN sans promo, PROMO DU MOMENT avec promo (prix barré + remise) —
+    // avec un petit repère ★ à côté de la référence.
     star:  { label: 'Produits Star', icon: '🌟', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
     // Promo Perso : pas de plan promo national à croiser — les produits sont
     // ajoutés directement (recherche ou import d'une liste de codes EAN).
@@ -1351,13 +1368,17 @@ function parseStarWorkbook(arrayBuffer) {
     const basePrice = cols.base != null ? strictCellPrice((row || [])[cols.base]) : null;
     const price = promoPrice != null ? promoPrice : basePrice;
     if (price == null) continue;                                // prix non chiffré (commentaire libre) : ignoré
+    // Prix fond de rayon barré : UNIQUEMENT quand le produit a une vraie
+    // promo (colonne « Prix promo » renseignée) — sinon pas de prix barré,
+    // le prix fond de rayon est déjà le prix affiché (masque BON PLAN).
+    const oldPrice = promoPrice != null ? basePrice : null;
     const { from, to } = cols.validity != null ? parseStarValidity(cells[cols.validity], refYear) : { from: null, to: null };
     products.push({
       key: normCode(ean), ean: padCode(ean),
       name: cleanRef(cols.name != null ? cells[cols.name] : '').slice(0, 90),
       cat: (cols.fam != null ? cells[cols.fam] : '').replace(/\s+/g, ' ').trim().slice(0, 60),
       brand: cols.brand != null ? cells[cols.brand] : '',
-      price, from, to,
+      price, oldPrice, from, to,
     });
   }
   return products;
@@ -1417,7 +1438,7 @@ function renderStep1ForPlan() {
   document.getElementById('step1Hint').innerHTML = isPerso
     ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter, importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN, ou <b>récupérez les EAN filtrés dans SISTO Checker</b> : chaque code trouvé est ajouté tout seul, avec son libellé et son <b>ancien prix</b>. Il ne reste qu'à saisir le <b>prix promo</b> de chacun à l'étape suivante — un outil de promo, ça sert à faire des promos 😉"
     : isStar
-    ? "Le <b>fichier Excel Produits Star</b> (publié par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez ce fichier ici uniquement si vous disposez d'une <b>version plus récente</b>. Les éco-participations sont récupérées automatiquement dans la base article NOSICA. Seul le masque <b>PROMO DU MOMENT</b> est proposé pour les produits star, repérables par une petite étoile ★ à côté de la référence."
+    ? "Le <b>fichier Excel Produits Star</b> (publié par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez ce fichier ici uniquement si vous disposez d'une <b>version plus récente</b>. Les éco-participations sont récupérées automatiquement dans la base article NOSICA. Le masque est choisi <b>automatiquement</b> pour chaque produit — <b>BON PLAN</b> s'il n'y a qu'un prix fond de rayon, <b>PROMO DU MOMENT</b> (prix barré + remise) dès qu'une promo existe — tous repérables par une petite étoile ★ à côté de la référence."
     : "Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.";
 }
 /* Changement d'onglet : tout le flux (étapes 1 à 4) bascule sur le plan choisi */
@@ -1797,7 +1818,9 @@ function doMatch() {
       cat: catFor(p),
       brand: p.brand || '',
       price: p.price,
-      oldPrice: null,
+      // Produits Star : prix fond de rayon barré, posé par parseStarWorkbook
+      // quand le produit a une vraie promo (sinon null, comme TV/PEM).
+      oldPrice: p.oldPrice != null ? p.oldPrice : null,
       eco: state.ecoMap.has(p.key) ? state.ecoMap.get(p.key) : null,
       from: p.from, to: p.to,
       selected: true,
@@ -2036,8 +2059,9 @@ function addBlank() {
    ============================================================ */
 function setTpl(t) {
   if (!PERSO_ONLY && t !== 'bonplan' && t !== 'promo') t = 'bonplan';
-  // Produits Star : uniquement le masque officiel PROMO DU MOMENT
-  if (state.plan === 'star') t = 'promo';
+  // Produits Star : masque choisi automatiquement PAR PRODUIT dans
+  // labelHtml()/buildSheets() — state.tpl n'est pas utilisé pour ce plan
+  // (les deux boutons sont masqués, voir renderTplChoices()).
   state.tpl = t;
   document.querySelectorAll('#tplChoices .choice').forEach(b =>
     b.classList.toggle('active', b.dataset.tpl === t));
@@ -2087,9 +2111,27 @@ window.applyCustomMasks = function (list) {
 function renderTplChoices() {
   const box = document.getElementById('tplChoices');
   if (!box) return;
-  // Produits Star : masque unique PROMO DU MOMENT, le bouton BON PLAN disparaît
+  // Produits Star : le masque n'est plus un choix — il est déterminé
+  // automatiquement PAR PRODUIT (BON PLAN sans promo, PROMO DU MOMENT avec
+  // promo) : les deux boutons disparaissent, remplacés par une note.
+  const isStar = state.plan === 'star';
   const bonplanBtn = document.getElementById('chBonplan');
-  if (bonplanBtn) bonplanBtn.style.display = state.plan === 'star' ? 'none' : '';
+  const promoBtn = document.getElementById('chPromo');
+  if (bonplanBtn) bonplanBtn.style.display = isStar ? 'none' : '';
+  if (promoBtn) promoBtn.style.display = isStar ? 'none' : '';
+  let note = document.getElementById('tplAutoNote');
+  if (isStar) {
+    if (!note) {
+      note = document.createElement('div');
+      note.id = 'tplAutoNote';
+      note.className = 'hint';
+      note.style.margin = '0';
+      box.parentNode.insertBefore(note, box.nextSibling);
+    }
+    note.innerHTML = "Masque géré <b>automatiquement</b> par produit : <b>BON PLAN</b> s'il n'y a qu'un prix fond de rayon, <b>PROMO DU MOMENT</b> (prix barré + remise) dès qu'une promo existe.";
+  } else if (note) {
+    note.remove();
+  }
   box.querySelectorAll('.choice[data-custom]').forEach(b => b.remove());
   // Dans l'outil Plan Promo TV & PEM, seuls les masques officiels BON PLAN et PROMO DU MOMENT sont proposés
   if (!PERSO_ONLY) return;
@@ -2151,7 +2193,11 @@ function printNow() {
 function getMask(key) { return state.masks[key] || DEFAULT_MASKS[key] || null; }
 
 function labelHtml(p, fmtClass) {
-  const tpl = state.tpl;
+  // Produits Star : masque choisi automatiquement PAR PRODUIT (aucun choix
+  // utilisateur) — BON PLAN si prix fond de rayon seul, PROMO DU MOMENT dès
+  // que le produit a une vraie promo (prix barré + pastille de remise).
+  const isStar = state.plan === 'star';
+  const tpl = isStar ? (p && p.oldPrice != null ? 'promo' : 'bonplan') : state.tpl;
   const showDates = document.getElementById('showDates').checked;
   const showBrand = document.getElementById('showBrand').checked;
   const dates = showDates ? validityTextFor(p) : '';
@@ -2171,8 +2217,15 @@ function labelHtml(p, fmtClass) {
             <div class="centcol"><span class="eur">€</span><span class="cents">${esc(price.cents)}</span></div>
           </div>`;
     const crossed = p.oldPrice != null ? `<div class="crossed">${esc(fmtEuroParts(p.oldPrice).euros)}€${esc(fmtEuroParts(p.oldPrice).cents)}</div>` : '';
+    // Produits Star en promo : prix fond de rayon barré + pastille rouge avec
+    // le montant de la remise (calculé, jamais lu dans une colonne du fichier
+    // — garantit un montant toujours cohérent avec les deux prix affichés).
+    const discount = isStar && p.oldPrice != null && p.price != null ? Math.round(p.oldPrice - p.price) : 0;
+    const discountBadge = discount > 0
+      ? `<div class="discount-badge"><span class="dsign">-</span><span class="damount">${discount}</span><span class="deur">€</span></div>` : '';
+    const starCrossedRow = (isStar && crossed) ? `<div class="crossed-row">${crossed}${discountBadge}</div>` : '';
     const catLine = p.cat ? `<div class="pcat">${esc(p.cat)}</div>` : '';
-    const starMark = state.plan === 'star' ? ' <span class="star-mark" title="Produit Star">★</span>' : '';
+    const starMark = isStar ? ' <span class="star-mark" title="Produit Star">★</span>' : '';
     const pname = `<div class="pname">${catLine}<div class="pref">${esc(p.name)}${starMark}</div></div>`;
     const pcode = p.ean ? `<div class="pcode">Code ${esc(p.ean)}</div>` : '';
     const brand = showBrand && p.brand ? `<div class="brand">${esc(p.brand)}</div>` : '';
@@ -2180,9 +2233,21 @@ function labelHtml(p, fmtClass) {
       // Calé sur le bordereau officiel A5 (BDX) : pas de « Prix payé en caisse ».
       // Chaque élément est positionné en absolu aux coordonnées exactes du PDF ;
       // l'éco est sortie du bloc prix pour avoir sa propre position verticale.
-      inner = `<div class="a5price"><div class="pricegroup">${priceRow}</div>${crossed}</div>${eco}<div class="a5namecode">${pname}${pcode}</div>${brand}`;
+      // Star garde la même position que .crossed (calage déjà prévu par
+      // .has-old) : seule la pastille de remise s'ajoute à côté du prix barré.
+      inner = `<div class="a5price"><div class="pricegroup">${priceRow}</div>${starCrossedRow || crossed}</div>${eco}<div class="a5namecode">${pname}${pcode}</div>${brand}`;
+    } else if (starCrossedRow) {
+      // Produits Star en promo (A4) : prix barré + remise AU-DESSUS du prix,
+      // conformément au modèle fourni — le reste de l'affiche est inchangé.
+      inner = `
+      <div class="box">
+        <div class="paid">Prix payé en caisse</div>
+        ${starCrossedRow}
+        <div class="pricegroup">${priceRow}${eco}</div>
+        ${pname}${pcode}${brand}
+      </div>`;
     } else {
-      // A4 : conforme à l'affiche exemple (avec « Prix payé en caisse »)
+      // A4 standard (TV/PEM, Promo Perso, Produits Star sans promo)
       inner = `
       <div class="box">
         <div class="paid">Prix payé en caisse</div>
@@ -2211,22 +2276,36 @@ function labelHtml(p, fmtClass) {
   </div>`;
 }
 
+// Planches A5 (2 produits sur un fond partagé) pour une liste homogène —
+// tous les produits de `list` doivent utiliser le même masque `tpl`.
+function buildA5Sheets(list, tpl) {
+  const sheets = [];
+  const maskKey = `${tpl}-a5`;
+  const useImg = state.printBg && state.useMaskImages && getMask(maskKey);
+  for (let i = 0; i < list.length; i += 2) {
+    const bg = useImg ? `<img class="sheetbg" src="${getMask(maskKey)}" alt="">` : '';
+    sheets.push(`<div class="sheet a5x2">${bg}
+      ${labelHtml(list[i], 'fa5')}
+      ${labelHtml(list[i + 1] || null, 'fa5')}
+    </div>`);
+  }
+  return sheets;
+}
 function buildSheets() {
   const sel = state.products.filter(p => p.selected);
   const sheets = [];
   if (state.fmt === 'a4') {
     for (const p of sel)
       sheets.push(`<div class="sheet a4">${labelHtml(p, 'fa4')}</div>`);
+  } else if (state.plan === 'star') {
+    // Produits Star : masque automatique PAR PRODUIT — un fond A5 est partagé
+    // par 2 produits, donc on ne peut JAMAIS coupler un produit BON PLAN avec
+    // un produit PROMO DU MOMENT sur la même planche : on groupe d'abord par
+    // masque, puis on pagine chaque groupe par paires.
+    sheets.push(...buildA5Sheets(sel.filter(p => p.oldPrice == null), 'bonplan'));
+    sheets.push(...buildA5Sheets(sel.filter(p => p.oldPrice != null), 'promo'));
   } else {
-    const maskKey = `${state.tpl}-a5`;
-    const useImg = state.printBg && state.useMaskImages && getMask(maskKey);
-    for (let i = 0; i < sel.length; i += 2) {
-      const bg = useImg ? `<img class="sheetbg" src="${getMask(maskKey)}" alt="">` : '';
-      sheets.push(`<div class="sheet a5x2">${bg}
-        ${labelHtml(sel[i], 'fa5')}
-        ${labelHtml(sel[i + 1] || null, 'fa5')}
-      </div>`);
-    }
+    sheets.push(...buildA5Sheets(sel, state.tpl));
   }
   return sheets;
 }
@@ -2510,15 +2589,10 @@ window.gefecBuildAffiches = async function (opts) {
   setChk('perProductDates', o.perProductDates !== false);
 
   // 5) toutes les planches, plan après plan (TV, PEM puis Star) — Produits
-  //    Star force toujours le masque PROMO DU MOMENT, quel que soit le choix
-  //    fait pour TV/PEM.
+  //    Star choisit son masque automatiquement par produit (buildSheets),
+  //    indépendamment du choix fait pour TV/PEM.
   const sheets = [];
-  const combinedTpl = state.tpl;
-  for (const p of plans) {
-    if (p.id === 'star') state.tpl = 'promo';
-    sheets.push(...withPlan(p.id, buildSheets));
-    if (p.id === 'star') state.tpl = combinedTpl;
-  }
+  for (const p of plans) sheets.push(...withPlan(p.id, buildSheets));
   say('pdf', 0, sheets.length);
   const blob = await sheetsToPdf(sheets, state.fmt, (i, n) => say('pdf', i, n));
   return {
@@ -2588,17 +2662,13 @@ window.gefecBuildCampagne = async function (opts) {
   setChk('perProductDates', o.perProductDates !== false);
 
   // 5) un fichier par plan : les planches sont montées d'abord (rapide), puis
-  //    rendues, pour que la progression porte sur le total réel de la campagne.
-  //    Produits Star force toujours le masque PROMO DU MOMENT, quel que soit
-  //    le choix fait pour TV/PEM.
+  //    rendues, pour que la progression porte sur le total réel de la
+  //    campagne. Produits Star choisit son masque automatiquement par
+  //    produit (buildSheets), indépendamment du choix fait pour TV/PEM.
   const byPlan = matched.map(p => {
-    const isStar = p.id === 'star';
-    const storeFmt = p.id === 'tv' ? (o.fmtTV || o.fmt) : p.id === 'pem' ? (o.fmtPEM || o.fmt) : isStar ? (o.fmtStar || o.fmt) : o.fmt;
-    const prevTpl = state.tpl;
-    if (isStar) state.tpl = 'promo';
+    const storeFmt = p.id === 'tv' ? (o.fmtTV || o.fmt) : p.id === 'pem' ? (o.fmtPEM || o.fmt) : p.id === 'star' ? (o.fmtStar || o.fmt) : o.fmt;
     state.fmt = (storeFmt === 'a5' && maskHasA5(state.tpl)) ? 'a5' : 'a4';
     const sheets = withPlan(p.id, buildSheets);
-    if (isStar) state.tpl = prevTpl;
     return { ...p, sheets, fmtUsed: state.fmt };
   });
   

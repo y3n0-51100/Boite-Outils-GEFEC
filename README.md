@@ -36,7 +36,7 @@ seule barrière sur les données (valorisations, documents partagés, comptes).
 | Outil | Rôle | Valorisation requise |
 | --- | --- | --- |
 | **Affiches CETELEM** | Sélectionne et imprime les affiches de financement sur les produits exposés (PDF valorisation + ZIP des affiches `EAN_*.pdf`). | Oui |
-| **Plan Promo TV, PEM & Star** | Trois onglets — **Plan Promo TV**, **Plan Promo PEM** et **Produits Star** — croisent chaque plan national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. Les plans TV et PEM sont publiés en PDF, le plan **Produits Star** en **Excel** (fichier « récapitulatif des stars ») ; il n'imprime que le masque **PROMO DU MOMENT**, avec un repère ★ à côté de la référence. | Oui |
+| **Plan Promo TV, PEM & Star** | Trois onglets — **Plan Promo TV**, **Plan Promo PEM** et **Produits Star** — croisent chaque plan national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. Les plans TV et PEM sont publiés en PDF, le plan **Produits Star** en **Excel** (fichier « récapitulatif des stars ») ; le masque est choisi **automatiquement par produit** — BON PLAN sans promo, PROMO DU MOMENT (prix fond de rayon barré + pastille de remise) dès qu'une promo existe — avec un repère ★ à côté de la référence. | Oui |
 | **Promo Perso** | Outil **dissocié** du plan promo national : le magasin compose lui-même sa sélection (recherche dans la base article, import d'une liste de codes EAN, ou **récupération des EAN filtrés dans SISTO Checker**), saisit ses prix promo et imprime les mêmes affiches. | Non |
 | **Soldes Magasin** | Déduplique le listing magasin vs Média Centrale, imprimable. | Non |
 | **Envoi Campagne Mail** | **Administrateur uniquement.** Liste tous les magasins ; pour chacun un bouton qui contrôle la valorisation (**moins de 20 jours**), croise les plans promo publiés, génère **un PDF d'affiches par plan** (TV, PEM et Star) et envoie le mail au magasin avec les PDF **en pièces jointes**. Aucune application tierce. | Oui (celle du magasin visé) |
@@ -52,8 +52,10 @@ seule barrière sur les données (valorisations, documents partagés, comptes).
   masques officiels intégrés). Chargé en iframe par la coque, dans **deux modes**
   qui ne partagent rien à l'écran : `etiquette.html` = **Plan Promo TV, PEM &
   Star** (onglets TV / PEM / Star — le plan **Star** est publié en **Excel**,
-  pas en PDF comme TV/PEM, et n'imprime que le masque PROMO DU MOMENT, avec un
-  repère ★ à côté de la référence), `etiquette.html?plan=perso` = **Promo
+  pas en PDF comme TV/PEM ; le masque est choisi automatiquement par produit
+  — BON PLAN sans promo, PROMO DU MOMENT avec prix barré et pastille de
+  remise dès qu'une promo existe —, avec un repère ★ à côté de la
+  référence), `etiquette.html?plan=perso` = **Promo
   Perso** (outil à part, sa propre carte sur l'accueil, chargé seulement à la
   première ouverture).
   Le paramètre `?mode=simple`, ajouté par la coque pour les comptes magasin,
