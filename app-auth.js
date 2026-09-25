@@ -451,7 +451,7 @@
     eg.innerHTML = `
       <div class="vgate-card">
         <div class="vgate-title" id="egTitle">Vos affiches par mail</div>
-        <div class="vgate-sub" id="egSub">Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin automatiquement par mail ?</div>
+        <div class="vgate-sub" id="egSub">Souhaitez-vous recevoir les plans promo TV, PEM et Star spécifiques à votre magasin automatiquement par mail ?</div>
         <div style="display:flex;gap:12px;margin-top:22px" id="egChoices">
           <button class="gbtn" id="egYes">Oui, je veux les recevoir</button>
           <button class="gbtn alt" id="egNo">Non merci</button>
@@ -469,6 +469,10 @@
           <div class="gate-fmt"><b>Plan PEM</b>
             <label><input type="radio" name="egFmtPEM" value="a4" checked> A4</label>
             <label><input type="radio" name="egFmtPEM" value="a5"> A5 (2 par page)</label>
+          </div>
+          <div class="gate-fmt"><b>Produits Star</b>
+            <label><input type="radio" name="egFmtStar" value="a4" checked> A4</label>
+            <label><input type="radio" name="egFmtStar" value="a5"> A5 (2 par page)</label>
           </div>
           <div class="gate-fmt" style="margin-bottom:20px"><b>CETELEM</b>
             <label><input type="radio" name="egFmtCET" value="a4" checked> A4</label>
@@ -659,7 +663,7 @@
       const r = document.querySelector(`input[name="${name}"]:checked`);
       return r ? r.value : 'a4';
     };
-    return { tv: v('egFmtTV'), pem: v('egFmtPEM'), cetelem: v('egFmtCET') };
+    return { tv: v('egFmtTV'), pem: v('egFmtPEM'), star: v('egFmtStar'), cetelem: v('egFmtCET') };
   }
   function egFillPrefs(prefs) {
     if (!prefs) return;
@@ -669,6 +673,7 @@
     };
     if (prefs.tv) set('egFmtTV', prefs.tv);
     if (prefs.pem) set('egFmtPEM', prefs.pem);
+    if (prefs.star) set('egFmtStar', prefs.star);
     if (prefs.cetelem) set('egFmtCET', prefs.cetelem);
   }
   // -> true si le périmètre servi au magasin vient de changer (donc rechargement)
@@ -740,7 +745,7 @@
     return new Promise(resolve => {
       el('emailGate').classList.add('show');
       el('egTitle').textContent = 'Vos affiches par mail';
-      el('egSub').textContent = 'Souhaitez-vous recevoir le plan promo TV et PEM spécifique à votre magasin automatiquement par mail ?';
+      el('egSub').textContent = 'Souhaitez-vous recevoir les plans promo TV, PEM et Star spécifiques à votre magasin automatiquement par mail ?';
       el('egChoices').style.display = 'flex';
       el('egInputWrap').style.display = 'none';
       el('egCancel').style.display = 'inline-block';
@@ -831,7 +836,7 @@
     // (la pastille « Valorisation » ne concernait que le magasin, qui ne voit
     //  plus le ruban : son état lui est rappelé par le portail de dépôt)
 
-    const labels = { 'plan-promo-tv': 'Plan promo TV', 'plan-promo-pem': 'Plan promo PEM', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
+    const labels = { 'plan-promo-tv': 'Plan promo TV', 'plan-promo-pem': 'Plan promo PEM', 'plan-promo-star': 'Produits Star', 'affiches-cetelem': 'CETELEM', 'medias-soldes': 'Soldes' };
     for (const id of Object.keys(SHARED)) {
       if (!labels[id]) continue; // document hérité : pas de pastille dédiée
       const meta = await fetchSharedMeta(id);
@@ -958,6 +963,10 @@
   const SHARED = {
     'plan-promo-tv':    { name: 'Plan promo TV',           accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoTv', multi: true },
     'plan-promo-pem':   { name: 'Plan promo PEM',          accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoPem', multi: true },
+    // Produits Star : fichier EXCEL (pas PDF), un seul fichier — la sélection
+    // nationale de produits star, croisée avec la valorisation du magasin ;
+    // n'imprime que le masque officiel PROMO DU MOMENT (repère ★ sur l'affiche).
+    'plan-promo-star':  { name: 'Plan Produits Star (fichier Excel)', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoStar' },
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
     'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true, hasMediaNum: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
@@ -967,7 +976,7 @@
     'base-nosica':      { name: 'Base article NOSICA (fichier Excel)', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src^="etiquette.html"]', input: 'adminBaseFile',
                           hint: "À utiliser quand la mise à jour automatique de nuit est en panne ou en retard : déposez le fichier Excel NOSICA téléchargé depuis le portail. Il remplace la base article (éco-participations, libellés, prix de vente) chez tous les magasins, dès leur prochaine connexion." },
   };
-  const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem'], match: 'affiches-cetelem', solde: 'medias-soldes' };
+  const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem', 'plan-promo-star'], match: 'affiches-cetelem', solde: 'medias-soldes' };
   const sharedFiles = {};      // id -> [File, ...] chargés (1 pour les docs simples, N pour multi)
   const sharedLoadedAt = {};   // id -> updated_at injecté
   let modOkAction = null;
@@ -1115,17 +1124,17 @@
     return w === 1 ? 'il y a 1 semaine' : `il y a ${w} semaines`;
   }
   const MODULE_TITLE = {
-    etiquette: '🏷️ Plans Promo TV & PEM',
+    etiquette: '🏷️ Plans Promo TV, PEM & Star',
     match: '📄 Affiches CETELEM',
     solde: '🧮 Soldes — Média Centrale',
   };
   const MODULE_NOTE = {
-    etiquette: "Chaque plan publié est déjà chargé dans son onglet (TV / PEM) avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers » : elle sera reconnue et rangée dans le bon onglet.",
+    etiquette: "Chaque plan publié est déjà chargé dans son onglet (TV / PEM / Star) avec la valorisation de votre magasin : vous pouvez croiser et imprimer directement. Si vous avez une version plus récente, déposez-la dans l'étape « Chargez vos fichiers » : elle sera reconnue et rangée dans le bon onglet.",
     match: "Le dépliant CETELEM publié par la centrale est déjà chargé dans l'outil : vous pouvez générer vos affiches directement. Déposez votre propre dépliant (PDF ou ZIP) si vous en avez un plus récent.",
     solde: "Les fichiers Média Centrale sont déjà chargés. Ajoutez vos fichiers de regroupement magasin, puis lancez « Analyser et générer ».",
   };
   const MODULE_NOTE_EMPTY = {
-    etiquette: "Aucun plan promo publié pour le moment. Vous pouvez déposer vos propres plans promo TV et PEM dans l'outil.",
+    etiquette: "Aucun plan promo publié pour le moment. Vous pouvez déposer vos propres plans promo TV et PEM dans l'outil (le plan Produits Star est un fichier Excel, à déposer dans son propre onglet).",
     match: "Aucun dépliant CETELEM publié par l'administrateur. Vous pouvez déposer votre propre dépliant (PDF de la centrale ou ZIP) dans l'outil.",
     solde: "Aucun fichier Média Centrale publié. Vous pouvez déposer vos propres fichiers dans l'outil.",
   };
@@ -1833,12 +1842,12 @@
   // un envoi groupé ne relit pas les mêmes PDF magasin après magasin.
   let planCache = null;
   async function planFilesForExport() {
+    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo-star', 'plan-promo'];
     const metas = {};
-    for (const id of ['plan-promo-tv', 'plan-promo-pem', 'plan-promo']) metas[id] = await fetchSharedMeta(id);
-    const token = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo']
-      .map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
+    for (const id of ids) metas[id] = await fetchSharedMeta(id);
+    const token = ids.map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
     if (planCache && planCache.token === token) return planCache;
-    const plans = { tv: [], pem: [], auto: [] }, labels = [];
+    const plans = { tv: [], pem: [], star: [], auto: [] }, labels = [];
     const hasNew = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
     const pick = async (id, slot, label) => {
       const m = metas[id];
@@ -1851,10 +1860,11 @@
     };
     await pick('plan-promo-tv', 'tv', 'Plan Promo TV');
     await pick('plan-promo-pem', 'pem', 'Plan Promo PEM');
+    await pick('plan-promo-star', 'star', 'Produits Star');
     // transition : l'ancien plan unique ne sert que si aucun des deux nouveaux
     // n'est publié (le moteur reconnaît alors lui-même le type de chaque PDF)
     if (!hasNew) await pick('plan-promo', 'auto', 'Plan promo (format unique)');
-    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.auto.length };
+    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.star.length + plans.auto.length };
     return planCache;
   }
 
@@ -1981,7 +1991,7 @@
       const plans = await planFilesForExport();
       if (!plans.count) {
         st.className = 'gmsg err';
-        st.textContent = "Aucun plan promo publié : déposez d'abord les plans TV et/ou PEM dans ⚙️ Réglages.";
+        st.textContent = "Aucun plan promo publié : déposez d'abord les plans TV, PEM et/ou Star dans ⚙️ Réglages.";
       } else {
         st.className = 'gmsg ok';
         st.textContent = `Plans pris en compte : ${plans.labels.join(' + ')} — ${plans.count} fichier(s).`;
@@ -2033,7 +2043,7 @@
     let done = 0, failed = 0, manual = 0, stop = '', lastError = '';
     try {
       const plans = await planFilesForExport();
-      if (!plans.count) throw new Error("aucun plan promo publié : déposez les plans TV et/ou PEM dans ⚙️ Réglages");
+      if (!plans.count) throw new Error("aucun plan promo publié : déposez les plans TV, PEM et/ou Star dans ⚙️ Réglages");
       const plansLabel = plans.labels.join(' + ');
 
       for (const job of jobs) {

@@ -17,8 +17,8 @@ moindre outil, pour qu'aucun cadre ne démarre dans le mauvais mode.
 | | **Magasin** (`role = store`) | **Administrateur / directeur régional** |
 | --- | --- | --- |
 | Valorisation | **Obligatoire et de moins de 4 semaines** : un portail bloque tout accès tant qu'elle n'est pas déposée | Aucun barrage |
-| Outils servis | Affiches CETELEM · Plan Promo TV & PEM · Soldes Magasin | Les cinq outils magasin + **Envoi Campagne Mail** (administrateur seul) |
-| Plan Promo | Onglets TV / PEM, **trois choix** (type d'affiche, format, papier) et l'aperçu — croisement automatique, ni fichiers ni tableau produits ni réglages | Outil complet (étapes 1 à 4) |
+| Outils servis | Affiches CETELEM · Plan Promo TV, PEM & Star · Soldes Magasin | Les cinq outils magasin + **Envoi Campagne Mail** (administrateur seul) |
+| Plan Promo | Onglets TV / PEM / Star, **trois choix** (type d'affiche, format, papier) et l'aperçu — croisement automatique, ni fichiers ni tableau produits ni réglages | Outil complet (étapes 1 à 4) |
 | Promo Perso · SISTO Checker | Hors périmètre : carte, onglet et vue retirés du document | Accessibles |
 | Soldes Magasin | Fichiers Média Centrale **publiés par l'administrateur** (lecture seule) ; le magasin n'apporte que son regroupement | Dépôt libre des deux jeux de fichiers |
 | Affiches par mail | Reçues par le directeur, prêtes à imprimer | **Bouton « ✉️ Affiches »** dans 📂 Valorisations : envoie le PDF de toutes les affiches du magasin |
@@ -36,10 +36,10 @@ seule barrière sur les données (valorisations, documents partagés, comptes).
 | Outil | Rôle | Valorisation requise |
 | --- | --- | --- |
 | **Affiches CETELEM** | Sélectionne et imprime les affiches de financement sur les produits exposés (PDF valorisation + ZIP des affiches `EAN_*.pdf`). | Oui |
-| **Plan Promo TV & PEM** | Deux onglets — **Plan Promo TV** et **Plan Promo PEM** — croisent chaque plan promo national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. | Oui |
+| **Plan Promo TV, PEM & Star** | Trois onglets — **Plan Promo TV**, **Plan Promo PEM** et **Produits Star** — croisent chaque plan national avec le stock magasin et impriment les affiches prix **BON PLAN** / **PROMO DU MOMENT** (A4 et A5), fidèles à la charte BUT. Les plans TV et PEM sont publiés en PDF, le plan **Produits Star** en **Excel** (fichier « récapitulatif des stars ») ; il n'imprime que le masque **PROMO DU MOMENT**, avec un repère ★ à côté de la référence. | Oui |
 | **Promo Perso** | Outil **dissocié** du plan promo national : le magasin compose lui-même sa sélection (recherche dans la base article, import d'une liste de codes EAN, ou **récupération des EAN filtrés dans SISTO Checker**), saisit ses prix promo et imprime les mêmes affiches. | Non |
 | **Soldes Magasin** | Déduplique le listing magasin vs Média Centrale, imprimable. | Non |
-| **Envoi Campagne Mail** | **Administrateur uniquement.** Liste tous les magasins ; pour chacun un bouton qui contrôle la valorisation (**moins de 20 jours**), croise les plans promo publiés, génère **un PDF d'affiches par plan** (TV et PEM) et envoie le mail au magasin avec les deux PDF **en pièces jointes**. Aucune application tierce. | Oui (celle du magasin visé) |
+| **Envoi Campagne Mail** | **Administrateur uniquement.** Liste tous les magasins ; pour chacun un bouton qui contrôle la valorisation (**moins de 20 jours**), croise les plans promo publiés, génère **un PDF d'affiches par plan** (TV, PEM et Star) et envoie le mail au magasin avec les PDF **en pièces jointes**. Aucune application tierce. | Oui (celle du magasin visé) |
 | **SISTO Checker** | Relit l'édition PDF « Situation Stocks des Encours Fournisseurs » du magasin et permet de **filtrer et trier** les références sur tous leurs critères : stock expo / dépôt, disponible à la vente, disponible à terme, commandes, média, gamme, famille, marque, verrouillage, ventes M à M-3, prix, marge… Export CSV et impression. Le bouton **« ⭐ Envoyer vers Promo Perso »** enregistre les EAN du filtre courant pour les récupérer d'un clic dans **Promo Perso**. | Non |
 
 ## Architecture
@@ -50,9 +50,12 @@ seule barrière sur les données (valorisations, documents partagés, comptes).
   sont automatiquement rebasculés en charte claire par injection de variables CSS.
 - `etiquette.html` — le moteur d'étiquettes complet et autonome (polices et
   masques officiels intégrés). Chargé en iframe par la coque, dans **deux modes**
-  qui ne partagent rien à l'écran : `etiquette.html` = **Plan Promo TV & PEM**
-  (onglets TV / PEM), `etiquette.html?plan=perso` = **Promo Perso** (outil à part,
-  sa propre carte sur l'accueil, chargé seulement à la première ouverture).
+  qui ne partagent rien à l'écran : `etiquette.html` = **Plan Promo TV, PEM &
+  Star** (onglets TV / PEM / Star — le plan **Star** est publié en **Excel**,
+  pas en PDF comme TV/PEM, et n'imprime que le masque PROMO DU MOMENT, avec un
+  repère ★ à côté de la référence), `etiquette.html?plan=perso` = **Promo
+  Perso** (outil à part, sa propre carte sur l'accueil, chargé seulement à la
+  première ouverture).
   Le paramètre `?mode=simple`, ajouté par la coque pour les comptes magasin,
   réduit l'outil à l'écran d'impression : barre d'étapes, panneau fichiers,
   tableau produits et réglages sont masqués (les nœuds restent en place, le

@@ -363,6 +363,10 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 .lbl .pname{font-family:'ArchivoVF';color:var(--but-dark)}
 .lbl .pcat{font-weight:500;font-stretch:87%}
 .lbl .pref{font-weight:500;font-stretch:87%}
+/* Produits Star : petit repère visuel à côté de la référence, pour que le
+   vendeur sache qu'il s'agit d'un produit star (masque PROMO DU MOMENT
+   inchangé par ailleurs). */
+.lbl .star-mark{font-size:.8em;color:var(--but-red);margin-left:1mm;vertical-align:.04em}
 .lbl.fa4 .pname{margin-top:11mm}
 .lbl.fa4 .pcat{font-size:9.5mm;line-height:1.04}
 .lbl.fa4 .pref{font-size:7mm;line-height:1.05;margin-top:1.5mm}
@@ -459,7 +463,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 <header class="app">
   <div class="logo">BUT</div>
   <div>
-    <h1 id="appTitle">PLAN PROMO TV &amp; PEM</h1>
+    <h1 id="appTitle">PLAN PROMO TV, PEM &amp; STAR</h1>
     <div class="sub" id="appSub">Croisement des plans promo nationaux × stock magasin → impression des affiches prix</div>
   </div>
 </header>
@@ -472,6 +476,7 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 <nav class="plans" role="tablist" id="planTabs">
   <button id="tabTv" class="active" role="tab" onclick="setPlan('tv')">📺 Plan Promo TV <span class="badge" id="badgeTv">0</span></button>
   <button id="tabPem" role="tab" onclick="setPlan('pem')">🍳 Plan Promo PEM <span class="badge" id="badgePem">0</span></button>
+  <button id="tabStar" role="tab" onclick="setPlan('star')">🌟 Produits Star <span class="badge" id="badgeStar">0</span></button>
   <button id="tabPerso" role="tab" onclick="setPlan('perso')">⭐ Promo Perso <span class="badge" id="badgePerso">0</span></button>
 </nav>
 <div class="plansep"></div>
@@ -503,6 +508,17 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
         <div class="status" id="stPromo"></div>
         <div class="status" id="stPromoTv"></div>
         <div class="status" id="stPromoPem"></div>
+      </div>
+      <!-- Produits Star : fichier EXCEL publié par l'administrateur (pas de PDF) -->
+      <div class="drop" id="dropPromoStar" style="display:none">
+        <div class="ic">🌟</div>
+        <div class="t">Produits Star (fichier Excel)</div>
+        <div class="d">Classeur Excel « Récapitulatif des Stars » : la sélection nationale de produits star. Déposez-le ici uniquement si vous disposez d'une version plus récente que celle publiée par l'administrateur.</div>
+        <button class="btn small" onclick="document.getElementById('filePromoStarManual').click()">Choisir le fichier</button>
+        <input type="file" id="filePromoStarManual" accept=".xlsx,.xls,.csv">
+        <!-- entrée dédiée à l'injection du fichier partagé par l'admin -->
+        <input type="file" id="filePromoStar" accept=".xlsx,.xls,.csv" hidden>
+        <div class="status" id="stPromoStar"></div>
       </div>
       <!-- Valorisation fournie depuis l'accueil de la suite : carte masquée, l'input reste pour l'injection -->
       <div class="drop" id="dropValo" style="display:none" aria-hidden="true">
@@ -729,6 +745,10 @@ const state = {
   plans: {
     tv:    { label: 'Plan Promo TV',  icon: '📺', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
     pem:   { label: 'Plan Promo PEM', icon: '🍳', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
+    // Produits Star : plan publié par l'admin sous forme de fichier EXCEL (pas
+    // PDF) ; n'imprime jamais que le masque officiel PROMO DU MOMENT (forcé
+    // dans setTpl()), avec un petit repère ★ à côté de la référence.
+    star:  { label: 'Produits Star', icon: '🌟', promoProducts: [], promoFileName: '', products: [], _autoMatched: false },
     // Promo Perso : pas de plan promo national à croiser — les produits sont
     // ajoutés directement (recherche ou import d'une liste de codes EAN).
     perso: { label: 'Promo Perso',    icon: '⭐', promoProducts: [], promoFileName: '', products: [], _autoMatched: true },
@@ -1236,26 +1256,138 @@ function parseBaseWorkbook(arrayBuffer) {
   return { eco, info, refs };
 }
 
+/* ------------------------------------------------------------------
+   PRODUITS STAR — fichier Excel « Récapitulatif des Stars » publié par
+   l'administrateur. L'onglet récapitulatif regroupe plusieurs blocs
+   GROUPE N, chacun avec sa PROPRE ligne d'en-tête (les colonnes présentes
+   varient d'un groupe à l'autre : certains n'ont pas de « Prix promo »,
+   d'autres ajoutent MEDIA…) — la lecture se fait donc par en-tête détecté,
+   jamais par position de colonne fixe (même principe que parseBaseWorkbook).
+   Les éco-participations ne sont PAS dans ce fichier : comme pour TV/PEM,
+   elles sont croisées ensuite via state.ecoMap (base NOSICA) dans doMatch(). */
+const STAR_MONTHS = {
+  janvier: 0, fevrier: 1, mars: 2, avril: 3, mai: 4, juin: 5, juillet: 6,
+  aout: 7, septembre: 8, octobre: 9, novembre: 10, decembre: 11,
+};
+function stripAccents(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+/* Un prix cellule Excel valide UNIQUEMENT : un nombre, ou une chaîne qui
+   n'est RIEN d'autre qu'un montant (ex. « 299,99 » ou « 299,99€ »). Les
+   commentaires libres du fichier (« reste en net à 319,99€ jusqu'au 9
+   Octobre ») contiennent aussi un motif de prix mais ne doivent JAMAIS être
+   imprimés sur une affiche : on exige une correspondance de la cellule
+   ENTIÈRE, pas une simple présence dans le texte. */
+function strictCellPrice(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  const s = String(v).trim().replace(/\s/g, '').replace(/€$/, '');
+  const m = s.match(/^(\d+)[,.](\d{2})$/);
+  return m ? parseInt(m[1]) + parseInt(m[2]) / 100 : null;
+}
+/* Dates de validité en texte libre, jamais avec année : « du 25 Septembre au
+   26 Octobre », « Du Mardi 4 Aout au Jeudi 3 Decembre », « Jusqu'au 22
+   Octobre ». L'année est déduite du titre de l'onglet (« … AU 25 SEPTEMBRE
+   2026 »), avec bascule sur l'année suivante pour la date de fin si son
+   mois précède celui de la date de début (période à cheval sur l'année). */
+function parseStarValidity(text, refYear) {
+  const t = stripAccents(String(text || '')).toLowerCase();
+  const re = new RegExp('(\\d{1,2})\\s+(' + Object.keys(STAR_MONTHS).join('|') + ')', 'g');
+  const hits = [];
+  let m;
+  while ((m = re.exec(t))) hits.push({ day: +m[1], month: STAR_MONTHS[m[2]] });
+  if (!hits.length) return { from: null, to: null };
+  const toIso = (day, month, year) => `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  if (hits.length === 1) return { from: null, to: toIso(hits[0].day, hits[0].month, refYear) };
+  const first = hits[0], last = hits[hits.length - 1];
+  const endYear = last.month < first.month ? refYear + 1 : refYear;
+  return { from: toIso(first.day, first.month, refYear), to: toIso(last.day, last.month, endYear) };
+}
+const STAR_HEAD_RE = {
+  fam: /^SOUS\s*FAMILLE$/i, brand: /^MARQUE$/i, name: /^LIBELL/i,
+  ean: /^CODE\s*EAN$/i, base: /^PRIX\s*FOND/i, promo: /^PRIX\s*PROMO$/i, validity: /^VALIDIT/i,
+};
+function parseStarWorkbook(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  // l'onglet récapitulatif porte le titre « RECAPITULATIF DES STARS … » en
+  // 1re ligne ; à défaut (mise en forme différente), on prend le 1er onglet
+  // (c'est déjà, dans les faits, l'onglet récapitulatif du fichier officiel).
+  const hasTitle = n => (XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true })[0] || [])
+    .some(c => /RECAPITULATIF/i.test(stripAccents(String(c || ''))));
+  const sheetName = wb.SheetNames.find(hasTitle) || wb.SheetNames[0];
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true });
+  let refYear = new Date().getFullYear();
+  for (const row of rows) {
+    const joined = (row || []).map(c => String(c || '')).join(' ');
+    const y = /RECAPITULATIF/i.test(stripAccents(joined)) && joined.match(/(20\d{2})/);
+    if (y) { refYear = +y[1]; break; }
+  }
+  const products = [];
+  let cols = null;      // colonnes détectées pour le bloc GROUPE courant
+  let exStar = false;   // section « EX STAR » : produits retirés, ignorés
+  for (const row of rows) {
+    const cells = (row || []).map(c => (c == null ? '' : String(c).trim()));
+    const first = stripAccents(cells[0] || '').toUpperCase();
+    if (!cells.some(c => c)) continue;                          // ligne vide
+    if (/^GROUPE\b/.test(first)) { cols = null; exStar = false; continue; }
+    if (first === 'STARS') continue;
+    if (/^EX\s*STAR/.test(first)) { exStar = true; continue; }
+    if (STAR_HEAD_RE.fam.test(cells[0] || '')) {                // (nouvelle) ligne d'en-tête
+      cols = {};
+      cells.forEach((h, i) => {
+        if (STAR_HEAD_RE.brand.test(h)) cols.brand = i;
+        else if (STAR_HEAD_RE.name.test(h)) cols.name = i;
+        else if (STAR_HEAD_RE.ean.test(h)) cols.ean = i;
+        else if (STAR_HEAD_RE.promo.test(h)) cols.promo = i;
+        else if (STAR_HEAD_RE.base.test(h)) cols.base = i;
+        else if (STAR_HEAD_RE.validity.test(h)) cols.validity = i;
+      });
+      cols.fam = 0;
+      exStar = false;
+      continue;
+    }
+    if (!cols || cols.ean == null || exStar) continue;
+    const ean = cells[cols.ean];
+    if (!/^\d{8,13}$/.test(ean)) continue;                      // pas une ligne produit exploitable
+    const promoPrice = cols.promo != null ? strictCellPrice((row || [])[cols.promo]) : null;
+    const basePrice = cols.base != null ? strictCellPrice((row || [])[cols.base]) : null;
+    const price = promoPrice != null ? promoPrice : basePrice;
+    if (price == null) continue;                                // prix non chiffré (commentaire libre) : ignoré
+    const { from, to } = cols.validity != null ? parseStarValidity(cells[cols.validity], refYear) : { from: null, to: null };
+    products.push({
+      key: normCode(ean), ean: padCode(ean),
+      name: cleanRef(cols.name != null ? cells[cols.name] : '').slice(0, 90),
+      cat: (cols.fam != null ? cells[cols.fam] : '').replace(/\s+/g, ' ').trim().slice(0, 60),
+      brand: cols.brand != null ? cells[cols.brand] : '',
+      price, from, to,
+    });
+  }
+  return products;
+}
+
 function setLoaded(dropId, statusId, msg) {
   document.getElementById(dropId).classList.add('loaded');
   document.getElementById(statusId).textContent = msg;
   updateMatchBtn();
 }
-/* Statuts de chargement des deux plans (affichés dans la zone de dépôt) + badges d'onglets */
+/* Statuts de chargement des plans (affichés dans la zone de dépôt) + badges d'onglets */
+const PROMO_STATUS_EL = { tv: 'stPromoTv', pem: 'stPromoPem', star: 'stPromoStar' };
+const PROMO_TAB_EL = { tv: 'tabTv', pem: 'tabPem', star: 'tabStar' };
+const PROMO_BADGE_EL = { tv: 'badgeTv', pem: 'badgePem', star: 'badgeStar' };
 function renderPlanStatus() {
-  for (const t of ['tv', 'pem']) {
+  for (const t of ['tv', 'pem', 'star']) {
     const pl = state.plans[t];
-    const stEl = document.getElementById(t === 'tv' ? 'stPromoTv' : 'stPromoPem');
+    const stEl = document.getElementById(PROMO_STATUS_EL[t]);
     if (stEl) stEl.textContent = pl.promoProducts.length
       ? `${pl.icon} ${pl.label} : ✅ ${pl.promoProducts.length} produit(s) — ${pl.promoFileName}`
       : `${pl.icon} ${pl.label} : aucun fichier chargé`;
-    const tab = document.getElementById(t === 'tv' ? 'tabTv' : 'tabPem');
-    const badge = document.getElementById(t === 'tv' ? 'badgeTv' : 'badgePem');
+    const tab = document.getElementById(PROMO_TAB_EL[t]);
+    const badge = document.getElementById(PROMO_BADGE_EL[t]);
     if (badge) badge.textContent = pl.products.length || pl.promoProducts.length || 0;
     if (tab) tab.classList.toggle('has-data', !!pl.promoProducts.length);
   }
   if (state.plans.tv.promoProducts.length || state.plans.pem.promoProducts.length)
     document.getElementById('dropPromo').classList.add('loaded');
+  if (state.plans.star.promoProducts.length)
+    document.getElementById('dropPromoStar').classList.add('loaded');
   // Promo Perso : le badge reflète simplement le nombre de produits ajoutés
   // (pas de « plan promo » à croiser, donc pas de statut de fichier national)
   const plPerso = state.plans.perso;
@@ -1271,15 +1403,21 @@ function renderPlanStatus() {
    import de codes EAN » (Promo Perso) — un seul est visible selon l'onglet. */
 function renderStep1ForPlan() {
   const isPerso = state.plan === 'perso';
+  const isStar = state.plan === 'star';
   document.getElementById('tvPemDrops').style.display = isPerso ? 'none' : '';
   document.getElementById('matchAction').style.display = isPerso ? 'none' : '';
   document.getElementById('personaBlock').style.display = isPerso ? 'block' : 'none';
+  document.getElementById('dropPromo').style.display = isStar ? 'none' : '';
+  document.getElementById('dropPromoStar').style.display = isStar ? '' : 'none';
   document.getElementById('step1Title').textContent = isPerso
     ? '⭐ Composez votre sélection Promo Perso'
+    : isStar ? '📂 Chargez le fichier Produits Star'
     : '📂 Chargez vos fichiers';
   if (isPerso) renderSistoSelectionStatus();
   document.getElementById('step1Hint').innerHTML = isPerso
     ? "Recherchez un produit (EAN13 ou libellé) pour l'ajouter, importez un fichier <b>PDF ou Excel</b> contenant une liste de codes EAN, ou <b>récupérez les EAN filtrés dans SISTO Checker</b> : chaque code trouvé est ajouté tout seul, avec son libellé et son <b>ancien prix</b>. Il ne reste qu'à saisir le <b>prix promo</b> de chacun à l'étape suivante — un outil de promo, ça sert à faire des promos 😉"
+    : isStar
+    ? "Le <b>fichier Excel Produits Star</b> (publié par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez ce fichier ici uniquement si vous disposez d'une <b>version plus récente</b>. Les éco-participations sont récupérées automatiquement dans la base article NOSICA. Seul le masque <b>PROMO DU MOMENT</b> est proposé pour les produits star, repérables par une petite étoile ★ à côté de la référence."
     : "Les <b>plans promo TV et PEM</b> (publiés par l'administrateur) et la <b>valorisation de votre magasin</b> sont chargés <b>automatiquement</b> : vous pouvez croiser et imprimer directement. Déposez un plan promo ici uniquement si vous disposez d'une <b>version plus récente</b> : le fichier est <b>reconnu automatiquement</b> (TV ou PEM) et rangé dans le bon onglet. L'outil croise les références pour ne garder que les produits exposés chez vous et concernés par une offre.";
 }
 /* Changement d'onglet : tout le flux (étapes 1 à 4) bascule sur le plan choisi */
@@ -1288,8 +1426,12 @@ function setPlan(t) {
   state.plan = t;
   document.getElementById('tabTv').classList.toggle('active', t === 'tv');
   document.getElementById('tabPem').classList.toggle('active', t === 'pem');
+  document.getElementById('tabStar').classList.toggle('active', t === 'star');
   document.getElementById('tabPerso').classList.toggle('active', t === 'perso');
   renderStep1ForPlan();
+  // Produits Star : masque unique PROMO DU MOMENT (bouton BON PLAN masqué)
+  renderTplChoices();
+  if (t === 'star') setTpl('promo');
   // Promo Perso n'a pas de croisement automatique qui justifie de sauter à
   // l'étape 2 : on atterrit toujours sur l'étape 1 pour composer la sélection
   // (contrairement à TV/PEM, où rester sur l'étape en cours a du sens quand
@@ -1311,7 +1453,7 @@ function updateMatchBtn() {
    ouvre l'étape 2 ; l'autre onglet est croisé silencieusement en arrière-plan. */
 function autoMatchPlans() {
   if (!state.storeKeys.size) return;
-  for (const t of ['tv', 'pem']) {
+  for (const t of ['tv', 'pem', 'star']) {
     const pl = state.plans[t];
     if (!pl.promoProducts.length || pl._autoMatched || pl.products.length) continue;
     pl._autoMatched = true;
@@ -1376,7 +1518,7 @@ async function handlePromoFile(files, forcedType) {
 async function handleValoFile(file) {
   document.getElementById('stValo').textContent = '⏳ Analyse du PDF…';
   try {
-    if (file.name && (state.plans.tv.promoFileName.includes(file.name) || state.plans.pem.promoFileName.includes(file.name)))
+    if (file.name && (state.plans.tv.promoFileName.includes(file.name) || state.plans.pem.promoFileName.includes(file.name) || state.plans.star.promoFileName.includes(file.name)))
       toast('⚠️ Attention : c\'est le même fichier qu\'un plan promo !', 6000);
     const pages = await extractPdfRows(file);
     const { keys, names } = parseValoPdf(pages);
@@ -1388,6 +1530,32 @@ async function handleValoFile(file) {
   } catch (e) {
     document.getElementById('stValo').textContent = '';
     toast('❌ Valorisation : ' + e.message);
+  }
+}
+/* Produits Star : fichier Excel (contrairement à TV/PEM, jamais un PDF) —
+   même logique de dépôt que handlePromoFile, mais un seul plan, un seul
+   fichier, et un parseur dédié (parseStarWorkbook). */
+async function handleStarFile(file) {
+  const st = document.getElementById('stPromoStar');
+  st.textContent = '⏳ Analyse du fichier…';
+  try {
+    if (file.name && file.name === state.valoFileName)
+      toast('⚠️ Attention : « ' + file.name + ' » est le même fichier que la valorisation !', 6000);
+    const buf = await file.arrayBuffer();
+    const prods = parseStarWorkbook(buf);
+    if (!prods.length) throw new Error('Aucun produit star trouvé dans ce fichier.');
+    const pl = state.plans.star;
+    pl.promoProducts = prods;
+    pl.promoFileName = file.name || 'Excel';
+    // nouveau jeu de produits star → on ré-autorise le croisement automatique
+    pl.products = [];
+    pl._autoMatched = false;
+    st.textContent = '';
+    renderPlanStatus();
+    setLoaded('dropPromoStar', 'stPromoStar', '');
+  } catch (e) {
+    st.textContent = '';
+    toast('❌ Produits Star : ' + e.message);
   }
 }
 function setBaseStatus(msg) {
@@ -1562,6 +1730,7 @@ function bindDrop(dropId, inputId, handler) {
   drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) handler(pick(e.dataTransfer.files)); });
 }
 bindDrop('dropPromo', 'filePromo', handlePromoFile);
+bindDrop('dropPromoStar', 'filePromoStarManual', handleStarFile);
 bindDrop('dropValo', 'fileValo', handleValoFile);
 bindDrop('dropPersoFile', 'filePersoList', handlePersoListFile);
 // entrées dédiées aux plans partagés publiés par l'admin : type imposé,
@@ -1571,6 +1740,9 @@ document.getElementById('filePromoTv').addEventListener('change', e => {
 });
 document.getElementById('filePromoPem').addEventListener('change', e => {
   if (e.target.files.length) handlePromoFile([...e.target.files], 'pem');
+});
+document.getElementById('filePromoStar').addEventListener('change', e => {
+  if (e.target.files[0]) handleStarFile(e.target.files[0]);
 });
 document.getElementById('adminBaseFile').addEventListener('change', e => {
   if (e.target.files[0]) handleBaseFile(e.target.files[0], e.target.files[0].name);
@@ -1864,6 +2036,8 @@ function addBlank() {
    ============================================================ */
 function setTpl(t) {
   if (!PERSO_ONLY && t !== 'bonplan' && t !== 'promo') t = 'bonplan';
+  // Produits Star : uniquement le masque officiel PROMO DU MOMENT
+  if (state.plan === 'star') t = 'promo';
   state.tpl = t;
   document.querySelectorAll('#tplChoices .choice').forEach(b =>
     b.classList.toggle('active', b.dataset.tpl === t));
@@ -1913,6 +2087,9 @@ window.applyCustomMasks = function (list) {
 function renderTplChoices() {
   const box = document.getElementById('tplChoices');
   if (!box) return;
+  // Produits Star : masque unique PROMO DU MOMENT, le bouton BON PLAN disparaît
+  const bonplanBtn = document.getElementById('chBonplan');
+  if (bonplanBtn) bonplanBtn.style.display = state.plan === 'star' ? 'none' : '';
   box.querySelectorAll('.choice[data-custom]').forEach(b => b.remove());
   // Dans l'outil Plan Promo TV & PEM, seuls les masques officiels BON PLAN et PROMO DU MOMENT sont proposés
   if (!PERSO_ONLY) return;
@@ -1995,7 +2172,8 @@ function labelHtml(p, fmtClass) {
           </div>`;
     const crossed = p.oldPrice != null ? `<div class="crossed">${esc(fmtEuroParts(p.oldPrice).euros)}€${esc(fmtEuroParts(p.oldPrice).cents)}</div>` : '';
     const catLine = p.cat ? `<div class="pcat">${esc(p.cat)}</div>` : '';
-    const pname = `<div class="pname">${catLine}<div class="pref">${esc(p.name)}</div></div>`;
+    const starMark = state.plan === 'star' ? ' <span class="star-mark" title="Produit Star">★</span>' : '';
+    const pname = `<div class="pname">${catLine}<div class="pref">${esc(p.name)}${starMark}</div></div>`;
     const pcode = p.ean ? `<div class="pcode">Code ${esc(p.ean)}</div>` : '';
     const brand = showBrand && p.brand ? `<div class="brand">${esc(p.brand)}</div>` : '';
     if (state.fmt === 'a5') {
@@ -2294,12 +2472,15 @@ window.gefecBuildAffiches = async function (opts) {
   const token = o.plansToken || null;
   if (!token || token !== lastPlansToken) {
     say('plans');
-    for (const t of ['tv', 'pem']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
+    for (const t of ['tv', 'pem', 'star']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
     for (const t of ['tv', 'pem', 'auto']) {
       const list = (o.plans && o.plans[t]) || [];
       if (!list.length) continue;
       await handlePromoFile(list.map(f => fileFromShell(f.data, f.name)), t === 'auto' ? null : t);
     }
+    // Produits Star : fichier Excel unique, parseur dédié (pas handlePromoFile)
+    const starList = (o.plans && o.plans.star) || [];
+    if (starList.length) await handleStarFile(fileFromShell(starList[0].data, starList[0].name));
     lastPlansToken = token;
   }
 
@@ -2307,7 +2488,7 @@ window.gefecBuildAffiches = async function (opts) {
   say('match');
   const plans = [];
   let promoTotal = 0;
-  for (const t of ['tv', 'pem']) {
+  for (const t of ['tv', 'pem', 'star']) {
     const pl = state.plans[t];
     if (!pl.promoProducts.length) continue;
     promoTotal += pl.promoProducts.length;
@@ -2328,9 +2509,16 @@ window.gefecBuildAffiches = async function (opts) {
   setChk('showBrand', o.showBrand !== false);
   setChk('perProductDates', o.perProductDates !== false);
 
-  // 5) toutes les planches, plan après plan (TV puis PEM)
+  // 5) toutes les planches, plan après plan (TV, PEM puis Star) — Produits
+  //    Star force toujours le masque PROMO DU MOMENT, quel que soit le choix
+  //    fait pour TV/PEM.
   const sheets = [];
-  for (const p of plans) sheets.push(...withPlan(p.id, buildSheets));
+  const combinedTpl = state.tpl;
+  for (const p of plans) {
+    if (p.id === 'star') state.tpl = 'promo';
+    sheets.push(...withPlan(p.id, buildSheets));
+    if (p.id === 'star') state.tpl = combinedTpl;
+  }
   say('pdf', 0, sheets.length);
   const blob = await sheetsToPdf(sheets, state.fmt, (i, n) => say('pdf', i, n));
   return {
@@ -2364,12 +2552,15 @@ window.gefecBuildCampagne = async function (opts) {
   const token = o.plansToken || null;
   if (!token || token !== lastPlansToken) {
     say('plans');
-    for (const t of ['tv', 'pem']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
+    for (const t of ['tv', 'pem', 'star']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
     for (const t of ['tv', 'pem', 'auto']) {
       const list = (o.plans && o.plans[t]) || [];
       if (!list.length) continue;
       await handlePromoFile(list.map(f => fileFromShell(f.data, f.name)), t === 'auto' ? null : t);
     }
+    // Produits Star : fichier Excel unique, parseur dédié (pas handlePromoFile)
+    const starList = (o.plans && o.plans.star) || [];
+    if (starList.length) await handleStarFile(fileFromShell(starList[0].data, starList[0].name));
     lastPlansToken = token;
   }
 
@@ -2377,7 +2568,7 @@ window.gefecBuildCampagne = async function (opts) {
   say('match');
   const matched = [];
   let promoTotal = 0;
-  for (const t of ['tv', 'pem']) {
+  for (const t of ['tv', 'pem', 'star']) {
     const pl = state.plans[t];
     if (!pl.promoProducts.length) continue;
     promoTotal += pl.promoProducts.length;
@@ -2397,11 +2588,18 @@ window.gefecBuildCampagne = async function (opts) {
   setChk('perProductDates', o.perProductDates !== false);
 
   // 5) un fichier par plan : les planches sont montées d'abord (rapide), puis
-  //    rendues, pour que la progression porte sur le total réel de la campagne
+  //    rendues, pour que la progression porte sur le total réel de la campagne.
+  //    Produits Star force toujours le masque PROMO DU MOMENT, quel que soit
+  //    le choix fait pour TV/PEM.
   const byPlan = matched.map(p => {
-    const storeFmt = p.id === 'tv' ? (o.fmtTV || o.fmt) : p.id === 'pem' ? (o.fmtPEM || o.fmt) : o.fmt;
+    const isStar = p.id === 'star';
+    const storeFmt = p.id === 'tv' ? (o.fmtTV || o.fmt) : p.id === 'pem' ? (o.fmtPEM || o.fmt) : isStar ? (o.fmtStar || o.fmt) : o.fmt;
+    const prevTpl = state.tpl;
+    if (isStar) state.tpl = 'promo';
     state.fmt = (storeFmt === 'a5' && maskHasA5(state.tpl)) ? 'a5' : 'a4';
-    return { ...p, sheets: withPlan(p.id, buildSheets), fmtUsed: state.fmt };
+    const sheets = withPlan(p.id, buildSheets);
+    if (isStar) state.tpl = prevTpl;
+    return { ...p, sheets, fmtUsed: state.fmt };
   });
   
   const total = byPlan.reduce((n, p) => n + p.sheets.length, 0);

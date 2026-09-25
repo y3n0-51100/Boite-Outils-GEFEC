@@ -138,13 +138,13 @@
     } catch (e) { return []; }
   }
   async function planFiles() {
-    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo', 'affiches-cetelem'];
+    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo-star', 'plan-promo', 'affiches-cetelem'];
     const metas = {};
     for (const id of ids) metas[id] = await fetchSharedMeta(id);
     const token = ids.map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
     if (planCache && planCache.token === token) return planCache;
 
-    const plans = { tv: [], pem: [], auto: [], cet: [] }, labels = [];
+    const plans = { tv: [], pem: [], star: [], auto: [], cet: [] }, labels = [];
     const hasNew = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
     const pick = async (id, slot, label) => {
       const meta = metas[id];
@@ -162,11 +162,12 @@
     };
     await pick('plan-promo-tv', 'tv', 'Plan Promo TV');
     await pick('plan-promo-pem', 'pem', 'Plan Promo PEM');
+    await pick('plan-promo-star', 'star', 'Produits Star');
     await pick('affiches-cetelem', 'cet', 'Affiches CETELEM');
     // transition : l'ancien plan unique ne sert que si aucun des deux nouveaux
     // n'est publié (le moteur reconnaît alors lui-même le type de chaque PDF)
     if (!hasNew) await pick('plan-promo', 'auto', 'Plan promo (format unique)');
-    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.auto.length + plans.cet.length };
+    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.star.length + plans.auto.length + plans.cet.length };
     return planCache;
   }
   async function refreshPlanStatus() {
@@ -176,7 +177,7 @@
       const p = await planFiles();
       if (!p.count) {
         st.className = 'msg err';
-        st.textContent = "Aucun plan promo publié : déposez d'abord les plans TV et/ou PEM dans ⚙️ Réglages.";
+        st.textContent = "Aucun plan promo publié : déposez d'abord les plans TV, PEM et/ou Star dans ⚙️ Réglages.";
       } else {
         st.className = 'msg ok';
         st.textContent = `Plans pris en compte : ${p.labels.join(' + ')} — ${p.count} fichier(s).`;
@@ -265,18 +266,20 @@
     let pages = 0;
     let products = 0;
 
-    const filteredPlans = { tv: [], pem: [], auto: [] };
+    const filteredPlans = { tv: [], pem: [], star: [], auto: [] };
     if (opts.chkTV) filteredPlans.tv = plans.plans.tv || [];
     if (opts.chkPEM) filteredPlans.pem = plans.plans.pem || [];
+    if (opts.chkStar) filteredPlans.star = plans.plans.star || [];
     filteredPlans.auto = plans.plans.auto || [];
 
-    if (filteredPlans.tv.length || filteredPlans.pem.length || filteredPlans.auto.length) {
+    if (filteredPlans.tv.length || filteredPlans.pem.length || filteredPlans.star.length || filteredPlans.auto.length) {
       const res = await win.gefecBuildCampagne({
         valo: valoBuffer.slice(0), valoName: `valorisation-${store.id}.pdf`,
         plans: filteredPlans, plansToken: plans.token,
-        tpl: opts.tpl, 
+        tpl: opts.tpl,
         fmtTV: opts.storePrefs.tv || 'a4',
         fmtPEM: opts.storePrefs.pem || 'a4',
+        fmtStar: opts.storePrefs.star || 'a4',
         printBg: opts.printBg,
         onProgress: onStep,
       });
@@ -607,6 +610,7 @@ Ceci est un message automatique, merci de ne pas y répondre.`;
       message: el('optMessage').value || DEFAULT_MESSAGE,
       chkTV: el('chkTV').checked,
       chkPEM: el('chkPEM').checked,
+      chkStar: el('chkStar').checked,
       chkCET: el('chkCET').checked,
     };
   }
@@ -696,7 +700,7 @@ Ceci est un message automatique, merci de ne pas y répondre.`;
     lockRows(true);
     try {
       const plans = await planFiles();
-      if (!plans.count) throw new Error('aucun plan promo publié : déposez les plans TV et/ou PEM dans ⚙️ Réglages');
+      if (!plans.count) throw new Error('aucun plan promo publié : déposez les plans TV, PEM et/ou Star dans ⚙️ Réglages');
       const r = await processStore(store, send, opts, plans);
       toast(r.sent ? `Campagne envoyée à ${store.name || store.id} ✓` : 'PDF généré ✓');
     } catch (e) {
@@ -720,7 +724,7 @@ Ceci est un message automatique, merci de ne pas y répondre.`;
     let done = 0, failed = 0, lastErr = '';
     try {
       const plans = await planFiles();
-      if (!plans.count) throw new Error('aucun plan promo publié : déposez les plans TV et/ou PEM dans ⚙️ Réglages');
+      if (!plans.count) throw new Error('aucun plan promo publié : déposez les plans TV, PEM et/ou Star dans ⚙️ Réglages');
       for (const store of targets) {
         try { await processStore(store, true, opts, plans); done++; }
         catch (e) {
