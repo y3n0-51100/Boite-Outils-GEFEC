@@ -367,6 +367,9 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 .lbl .discount-badge{
   background:var(--but-red);color:#fff;font-family:'ArchivoVF';font-weight:900;font-stretch:75%;
   display:inline-flex;align-items:baseline;border-radius:1mm;line-height:1;white-space:nowrap;
+  /* sans ça, Chrome/Safari retirent les couleurs de fond CSS à l'impression
+     (contrairement aux masques, qui sont des <img> donc toujours imprimés) */
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;
 }
 .lbl .discount-badge .dsign{font-size:.55em;margin-right:.12em}
 .lbl .discount-badge .deur{font-size:.55em;margin-left:.06em}
@@ -466,6 +469,9 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 @media print{
   body *{visibility:hidden}
   body{background:#fff}
+  /* force l'impression des couleurs de fond CSS (ex. la pastille de remise
+     Produits Star) : Chrome/Safari les retirent par défaut à l'impression */
+  #printArea,#printArea *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
   header.app,nav.steps,main,.toast,#exportFrame{display:none!important}
   #printArea{display:block;visibility:visible;position:absolute;left:0;top:0}
   #printArea *{visibility:visible}
