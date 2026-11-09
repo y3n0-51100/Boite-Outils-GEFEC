@@ -456,6 +456,9 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
 .lbl .dates-overlay{position:absolute;margin-top:0}
 .lbl.fa4 .dates-overlay{left:12.8mm;top:74.6mm;margin-top:0;font-size:4.6mm;line-height:1}
 .lbl.fa4.tpl-promo .dates-overlay{left:12.2mm;top:75.8mm;margin-top:0;font-size:4.6mm;line-height:1}
+/* masques perso (admin) : date de l'opération légèrement plus basse */
+.lbl.fa4.tpl-custom .dates-overlay{top:77.3mm}
+.lbl.fa5.tpl-custom .dates-overlay{top:calc(var(--boxtop) + 3.9mm)}
 /* (positions A5 définies plus haut via --boxtop) */
 
 /* ============================================================
@@ -2270,7 +2273,7 @@ function labelHtml(p, fmtClass) {
   // A4 : dates dans la bande jaune sous le titre ; A5 : dates en haut de
   // la zone blanche (position du bordereau officiel), dans tous les modes
   const datesInHead = drawVector && state.fmt === 'a4';
-  return `<div class="lbl ${fmtClass} tpl-${tplPos(tpl)} ${useImg ? 'with-img' : ''} ${noBg ? 'no-bg' : ''} ${p ? '' : 'empty-slot'} ${p && p.oldPrice != null ? 'has-old' : ''}">
+  return `<div class="lbl ${fmtClass} tpl-${tplPos(tpl)} ${state.customMasks.some(m => m.id === tpl) ? 'tpl-custom' : ''} ${useImg ? 'with-img' : ''} ${noBg ? 'no-bg' : ''} ${p ? '' : 'empty-slot'} ${p && p.oldPrice != null ? 'has-old' : ''}">
     ${maskImgTag}
     <div class="inner">
       ${drawVector ? `<div class="head">${title}${datesInHead && dates && p ? `<div class="dates">${esc(dates)}</div>` : ''}</div>` : ''}
