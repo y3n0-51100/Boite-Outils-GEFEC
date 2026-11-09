@@ -190,6 +190,49 @@
     }
   }
 
+  /* ---------- Masques personnalisés publiés par l'administrateur ----------
+     Même stockage que la coque (bucket « shared », masks/manifest.json).
+     Ils sont ajoutés au choix « Type d'affiche » et transmis au générateur. */
+  let CUSTOM_MASKS = [];   // [{id,name,calage,a4:dataURL,a5:dataURL}]
+  function blobToDataURL(blob) {
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+  }
+  async function loadCustomMasks() {
+    let manifest = [];
+    try {
+      const { data, error } = await sb.storage.from('shared').download('masks/manifest.json');
+      if (!error && data) {
+        const j = JSON.parse(await data.text());
+        manifest = Array.isArray(j.masks) ? j.masks : [];
+      }
+    } catch (e) { manifest = []; }
+    const out = [];
+    for (const m of manifest) {
+      try {
+        const a4 = m.a4 ? await sb.storage.from('shared').download(m.a4) : null;
+        const a5 = m.a5 ? await sb.storage.from('shared').download(m.a5) : null;
+        const d4 = a4 && !a4.error && a4.data ? await blobToDataURL(a4.data) : null;
+        if (!d4) continue;   // pas de fond A4 lisible : masque inutilisable
+        out.push({
+          id: m.id, name: m.name, calage: m.calage || 'promo', a4: d4,
+          a5: a5 && !a5.error && a5.data ? await blobToDataURL(a5.data) : null,
+        });
+      } catch (e) {}
+    }
+    CUSTOM_MASKS = out;
+    // options du sélecteur : masques officiels + masques perso
+    const sel = el('optTpl');
+    const prev = sel.value;
+    sel.querySelectorAll('option[data-custom]').forEach(o => o.remove());
+    for (const m of out) {
+      const o = document.createElement('option');
+      o.value = m.id; o.dataset.custom = '1';
+      o.textContent = m.name + (m.a5 ? '' : ' (A4 seul)');
+      sel.appendChild(o);
+    }
+    sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'bonplan';
+  }
+
   /* ---------- Le générateur : etiquette.html, hors écran ---------- */
   let genFrameP = null;
   function getGenFrame() {
@@ -277,6 +320,7 @@
         valo: valoBuffer.slice(0), valoName: `valorisation-${store.id}.pdf`,
         plans: filteredPlans, plansToken: plans.token,
         tpl: opts.tpl,
+        masks: CUSTOM_MASKS,
         fmtTV: opts.storePrefs.tv || 'a4',
         fmtPEM: opts.storePrefs.pem || 'a4',
         fmtStar: opts.storePrefs.star || 'a4',
@@ -748,6 +792,7 @@ Ceci est un message automatique, merci de ne pas y répondre.`;
       if (busy) return;
       planCache = null;
       await refreshPlanStatus();
+      await loadCustomMasks();
       await loadStores();
     });
     el('btnAll').addEventListener('click', runAll);
@@ -776,6 +821,7 @@ Ceci est un message automatique, merci de ne pas y répondre.`;
     el('cardStores').hidden = false;
     await loadSettings();
     await refreshPlanStatus();
+    await loadCustomMasks();
     await loadStores();
   }
 
