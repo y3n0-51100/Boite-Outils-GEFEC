@@ -70,15 +70,10 @@ seule barrière sur les données (valorisations, documents partagés, comptes).
   par la coque. Il ne dépend ni de la valorisation ni d'un document publié par
   l'administrateur : chaque utilisateur y dépose son propre SISTO.
 - `base-eco.js` — base article NOSICA (éco-participations, libellés, prix de
-  vente) régénérée chaque nuit par GitHub Actions et chargée automatiquement au
-  démarrage. En cas de panne de la mise à jour automatique, l'administrateur peut
-  **déposer le fichier Excel NOSICA à la main** (⚙️ Réglages → « Base article
-  NOSICA ») : il est alors injecté chez tous les magasins et remplace la base
-  automatique dans les deux outils d'étiquettes. Dans les deux cas, le ruban
-  « Base NOSICA » de l'accueil affiche le **nombre de références** de la base
-  active : lu directement dans `base-eco.js` pour la base automatique, remonté
-  par l'outil Étiquettes (message `gefec:base-count`) après relecture du
-  classeur pour la base déposée à la main — la coque n'embarque pas SheetJS.
+  vente), **seule source de la base** : régénérée chaque nuit par GitHub Actions
+  depuis la base en ligne et chargée automatiquement au démarrage, partout (outils
+  et envois par mail). Aucun fichier ne peut être déposé à la main. L'administrateur
+  peut relancer la mise à jour à tout moment (case **Base NOSICA** de l'accueil).
 
 ### SISTO Checker → Promo Perso
 
