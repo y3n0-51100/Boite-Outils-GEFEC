@@ -344,8 +344,11 @@
         <div data-adm="base">
         <div class="gpromo-sub" style="margin-top:0">La base article NOSICA (éco-participations, libellés, prix de vente) se met à jour automatiquement chaque nuit. Ce bouton relance la même mise à jour tout de suite : téléchargement de la base, conversion, publication. Comptez 1 à 3 minutes, puis rechargez la page.</div>
         <div class="gpromo">
-          <div class="gpromo-title">Base actuellement chargée</div>
+          <div class="gpromo-title">Base automatique (mise à jour de nuit)</div>
           <div class="gmsg" id="baseCurrent"></div>
+          <div class="gpromo-title" style="margin-top:12px">Fichier Excel déposé à la main</div>
+          <div class="gmsg" id="baseManual"></div>
+          <div class="gpromo-sub" style="margin:4px 0 0">La plus récente des deux est utilisée par les outils.</div>
           <div class="gpromo-title" style="margin-top:12px">Dernière mise à jour lancée</div>
           <div class="gmsg" id="baseRun">Chargement…</div>
           <div class="gpromo-actions">
@@ -1121,19 +1124,37 @@
       tryInjectShared(id);
     } catch (e) {}
   }
+  // date des données de la base automatique (base-eco.js, chargé en différé)
+  async function autoBaseDate() {
+    for (let i = 0; i < 50 && !(window.BASE_ECO && window.BASE_ECO.updated); i++) await new Promise(r => setTimeout(r, 100));
+    const d = window.BASE_ECO && window.BASE_ECO.updated ? new Date(window.BASE_ECO.updated) : null;
+    return d && !isNaN(d.getTime()) ? d : null;
+  }
+  let AUTO_BASE_DATE = null;
+  function manualBaseIsNewer(meta) {
+    const m = meta && meta.updated_at ? new Date(meta.updated_at) : null;
+    if (!m || isNaN(m.getTime())) return false;
+    return !AUTO_BASE_DATE || m.getTime() > AUTO_BASE_DATE.getTime();
+  }
+
   async function loadAllSharedDocs() {
+    AUTO_BASE_DATE = await autoBaseDate();
     const metas = {};
     for (const id of Object.keys(SHARED)) metas[id] = await fetchSharedMeta(id);
     // migration : l'ancien plan promo unique n'est chargé que si NI le plan TV
     // NI le plan PEM n'est publié — sinon il ferait doublon dans l'outil
     const hasNewPlans = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
+    // base article déposée à la main : elle ne remplace la base automatique que
+    // si elle est PLUS RÉCENTE que les données de celle-ci
+    const nb = metas['base-nosica'];
+    const manuelleActive = !!(nb && nb.file_path) && manualBaseIsNewer(nb);
     for (const id of Object.keys(SHARED)) {
       if (SHARED[id].legacy && hasNewPlans) continue;
+      if (id === 'base-nosica' && !manuelleActive) continue;
       if (metas[id]) await ensureSharedLoaded(id, metas[id]);
     }
-    // ruban d'accueil : signaler une base article déposée à la main
-    const nb = metas['base-nosica'];
-    if (window.setSharedBaseInfo) window.setSharedBaseInfo(nb && nb.file_path ? nb : null);
+    // ruban d'accueil : base active + l'autre, pour mémoire
+    if (window.setSharedBaseInfo) window.setSharedBaseInfo(nb && nb.file_path ? Object.assign({}, nb, { active: manuelleActive }) : null);
   }
 
   function relAge(dt) {
@@ -1284,7 +1305,8 @@
       toast(cfg.name + mediaLabel + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
       input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
       refreshSharedStatus(id);
-      if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(await fetchSharedMeta(id));
+      // une base publiée à l'instant est forcément la plus récente
+      if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(Object.assign({}, await fetchSharedMeta(id), { active: true }));
     } catch (e) {
       toast('Échec de la publication : ' + (e.message || e), true);
     } finally {
@@ -1659,17 +1681,32 @@
     box.textContent = `${txt} — ${qui}, lancée le ${new Date(run.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`;
     link.href = run.url; link.hidden = false;
   }
-  function showBaseCurrent() {
-    const b = window.BASE_ECO, fmt = (v) => v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '?';
+  const fmtLong = (v) => v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '?';
+  function showBaseCurrent(remote) {
+    const b = window.BASE_ECO;
     const n = b && b.info ? Object.keys(b.info).length : (b && b.data ? Object.keys(b.data).length : 0);
+    // les dates relues sur GitHub sont plus fraîches que celles du site (publication en différé)
+    const data = (remote && remote.data_updated) || (b && b.updated);
+    const checked = (remote && remote.checked) || window.BASE_CHECKED;
     el('baseCurrent').textContent = b
-      ? `${n.toLocaleString('fr-FR')} références · données du ${fmt(b.updated)} · source vérifiée le ${fmt(window.BASE_CHECKED)}`
+      ? `${n.toLocaleString('fr-FR')} références · données du ${fmtLong(data)} · dernière vérification le ${fmtLong(checked)}`
       : 'Base non chargée.';
+  }
+  async function showBaseManual() {
+    const box = el('baseManual');
+    const meta = await fetchSharedMeta('base-nosica').catch(() => null);
+    if (!meta || !meta.file_path) { box.className = 'gmsg'; box.textContent = 'Aucun — la base automatique est utilisée.'; return; }
+    if (!AUTO_BASE_DATE) AUTO_BASE_DATE = await autoBaseDate();
+    const active = manualBaseIsNewer(meta);
+    box.className = 'gmsg ' + (active ? 'ok' : '');
+    box.textContent = `${meta.file_name || 'fichier Excel'} · publié le ${fmtLong(meta.updated_at)} — `
+      + (active ? 'utilisé (plus récent que la base automatique)' : 'ignoré (la base automatique est plus récente)');
   }
   async function refreshBaseStatus() {
     showBaseCurrent();
+    showBaseManual();
     el('baseMsg').className = 'gmsg'; el('baseMsg').textContent = '';
-    try { showRun((await baseFn('status')).run); }
+    try { const st = await baseFn('status'); showRun(st.run); showBaseCurrent(st.base); }
     catch (e) { el('baseRun').className = 'gmsg err'; el('baseRun').textContent = e.message; }
   }
   let basePolling = false;
@@ -1679,21 +1716,33 @@
     btn.disabled = true; basePolling = true;
     msg.className = 'gmsg'; msg.textContent = 'Lancement de la mise à jour…';
     try {
+      // date des données avant la mise à jour : sert à dire si elle a apporté du nouveau
+      let avant = window.BASE_ECO && window.BASE_ECO.updated;
+      try { const st0 = await baseFn('status'); if (st0.base && st0.base.data_updated) avant = st0.base.data_updated; } catch (e) {}
       const { started_at } = await baseFn('run');
       const depuis = new Date(started_at).getTime() - 60e3;
       msg.textContent = 'Mise à jour lancée — suivi en cours (1 à 3 minutes)…';
       // suivi : toutes les 10 s, 8 minutes au plus
       for (let i = 0; i < 48; i++) {
         await new Promise(r => setTimeout(r, 10e3));
-        let run = null;
-        try { run = (await baseFn('status')).run; } catch (e) { continue; }
+        let run = null, base = null;
+        try { const st = await baseFn('status'); run = st.run; base = st.base; } catch (e) { continue; }
         if (!run || new Date(run.created_at).getTime() < depuis) continue;   // pas encore visible
         showRun(run);
         if (run.status !== 'completed') continue;
         if (run.conclusion === 'success') {
-          msg.className = 'gmsg ok';
-          msg.textContent = 'Base NOSICA mise à jour ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour l’utiliser.';
-          toast('Base NOSICA mise à jour ✓');
+          showBaseCurrent(base);
+          const apres = base && base.data_updated;
+          if (apres && avant && new Date(apres).getTime() === new Date(avant).getTime()) {
+            // le fichier source n'a pas bougé : rien de nouveau à publier
+            msg.className = 'gmsg';
+            msg.textContent = `Mise à jour terminée — aucune nouvelle donnée : le fichier source est identique à celui du ${fmtLong(apres)}.`;
+            toast('Base vérifiée : aucune nouvelle donnée');
+          } else {
+            msg.className = 'gmsg ok';
+            msg.textContent = `Nouvelles données${apres ? ' du ' + fmtLong(apres) : ''} ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour les utiliser.`;
+            toast('Base NOSICA mise à jour ✓');
+          }
         } else {
           msg.className = 'gmsg err';
           msg.textContent = 'La mise à jour a échoué — ouvrez le détail sur GitHub pour voir la cause (identifiants du site de la base article, fichier invalide…).';
