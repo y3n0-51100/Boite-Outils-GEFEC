@@ -2983,13 +2983,16 @@ function updateBaseStatus(){
   const slot=document.getElementById('srBase');
   const ribbon=document.getElementById('statusRibbon');
   if(!slot) return;
-  if(sharedBase&&sharedBase.updated_at){
+  if(sharedBase&&sharedBase.updated_at&&sharedBase.active!==false){
     const d=new Date(sharedBase.updated_at);
     const ds=isNaN(d.getTime())?'date inconnue':d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
     const nm=sharedBase.file_name?`<span class="sr-sep">·</span><span>${String(sharedBase.file_name).replace(/[<>&]/g,'')}</span>`:'';
     const ecoTip=sharedBaseEco?`${sharedBaseEco.toLocaleString('fr-FR')} portent une éco-participation`:'Références lues dans le classeur Excel publié par l\'administrateur';
     const nb=sharedBaseRefs?`<span class="sr-sep">·</span><span title="${ecoTip}">${sharedBaseRefs.toLocaleString('fr-FR')} références</span>`:'';
-    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span>${nb}<span class="sr-sep">·</span><span title="Fichier Excel déposé par l'administrateur — prioritaire sur la base automatique">fichier publié par l'administrateur le ${ds}</span>${nm}</div>`;
+    // base automatique, pour mémoire : vérifiée quand, et données de quand
+    const fmtC=v=>{const x=v?new Date(v):null;return x&&!isNaN(x.getTime())?x.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'}):'?';};
+    const auto=window.BASE_ECO?`<span class="sr-sep">·</span><span title="Base automatique : dernière vérification le ${fmtC(window.BASE_CHECKED)}, données du ${fmtC(window.BASE_ECO.updated)}">base auto vérifiée le ${fmtC(window.BASE_CHECKED)} (données du ${fmtC(window.BASE_ECO.updated)})</span>`:'';
+    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ok"></span><span class="sr-name">Base NOSICA</span>${nb}<span class="sr-sep">·</span><span title="Fichier Excel déposé par l'administrateur — plus récent que la base automatique, il est utilisé">fichier publié par l'administrateur le ${ds}</span>${nm}${auto}</div>`;
     if(ribbon) ribbon.hidden=false;
     return;
   }

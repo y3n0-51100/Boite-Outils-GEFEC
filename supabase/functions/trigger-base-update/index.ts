@@ -78,9 +78,28 @@ Deno.serve(async (req) => {
     if (!r.ok) return json(400, { error: `Lecture du statut impossible (HTTP ${r.status}).` });
     const j = await r.json();
     const run = j.workflow_runs?.[0];
-    if (!run) return json(200, { ok: true, run: null });
+
+    // base publiée sur la branche : date de vérification + date des données
+    // (base-checked.js, lu via l'API — pas de cache, contrairement au site)
+    let base = null;
+    try {
+      const b = await fetch(`https://api.github.com/repos/${repo}/contents/base-checked.js?ref=${ref}`, {
+        headers: {
+          Authorization: `Bearer ${token}`, Accept: "application/vnd.github.raw+json",
+          "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "boite-outils-gefec",
+        },
+      });
+      if (b.ok) {
+        const t = await b.text();
+        const pick = (k: string) => (t.match(new RegExp(`${k}\\s*=\\s*"([^"]+)"`)) || [])[1] || null;
+        base = { checked: pick("BASE_CHECKED"), data_updated: pick("BASE_DATA_UPDATED") };
+      }
+    } catch { /* facultatif */ }
+
+    if (!run) return json(200, { ok: true, run: null, base });
     return json(200, {
       ok: true,
+      base,
       run: {
         status: run.status,           // queued | in_progress | completed
         conclusion: run.conclusion,   // success | failure | cancelled | null
