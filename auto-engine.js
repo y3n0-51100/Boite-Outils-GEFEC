@@ -159,7 +159,7 @@
 
     /* ---------- Magasins + valorisations ---------- */
     async function loadStores() {
-      const { data: stores, error } = await sb.from('stores').select('id, name, region, email, mail_prefs').order('id');
+      const { data: stores, error } = await sb.from('stores').select('id, name, region, emails, mail_enabled, mail_prefs').order('id');
       if (error) throw new Error('magasins : ' + error.message);
       const metaBy = {};
       try {
@@ -172,7 +172,9 @@
         const dt = meta && meta.updated_at ? new Date(meta.updated_at) : null;
         const ageDays = dt && !isNaN(dt.getTime()) ? Math.floor((now - dt.getTime()) / 864e5) : null;
         const valo = !meta ? 'never' : (ageDays != null && ageDays > VALO_MAX_DAYS ? 'late' : 'ok');
-        return { ...s, meta, dt, ageDays, valo, auto: isMail(s.email) };
+        // destinataires : les 1 à 3 adresses du magasin, s'il n'a pas coupé la réception
+        const recipients = (s.emails || []).map(e => String(e || '').trim()).filter(isMail);
+        return { ...s, meta, dt, ageDays, valo, recipients, auto: s.mail_enabled !== false && recipients.length > 0 };
       });
     }
 
@@ -327,8 +329,9 @@
     /* ---------- Dépôt + mail + mémorisation ---------- */
     async function deliver(store, date, res, o) {
       o = o || {};
-      const to = String(store.email || '').trim();
-      if (!isMail(to)) throw new Error('adresse e-mail du magasin manquante');
+      const recipients = (o.to ? [o.to] : (store.recipients || [])).filter(isMail);
+      if (!recipients.length) throw new Error('adresse e-mail du magasin manquante');
+      if (!o.to && store.mail_enabled === false) throw new Error('le magasin a désactivé la réception des mails');
       const settings = o.settings || await loadSettings();
       await localBlobs(res);
       const files = [];
@@ -348,11 +351,21 @@
         affiches: res.products, pages: res.pages, date: frDate(date),
       };
       const subject = fill(settings.subject, vars);
-      const out = await sendMail({
-        to, store_id: store.id, store_name: store.name || store.id,
-        subject, message: fill(settings.message, vars),
-        files: files.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })),
-      });
+      // un mail par adresse : la fonction d'envoi n'accepte qu'un destinataire
+      const sentTo = [], failed = [];
+      let out = {};
+      for (const to of recipients) {
+        try {
+          out = await sendMail({
+            to, store_id: store.id, store_name: store.name || store.id,
+            subject, message: fill(settings.message, vars),
+            files: files.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })),
+          });
+          sentTo.push(to);
+        } catch (e) { failed.push(`${to} : ${(e && e.message) || e}`); }
+      }
+      if (!sentTo.length) throw new Error(failed.join(' · '));
+      if (failed.length) log(`⚠️ ${store.id} : envoi refusé pour ${failed.join(' · ')}`);
 
       // le mail est parti : les affiches ne repartiront plus
       const rows = res.items.map(i => ({
@@ -364,15 +377,16 @@
           .upsert(rows.slice(k, k + 500), { onConflict: 'store_id,sent_key', ignoreDuplicates: true });
         if (error) log(`⚠️ ${store.id} : historique non mémorisé — ${error.message}`);
       }
+      // une ligne d'historique par adresse servie (lue par l'espace magasin)
       try {
-        await sb.from('campagne_mails').insert({
+        await sb.from('campagne_mails').insert(sentTo.map(to => ({
           store_id: store.id, email: to, subject, plans: plansLabel, files,
           pages: res.pages, products: res.products, valo_days: store.ageDays,
           provider: out.provider || null, sent_by: env.userId || null,
           auto: true, operations: opsLabel,
-        });
+        })));
       } catch (e) {}
-      return { to, files, subject, provider: out.provider };
+      return { to: sentTo.join(', '), files, subject, provider: out.provider, failed };
     }
 
     /* ---------- Fraîcheur de la base NOSICA ---------- */

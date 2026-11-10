@@ -371,7 +371,7 @@
         : s.valo === 'late' ? `<span class="tag is-warn">Périmée · ${s.ageDays} j</span>`
           : '<span class="tag is-ko">Sans valo</span>';
       const sub = [s.id, s.region, s.meta && s.meta.ean_count != null ? s.meta.ean_count + ' EAN' : '',
-        s.email === 'REFUSE' ? 'ne souhaite pas de mails' : (!s.auto ? 'pas inscrit à l’envoi auto' : '')]
+        s.mail_enabled === false ? 'réception des mails désactivée' : (!s.auto ? 'pas inscrit à l’envoi auto' : '')]
         .filter(Boolean).join(' · ');
       const last = s.last
         ? `✉️ ${s.last.auto ? 'envoi auto' : 'campagne'} ${relAge(new Date(s.last.sent_at))} — ${esc(s.last.operations || s.last.plans || '')} (${s.last.products || 0} affiche(s))`
@@ -384,9 +384,9 @@
           <div class="store_sub">${esc(sub)}</div>
           ${last ? `<div class="store_last">${last}</div>` : ''}
         </div>
-        <input class="form_input" type="email" data-mail spellcheck="false" autocapitalize="none"
-          placeholder="${s.email === 'REFUSE' ? 'Ne souhaite pas de mails' : 'adresse du magasin'}"
-          value="${esc(s.email === 'REFUSE' ? '' : (s.email || ''))}" aria-label="Adresse e-mail du magasin">
+        <input class="form_input" type="text" data-mail spellcheck="false" autocapitalize="none"
+          placeholder="adresses du magasin (3 max, séparées par une virgule)"
+          value="${esc((s.emails || []).join(', '))}" aria-label="Adresses e-mail du magasin">
         <div class="store_actions">
           ${s.valo !== 'ok' ? '<button class="button is-small" data-remind type="button">🔔 Relancer</button>' : ''}
           <button class="button is-small" data-preview type="button"${blocked ? ' disabled' : ''} title="Télécharger les affiches du jour choisi">👁 Aperçu</button>
@@ -437,17 +437,24 @@
     syncLegacyBulk();
   }
 
+  // « a@x.fr, b@y.fr » -> ['a@x.fr', 'b@y.fr'] (dédoublonné)
+  const parseMails = (v) => [...new Set(String(v || '').split(/[,;\s]+/).map(m => m.trim().toLowerCase()).filter(Boolean))];
+
+  // -> true si la liste est valide (et mémorisée)
   async function saveEmail(s, v) {
-    v = String(v || '').trim();
-    if (v && !isMail(v)) { setStatus(s, 'ko', 'Adresse e-mail invalide.'); return; }
-    const val = v || null;
-    if ((s.email || null) === val) return;
-    const { error } = await sb.from('stores').update({ email: val }).eq('id', s.id);
-    if (error) { setStatus(s, 'ko', 'Adresse non mémorisée : ' + error.message); return; }
-    s.email = val; s.auto = isMail(val);
-    setStatus(s, 'ok', val ? 'Adresse mémorisée ✓ — magasin inscrit à l’envoi automatique' : 'Adresse retirée.');
+    const emails = parseMails(v);
+    if (emails.some(m => !isMail(m))) { setStatus(s, 'ko', 'Adresse e-mail invalide.'); return false; }
+    if (emails.length > 3) { setStatus(s, 'ko', 'Trois adresses au maximum.'); return false; }
+    if (emails.join(',') === (s.emails || []).join(',')) return true;
+    const { error } = await sb.from('stores').update({ emails }).eq('id', s.id);
+    if (error) { setStatus(s, 'ko', 'Adresses non mémorisées : ' + error.message); return false; }
+    s.emails = emails; s.recipients = emails;
+    s.auto = s.mail_enabled !== false && emails.length > 0;
+    setStatus(s, 'ok', emails.length ? `Adresse(s) mémorisée(s) ✓${s.auto ? ' — magasin inscrit à l’envoi automatique' : ''}` : 'Adresses retirées.');
     renderPills();
+    return true;
   }
+  const mailsOf = (s) => parseMails((rowOf(s) && rowOf(s).querySelector('[data-mail]').value) || (s.emails || []).join(','));
 
   /* Aperçu : les affiches que le magasin recevra le jour choisi (compte
      tenu de ce qui lui a déjà été envoyé), téléchargées sans rien envoyer */
@@ -469,10 +476,11 @@
 
   async function sendNow(s) {
     if (busy) return;
-    const row = rowOf(s);
-    const to = (row.querySelector('[data-mail]').value || '').trim();
-    if (!isMail(to)) { setStatus(s, 'ko', 'Adresse e-mail du magasin manquante ou invalide.'); return; }
-    await saveEmail(s, to);
+    const list = mailsOf(s);
+    if (!list.length) { setStatus(s, 'ko', 'Adresse e-mail du magasin manquante.'); return; }
+    if (!await saveEmail(s, list.join(','))) return;
+    if (s.mail_enabled === false) { setStatus(s, 'ko', 'Le magasin a désactivé la réception des mails.'); return; }
+    const to = list.join(', ');
     const date = E.parisDate();
     lock(true); setBar(s, 0);
     try {
@@ -509,12 +517,13 @@
   }
 
   async function remind(s) {
-    const to = ((rowOf(s).querySelector('[data-mail]').value) || s.email || '').trim();
-    if (!isMail(to)) { setStatus(s, 'ko', 'Adresse e-mail manquante pour la relance.'); return; }
+    const list = mailsOf(s).filter(isMail);
+    if (!list.length) { setStatus(s, 'ko', 'Adresse e-mail manquante pour la relance.'); return; }
+    const to = list.join(', ');
     setStatus(s, 'run', `envoi de la relance à ${to}…`);
     try {
-      await E.sendMail({
-        to, store_id: s.id, store_name: s.name || s.id,
+      for (const dest of list) await E.sendMail({
+        to: dest, store_id: s.id, store_name: s.name || s.id,
         subject: 'Mise à jour de votre valorisation magasin nécessaire',
         message: `Bonjour,\n\nVotre valorisation magasin ${s.ageDays != null ? `date de ${s.ageDays} jours` : "n'a pas encore été déposée"}.\nPour recevoir automatiquement les affiches promo (TV, PEM) correspondant exactement à votre stock exposé, merci de vous connecter à l'outil et d'y déposer votre nouvelle valorisation PDF issue de NOSICA.\n\nCeci est un message automatique, merci de ne pas y répondre.`,
         files: [], no_attachment: true,
@@ -600,8 +609,10 @@
   const legacyFill = (tpl, v) => String(tpl || '').replace(/\{(magasin|code|plans|affiches|pages|date)\}/g, (m, k) => v[k] != null ? String(v[k]) : m);
   async function legacyProcess(s, o, plans) {
     if (s.valo !== 'ok') throw new Error('valorisation absente ou périmée');
-    const to = ((rowOf(s).querySelector('[data-mail]').value) || s.email || '').trim();
-    if (!isMail(to)) throw new Error('adresse e-mail du magasin manquante ou invalide');
+    const list = mailsOf(s);
+    if (!list.length || list.some(m => !isMail(m))) throw new Error('adresse e-mail du magasin manquante ou invalide');
+    if (s.mail_enabled === false) throw new Error('le magasin a désactivé la réception des mails');
+    const to = list.join(', ');
     const prefs = s.mail_prefs || {};
     const { data, error } = await sb.storage.from('valorisations').download(`${s.id}/valorisation.pdf`);
     if (error || !data) throw new Error('valorisation introuvable');
@@ -639,12 +650,15 @@
     const vars = { magasin: s.name || s.id, code: s.id, plans: plansLabel, affiches: products, pages, date: new Date().toLocaleDateString('fr-FR') };
     const subject = legacyFill(o.subject, vars);
     setStatus(s, 'run', `envoi du mail à ${to}…`);
-    const out = await E.sendMail({ to, store_id: s.id, store_name: s.name || s.id, subject, message: legacyFill(o.message, vars),
-      files: up.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })) });
-    try {
-      await sb.from('campagne_mails').insert({ store_id: s.id, email: to, subject, plans: plansLabel, files: up, pages, products,
-        valo_days: s.ageDays, provider: out.provider || null, sent_by: ME.userId, auto: false });
-    } catch (e) {}
+    let out = {};
+    for (const dest of list) {
+      out = await E.sendMail({ to: dest, store_id: s.id, store_name: s.name || s.id, subject, message: legacyFill(o.message, vars),
+        files: up.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })) });
+      try {
+        await sb.from('campagne_mails').insert({ store_id: s.id, email: dest, subject, plans: plansLabel, files: up, pages, products,
+          valo_days: s.ageDays, provider: out.provider || null, sent_by: ME.userId, auto: false });
+      } catch (e) {}
+    }
     setStatus(s, 'ok', `Campagne complète envoyée à ${to} — ${products} affiche(s), ${pages} page(s) · ${plansLabel}`);
   }
   async function legacyOne(s) {

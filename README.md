@@ -144,27 +144,36 @@ puis déployer la fonction — tout est détaillé dans
 [`supabase/SETUP.md`](./supabase/SETUP.md), étape 6. L'adresse du directeur est
 demandée au premier envoi et mémorisée sur la fiche du magasin.
 
-## Le magasin choisit : imprimer lui-même, ou être servi par mail
+## Comptes magasins en autonomie
 
-À sa première connexion, une fois sa valorisation déposée, le magasin répond à
-une question avant d'atteindre ses outils : **souhaite-t-il recevoir ses
-affiches automatiquement par mail ?** C'est lui qui décide, et l'administrateur
-n'a aucune adresse à saisir.
+Seuls l'**administrateur** et le **compte robot** sont créés à la main. Chaque
+magasin crée lui-même son compte depuis l'écran de connexion (**Créer un
+compte**). Le compte n'est valide qu'avec les quatre éléments :
 
-| Réponse | `stores.email` | Ce que le magasin voit | Ce que l'administrateur voit |
-| --- | --- | --- | --- |
-| Pas encore posée | `NULL` | Le portail s'ouvre après la valorisation | Aucune adresse — le magasin sort des envois groupés |
-| **Oui** + adresse | l'adresse | **SISTO Checker seul**, plus le dépôt de sa valorisation et le choix du format de ses affiches (A4 / A5, par jeu) | Le magasin est prêt : ses affiches partent avec les autres |
-| **Non** | `REFUSE` | Ses outils au complet, pour imprimer lui-même | « Ne souhaite pas d'affiches par mail » — exclu des envois |
+| Élément | Règle |
+| --- | --- |
+| Nom du magasin | Sert d'identifiant de connexion (« BUT Reims » → `but-reims`) ; unique |
+| Mot de passe | 8 caractères minimum |
+| Adresses de réception | 1 à 3 adresses, où partent les affiches |
+| Valorisation PDF | Obligatoire ; le PDF doit contenir des codes EAN. Tuto téléchargeable : `docs/Comment-ajouter-sa-valorisation.pdf` (`node scripts/make-tuto-valorisation.js`) |
 
-Le magasin qui a dit oui n'a plus rien à croiser : la centrale fabrique ses
-affiches et les lui envoie. Son périmètre se réduit donc à ce qui lui reste
-utile. Il revient sur son choix quand il veut par **✉️ Mes envois mail**, qui
-lui rend aussitôt ses outils s'il repasse en manuel.
+La création passe par la fonction Edge publique `store-signup` (service_role,
+retour arrière si une étape échoue).
 
-Le format retenu par chaque magasin (`stores.mail_prefs`) est celui qu'emploie
-l'outil de campagne : c'est le magasin qui décide s'il imprime en A4 ou en A5,
-plan par plan.
+Une fois connecté, le magasin **n'a aucun accès aux outils** : la coque n'est
+pas chargée. Son espace se limite à :
+
+- l'**historique des mails** envoyés à ses adresses (`campagne_mails`) ;
+- ses **adresses de réception**, modifiables à tout moment ;
+- l'interrupteur **Recevoir les affiches par mail** (`stores.mail_enabled`).
+
+Les adresses et l'interrupteur s'enregistrent via la fonction SQL
+`set_my_mail_settings()` — le magasin ne peut rien modifier d'autre sur sa
+fiche. Côté envoi, chaque mail part à **chacune** des adresses du magasin, et
+un magasin qui a coupé la réception est exclu des tournées.
+
+Schéma : [`supabase/comptes-autonomes.sql`](./supabase/comptes-autonomes.sql).
+Remise à zéro des comptes : [`supabase/purge-comptes.sql`](./supabase/purge-comptes.sql).
 
 ## L'outil « ✉️ Envoi Campagne Mail » (administrateur)
 

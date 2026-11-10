@@ -229,6 +229,17 @@ tournée du jour** dans l'outil.
 
 ---
 
+## 9. Comptes magasins en autonomie
+
+1. SQL Editor → coller [`comptes-autonomes.sql`](./comptes-autonomes.sql) → **Run**
+   (colonnes `stores.emails` / `stores.mail_enabled`, fonction `set_my_mail_settings`).
+2. Edge Functions → déployer [`functions/store-signup/index.ts`](./functions/store-signup/index.ts)
+   sous le nom `store-signup`, **sans vérification JWT** (`verify_jwt = false`) :
+   personne n'est connecté au moment de la création du compte.
+   (CLI : `supabase functions deploy store-signup --no-verify-jwt --project-ref <ref>`.)
+
+---
+
 ## Ce que vous me transmettez ensuite
 - **Project URL**
 - **anon public key**

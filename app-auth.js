@@ -132,11 +132,41 @@
   .affbar i{display:block;height:100%;background:var(--primary,#5b8cff);width:0;transition:width .2s}
   .stmail{font-size:11px;font-weight:700;color:var(--text-3,#5c6478)}
 
-  /* Portail « valorisation à jour » : barrage tant que le magasin n'a pas
-     déposé une valorisation de moins de 4 semaines. */
-  #valoGate, #emailGate {position:fixed;inset:0;z-index:9990;background:var(--bg,#0b0e14);
-    display:none;align-items:center;justify-content:center;padding:20px;font-family:var(--font,system-ui,sans-serif)}
-  #valoGate.show, #emailGate.show {display:flex}
+  /* Création de compte (écran de connexion) */
+  #authGate{overflow:auto}
+  #authGate form[hidden]{display:none}
+  .agate-card{margin:auto}
+  .agate-link{background:none;border:none;color:var(--text-2,#8a93a6);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:6px;margin-top:2px}
+  .agate-link b{color:var(--primary,#5b8cff)}
+  .agate-group{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3,#5c6478);margin-top:6px;border-top:1px solid var(--border,#2a334a);padding-top:12px}
+  .agate-drop{border:2px dashed var(--border,#2a334a);border-radius:12px;padding:16px;text-align:center;cursor:pointer;background:var(--surface-2,#1a2030);display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;color:var(--text,#e6e9f0);outline:none}
+  .agate-drop small{font-size:11.5px;font-weight:600;color:var(--text-3,#5c6478)}
+  .agate-drop:hover,.agate-drop:focus,.agate-drop.over{border-color:var(--primary,#5b8cff)}
+  .agate-drop.loaded{border-style:solid;border-color:#4ade80}
+  .agate-dl{font-size:12.5px;font-weight:700;color:var(--primary,#5b8cff);text-decoration:none;text-align:center}
+  .agate-dl:hover{text-decoration:underline}
+
+  /* Espace magasin : seul écran d'un compte magasin, par-dessus la coque */
+  #storePortal{position:fixed;inset:0;z-index:9990;background:var(--bg,#0b0e14);display:none;overflow:auto;
+    padding:28px 16px;font-family:var(--font,system-ui,sans-serif);color:var(--text,#e6e9f0)}
+  #storePortal.show{display:block}
+  body.is-portal .shell{display:none}
+  .sp-wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .sp-head{display:flex;align-items:center;gap:14px}
+  .sp-title{flex:1;min-width:0;display:flex;flex-direction:column}
+  .sp-title b{font-size:18px;font-weight:800}
+  .sp-title span{font-size:12px;color:var(--text-3,#5c6478);font-weight:600}
+  #storePortal .sp-card{max-width:none;width:100%;box-sizing:border-box}
+  .sp-mails{display:flex;flex-direction:column;gap:12px;margin-top:16px}
+  .sp-mails .gate-lbl{display:flex;flex-direction:column;gap:6px;margin:0}
+  .sp-switch{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:14px;font-weight:700;cursor:pointer}
+  .sp-switch input{width:18px;height:18px;accent-color:var(--primary,#5b8cff)}
+  .sp-actions{margin-top:16px}
+  .sp-hist{margin-top:14px;overflow-x:auto}
+  .sp-table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .sp-table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3,#5c6478);padding:8px 6px;border-bottom:1px solid var(--border,#2a334a)}
+  .sp-table td{padding:9px 6px;border-bottom:1px solid var(--border-2,#1f2638);vertical-align:top}
+  @media(max-width:560px){.sp-head{flex-wrap:wrap}.vgate-card{padding:24px 18px}}
   .vgate-card{width:100%;max-width:560px;background:var(--surface,#11151e);border:1px solid var(--border,#2a334a);
     border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.5);padding:34px 32px;animation:agFade .4s ease both;color:var(--text,#e6e9f0)}
   .vgate-badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
@@ -172,15 +202,48 @@
       <div class="agate-card">
         <div class="agate-logo">G</div>
         <div class="agate-title">Boîte à Outils GEFEC</div>
-        <div class="agate-sub">Connexion magasin</div>
+        <div class="agate-sub" id="agSubTitle">Connexion</div>
         <form id="agForm">
-          <label>Identifiant<input id="agUser" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+          <label>Nom du magasin<input id="agUser" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
           <label>Mot de passe<input id="agPass" type="password" autocomplete="current-password" required></label>
           <div class="agate-err" id="agErr"></div>
           <button class="agate-btn" type="submit" id="agSubmit">Se connecter</button>
+          <button class="agate-link" type="button" id="agToSignup">Pas encore de compte ? <b>Créer un compte</b></button>
+        </form>
+        <form id="suForm" hidden novalidate>
+          <label>Nom du magasin<input id="suName" autocomplete="organization" placeholder="ex : BUT Reims" required></label>
+          <label>Mot de passe<input id="suPass" type="password" autocomplete="new-password" placeholder="8 caractères minimum" required></label>
+          <label>Confirmer le mot de passe<input id="suPass2" type="password" autocomplete="new-password" required></label>
+          <div class="agate-group">Adresses de réception des affiches</div>
+          <label>Adresse 1 (obligatoire)<input id="suMail1" type="email" autocapitalize="none" spellcheck="false" placeholder="magasin@but.fr" required></label>
+          <label>Adresse 2 (facultatif)<input id="suMail2" type="email" autocapitalize="none" spellcheck="false"></label>
+          <label>Adresse 3 (facultatif)<input id="suMail3" type="email" autocapitalize="none" spellcheck="false"></label>
+          <div class="agate-group">Valorisation du stock</div>
+          <div class="agate-drop" id="suDrop" tabindex="0" role="button">
+            <span id="suDropT">Déposez votre valorisation (PDF)</span>
+            <small>ou cliquez pour la choisir · .pdf</small>
+            <input type="file" id="suFile" accept="application/pdf,.pdf" hidden>
+          </div>
+          <a class="agate-dl" href="docs/Comment-ajouter-sa-valorisation.pdf" download>⬇️ Comment ajouter sa valorisation (PDF)</a>
+          <div class="agate-err" id="suErr"></div>
+          <button class="agate-btn" type="submit" id="suSubmit">Créer mon compte</button>
+          <button class="agate-link" type="button" id="suToLogin">Déjà un compte ? <b>Se connecter</b></button>
         </form>
       </div>`;
     el('agForm').addEventListener('submit', onLoginSubmit);
+    el('suForm').addEventListener('submit', onSignupSubmit);
+    el('agToSignup').addEventListener('click', () => showSignup(true));
+    el('suToLogin').addEventListener('click', () => showSignup(false));
+    const suDrop = el('suDrop');
+    suDrop.addEventListener('click', () => el('suFile').click());
+    suDrop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el('suFile').click(); } });
+    el('suFile').addEventListener('change', e => { if (e.target.files[0]) suPick(e.target.files[0]); });
+    suDrop.addEventListener('dragover', e => { e.preventDefault(); suDrop.classList.add('over'); });
+    suDrop.addEventListener('dragleave', () => suDrop.classList.remove('over'));
+    suDrop.addEventListener('drop', e => {
+      e.preventDefault(); suDrop.classList.remove('over');
+      if (e.dataTransfer.files.length) suPick(e.dataTransfer.files[0]);
+    });
 
     // chip dans l'en-tête
     const right = document.querySelector('.hero-right') || document.querySelector('header');
@@ -190,13 +253,11 @@
       chip.innerHTML = `
         <span class="ac-info"><b id="acName"></b><span id="acRole"></span></span>
         <button id="acStores" hidden>📂 Valorisations</button>
-        <button id="acMailPrefs" class="primary" hidden>✉️ Mes envois mail</button>
         <button id="acHelp" title="Aide et support">❔ Aide</button>
         <button id="acLogout">Déconnexion</button>`;
       right.appendChild(chip);
       el('acLogout').addEventListener('click', doLogout);
       el('acStores').addEventListener('click', openStores);
-      el('acMailPrefs').addEventListener('click', openMailPrefs);
       el('acHelp').addEventListener('click', openHelp);
     }
 
@@ -422,88 +483,39 @@
     help.addEventListener('click', e => { if (e.target === help) help.classList.remove('show'); });
     el('helpReport').addEventListener('click', reportProblem);
 
-    // Portail « valorisation à jour » : le magasin ne peut rien ouvrir tant que
-    // sa valorisation n'a pas moins de 4 semaines. Pas un pop-up qu'on ferme :
-    // un barrage, avec le seul geste qui le lève.
-    const vg = document.createElement('div'); vg.id = 'valoGate';
-    vg.innerHTML = `
-      <div class="vgate-card">
-        <div class="vgate-badge" id="vgBadge">Valorisation requise</div>
-        <div class="vgate-title" id="vgTitle">Mettez votre valorisation à jour</div>
-        <div class="vgate-sub" id="vgSub"></div>
-        <div class="vgate-drop" id="vgDrop">
-          <div class="ic">📄</div>
-          <div class="t">Déposez le PDF « Valorisation du stock »</div>
-          <div class="d">ou cliquez pour le choisir sur votre ordinateur · .pdf</div>
-          <input type="file" id="vgFile" accept="application/pdf,.pdf" style="display:none">
+    // Espace magasin : l'unique écran d'un compte magasin. Pas d'outil, pas
+    // de dépôt : l'historique des mails reçus, les adresses de réception et
+    // l'interrupteur des envois — rien d'autre.
+    const sp = document.createElement('div'); sp.id = 'storePortal';
+    sp.innerHTML = `
+      <div class="sp-wrap">
+        <div class="sp-head">
+          <div class="agate-logo" style="margin:0">G</div>
+          <div class="sp-title"><b id="spName"></b><span>Espace magasin · Boîte à Outils GEFEC</span></div>
+          <button class="gbtn alt" id="spLogout" type="button">Déconnexion</button>
         </div>
-        <div class="vgate-msg" id="vgMsg"></div>
-        <div class="vgate-foot">
-          <span class="vgate-help">Éditez la valorisation depuis NOSICA, puis déposez le PDF ici.</span>
-          <button class="gbtn alt" id="vgLogout">Déconnexion</button>
-        </div>
+
+        <section class="vgate-card sp-card">
+          <div class="vgate-title">Adresses de réception</div>
+          <div class="vgate-sub">Les affiches de votre magasin sont envoyées à ces adresses (3 au maximum).</div>
+          <div class="sp-mails">
+            <label class="gate-lbl">Adresse 1 (obligatoire)<input class="gate-input" id="spMail1" type="email" autocapitalize="none" spellcheck="false" placeholder="magasin@but.fr"></label>
+            <label class="gate-lbl">Adresse 2 (facultatif)<input class="gate-input" id="spMail2" type="email" autocapitalize="none" spellcheck="false"></label>
+            <label class="gate-lbl">Adresse 3 (facultatif)<input class="gate-input" id="spMail3" type="email" autocapitalize="none" spellcheck="false"></label>
+          </div>
+          <label class="sp-switch"><input type="checkbox" id="spEnabled"> <span>Recevoir les affiches par mail</span></label>
+          <div class="sp-actions"><button class="gbtn" id="spSave" type="button">Enregistrer</button></div>
+          <div class="vgate-msg" id="spMsg"></div>
+        </section>
+
+        <section class="vgate-card sp-card">
+          <div class="vgate-title">Historique des mails envoyés</div>
+          <div class="sp-hist" id="spHist"><div class="gempty">Chargement…</div></div>
+        </section>
       </div>`;
-    document.body.appendChild(vg);
-    
-    // Portail « Affiches par mail » : posé une fois après la valorisation,
-    // puis rouvrable par le magasin depuis « ✉️ Mes envois mail ».
-    const eg = document.createElement('div'); eg.id = 'emailGate';
-    eg.innerHTML = `
-      <div class="vgate-card">
-        <div class="vgate-title" id="egTitle">Vos affiches par mail</div>
-        <div class="vgate-sub" id="egSub">Souhaitez-vous recevoir les plans promo TV, PEM et Star spécifiques à votre magasin automatiquement par mail ?</div>
-        <div style="display:flex;gap:12px;margin-top:22px" id="egChoices">
-          <button class="gbtn" id="egYes">Oui, je veux les recevoir</button>
-          <button class="gbtn alt" id="egNo">Non merci</button>
-        </div>
-        <div id="egInputWrap" style="display:none;margin-top:22px">
-          <label class="gate-lbl" for="egInput">Adresse e-mail de réception</label>
-          <input type="email" id="egInput" class="gate-input" autocapitalize="none" spellcheck="false"
-                 placeholder="magasin@but.fr" style="margin-bottom:18px">
-
-          <div class="gate-lbl">Format d'impression souhaité</div>
-          <div class="gate-fmt"><b>Plan TV</b>
-            <label><input type="radio" name="egFmtTV" value="a4" checked> A4</label>
-            <label><input type="radio" name="egFmtTV" value="a5"> A5 (2 par page)</label>
-          </div>
-          <div class="gate-fmt"><b>Plan PEM</b>
-            <label><input type="radio" name="egFmtPEM" value="a4" checked> A4</label>
-            <label><input type="radio" name="egFmtPEM" value="a5"> A5 (2 par page)</label>
-          </div>
-          <div class="gate-fmt"><b>Produits Star</b>
-            <label><input type="radio" name="egFmtStar" value="a4" checked> A4</label>
-            <label><input type="radio" name="egFmtStar" value="a5"> A5 (2 par page)</label>
-          </div>
-          <div class="gate-fmt" style="margin-bottom:20px"><b>CETELEM</b>
-            <label><input type="radio" name="egFmtCET" value="a4" checked> A4</label>
-            <label><input type="radio" name="egFmtCET" value="a5"> A5 (2 par page)</label>
-          </div>
-
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="gbtn" id="egSave">Enregistrer</button>
-            <button class="gbtn alt" id="egCancel" style="display:none">Annuler</button>
-            <button class="gbtn alt" id="egClose" style="display:none">Fermer</button>
-          </div>
-          <div id="egOptOutWrap" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid var(--border,#2a334a)">
-            <button class="gbtn danger" id="egOptOut">Ne plus recevoir mes affiches par mail</button>
-            <div style="font-size:11.5px;color:var(--text-3,#5c6478);font-weight:600;margin-top:8px">
-              Vous reprendrez la main sur les outils Plan Promo, CETELEM et Soldes pour les imprimer vous-même.
-            </div>
-          </div>
-        </div>
-        <div class="vgate-msg" id="egMsg" style="margin-top:16px;font-weight:600"></div>
-      </div>`;
-    document.body.appendChild(eg);
-
-    el('vgDrop').addEventListener('click', () => el('vgFile').click());
-    el('vgFile').addEventListener('change', e => { if (e.target.files[0]) onValoGateFile(e.target.files[0]); e.target.value = ''; });
-    el('vgDrop').addEventListener('dragover', e => { e.preventDefault(); el('vgDrop').classList.add('over'); });
-    el('vgDrop').addEventListener('dragleave', () => el('vgDrop').classList.remove('over'));
-    el('vgDrop').addEventListener('drop', e => {
-      e.preventDefault(); el('vgDrop').classList.remove('over');
-      if (e.dataTransfer.files.length) onValoGateFile(e.dataTransfer.files[0]);
-    });
-    el('vgLogout').addEventListener('click', doLogout);
+    document.body.appendChild(sp);
+    el('spLogout').addEventListener('click', doLogout);
+    el('spSave').addEventListener('click', onPortalSave);
   }
 
   function syncStoreFields() {
@@ -511,20 +523,26 @@
     document.querySelectorAll('.naStoreField').forEach(f => f.style.display = isStore ? '' : 'none');
   }
 
-  /* ---------- Connexion ---------- */
+  /* ---------- Connexion ----------
+     L'identifiant est le nom du magasin, normalisé de la même façon qu'à la
+     création du compte (fonction « store-signup ») : « BUT Reims » -> but-reims. */
+  function loginSlug(s) {
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
   async function onLoginSubmit(e) {
     e.preventDefault();
     const err = el('agErr'), btn = el('agSubmit');
     err.classList.remove('show'); btn.disabled = true; btn.textContent = 'Connexion…';
-    const id = (el('agUser').value || '').trim().toLowerCase();
+    const raw = (el('agUser').value || '').trim().toLowerCase();
     const pass = el('agPass').value || '';
-    const email = id.includes('@') ? id : `${id}@${cfg.EMAIL_DOMAIN || 'gefec.local'}`;
+    const email = raw.includes('@') ? raw : `${loginSlug(raw)}@${cfg.EMAIL_DOMAIN || 'gefec.local'}`;
     try {
       const { error } = await sb.auth.signInWithPassword({ email, password: pass });
       if (error) throw error;
       await onAuthed();
     } catch (ex) {
-      err.textContent = 'Identifiant ou mot de passe incorrect.';
+      err.textContent = 'Nom du magasin ou mot de passe incorrect.';
       err.classList.add('show');
     } finally {
       btn.disabled = false; btn.textContent = 'Se connecter';
@@ -553,37 +571,36 @@
     }
     CURRENT = { userId: user.id, role: prof.role, storeId: prof.store_id, name: prof.display_name || user.email };
 
-    // La fiche du magasin (adresse de réception + formats) décide du périmètre
-    // servi : elle doit donc être lue AVANT applyUserMode(), qui retire du
-    // document les outils hors périmètre et ne repasse jamais deux fois.
-    if (CURRENT.role === 'store' && CURRENT.storeId) await loadStoreRow();
-
     // horodatage de connexion (tableau de bord) — sans bloquer si la migration SQL n'est pas faite
     try { sb.rpc('mark_seen'); } catch (e) {}
+
+    // Magasin : aucun accès à l'outil. Aucune coque, aucun cadre d'outil
+    // chargé — uniquement son espace (historique, adresses, réception).
+    if (CURRENT.role === 'store') {
+      if (!CURRENT.storeId) {
+        el('agErr').textContent = "Compte magasin incomplet — contactez l'administrateur.";
+        el('agErr').classList.add('show');
+        await sb.auth.signOut(); showGate(); return;
+      }
+      await loadStoreRow();
+      hideGate();
+      await openStorePortal();
+      return;
+    }
 
     // en-tête
     el('authChip').hidden = false;
     el('acName').textContent = CURRENT.name;
-    el('acRole').textContent = CURRENT.role === 'store'
-      ? `Magasin ${CURRENT.storeId || ''}`.trim()
-      : (ROLE_LABEL[CURRENT.role] || CURRENT.role);
+    el('acRole').textContent = ROLE_LABEL[CURRENT.role] || CURRENT.role;
     el('acStores').hidden = !(CURRENT.role === 'admin' || CURRENT.role === 'director');
-    el('acMailPrefs').hidden = CURRENT.role !== 'store';
 
-    // profil d'accès : la coque n'ouvre aucun outil avant de savoir QUI se
-    // connecte (magasin = version simplifiée, admin/directeur = outil complet)
+    // profil d'accès : la coque n'ouvre aucun outil avant de savoir QUI se connecte
     if (window.applyUserMode) window.applyUserMode({
       role: CURRENT.role, storeId: CURRENT.storeId, name: CURRENT.name,
-      mailOptIn: isMailOptIn(),
     });
 
     hideGate();
 
-    // magasin : valorisation obligatoire et de moins de 4 semaines
-    if (isSimpleUser()) {
-      const hasValo = await enforceValoGate();
-      if (hasValo) await enforceEmailGate();
-    }
     // tout le monde : charger les documents partagés publiés par l'admin
     await loadAllSharedDocs();
     // masques personnalisés (SOLDES, etc.) → injectés dans Étiquettes
@@ -592,235 +609,151 @@
     renderHomeStatus();
   }
 
-  /* ---------- Fiche du magasin connecté (adresse de réception + formats) ----------
-     stores.email porte trois états : NULL = la question n'a pas encore été
-     posée, 'REFUSE' = le magasin ne veut pas d'envoi, une adresse = il est
-     servi par mail. Le troisième état réduit son périmètre à SISTO Checker. */
-  const MAIL_REFUSE = 'REFUSE';
+  /* ---------- Espace magasin ----------
+     Un compte magasin ne voit jamais la coque : ni outil, ni dépôt. Il
+     consulte l'historique des mails envoyés à ses adresses, modifie ces
+     adresses (1 à 3) et peut couper la réception. L'enregistrement passe par
+     la fonction SQL set_my_mail_settings(), qui ne touche que ces deux champs. */
   let STORE_ROW = null;
+  const isStoreUser = () => !!(CURRENT && CURRENT.role === 'store' && CURRENT.storeId);
 
   async function loadStoreRow() {
     try {
       const { data } = await sb.from('stores')
-        .select('email, mail_prefs').eq('id', CURRENT.storeId).maybeSingle();
+        .select('id, name, emails, mail_enabled').eq('id', CURRENT.storeId).maybeSingle();
       STORE_ROW = data || null;
     } catch (e) { STORE_ROW = null; }
     return STORE_ROW;
   }
-  const storeEmail = () => (STORE_ROW && STORE_ROW.email) || null;
-  const isMailOptIn = () => { const e = storeEmail(); return !!e && e !== MAIL_REFUSE; };
 
-  /* ---------- Profil magasin : valorisation à jour obligatoire ----------
-     Le magasin ne travaille bien qu'avec une photo récente de son stock : une
-     valorisation vieille de plus de 4 semaines produit des affiches pour des
-     produits qui ne sont plus exposés. Elle est donc exigée avant tout accès,
-     et non plus simplement rappelée par un pop-up qu'on referme. */
-  const VALO_MAX_DAYS = 28;
-  const isSimpleUser = () => !!(CURRENT && CURRENT.role === 'store' && CURRENT.storeId);
-  const daysSince = (d) => Math.floor((Date.now() - d.getTime()) / 86400000);
-
-  async function enforceValoGate() {
-    const upd = await getValoUpdatedAt(CURRENT.storeId);
-    const age = upd && !isNaN(upd.getTime()) ? daysSince(upd) : null;
-    if (age === null)        { showValoGate('absente'); return false; }
-    if (age > VALO_MAX_DAYS) { showValoGate('perimee', upd, age); return false; }
-    // une fiche à jour ne suffit pas : le PDF doit être réellement récupérable
-    if (!await loadStoreValo(CURRENT.storeId, true)) { showValoGate('illisible'); return false; }
-    return true;
+  function spMsg(text, cls) {
+    const m = el('spMsg'); if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; }
   }
 
-  const VALO_GATE_TEXT = {
-    absente: () => ({
-      title: 'Déposez votre valorisation',
-      sub: `Aucune valorisation n'est enregistrée pour le magasin <b>${esc(CURRENT.storeId)}</b>. Les outils croisent les offres nationales avec les produits réellement exposés chez vous : sans elle, ils ne peuvent rien produire.<br><br>Déposez le PDF de valorisation pour ouvrir vos outils.`,
-    }),
-    perimee: (upd, age) => ({
-      title: 'Mettez votre valorisation à jour',
-      sub: `Votre valorisation date du <b>${esc(upd.toLocaleDateString('fr-FR', { dateStyle: 'long' }))}</b>, soit <b>${age} jours</b>. Au-delà de 4 semaines elle ne reflète plus votre stock : vos affiches porteraient sur des produits qui ne sont plus en exposition.<br><br>Déposez une valorisation à jour pour ouvrir vos outils.`,
-    }),
-    illisible: () => ({
-      title: 'Déposez à nouveau votre valorisation',
-      sub: `La valorisation enregistrée pour le magasin <b>${esc(CURRENT.storeId)}</b> n'a pas pu être récupérée. Déposez à nouveau le PDF pour ouvrir vos outils.`,
-    }),
-  };
-
-  function showValoGate(reason, upd, age) {
-    const t = VALO_GATE_TEXT[reason](upd, age);
-    el('vgTitle').textContent = t.title;
-    el('vgSub').innerHTML = t.sub;
-    el('vgMsg').textContent = '';
-    el('valoGate').classList.add('show');
-  }
-  function hideValoGate() { el('valoGate').classList.remove('show'); }
-  
-  /* ---------- Portail « affiches par mail » ----------
-     Deux entrées pour le même écran : le portail posé une seule fois après la
-     première valorisation (enforceEmailGate) et le panneau rouvrable depuis
-     l'en-tête (openMailPrefs). Le choix décide du périmètre servi au magasin,
-     d'où le rechargement quand il bascule. */
-  function egReadPrefs() {
-    const v = (name) => {
-      const r = document.querySelector(`input[name="${name}"]:checked`);
-      return r ? r.value : 'a4';
-    };
-    return { tv: v('egFmtTV'), pem: v('egFmtPEM'), star: v('egFmtStar'), cetelem: v('egFmtCET') };
-  }
-  function egFillPrefs(prefs) {
-    if (!prefs) return;
-    const set = (name, val) => {
-      const r = document.querySelector(`input[name="${name}"][value="${val}"]`);
-      if (r) r.checked = true;
-    };
-    if (prefs.tv) set('egFmtTV', prefs.tv);
-    if (prefs.pem) set('egFmtPEM', prefs.pem);
-    if (prefs.star) set('egFmtStar', prefs.star);
-    if (prefs.cetelem) set('egFmtCET', prefs.cetelem);
-  }
-  // -> true si le périmètre servi au magasin vient de changer (donc rechargement)
-  async function egSave(email, prefs) {
-    const avant = isMailOptIn();        // relevé AVANT l'appel : l'état de départ
-    const payload = { email };
-    if (prefs) payload.mail_prefs = prefs;
-    // supabase-js ne lève pas : sans ce test, un refus RLS passerait pour un succès
-    const { error } = await sb.from('stores').update(payload).eq('id', CURRENT.storeId);
-    if (error) throw new Error(error.message || 'enregistrement refusé');
-    STORE_ROW = Object.assign({}, STORE_ROW || {}, payload);
-    CURRENT.email = email;
-    return avant !== isMailOptIn();
-  }
-  function egMsg(text, cls) {
-    const m = el('egMsg');
-    if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; }
+  async function openStorePortal() {
+    document.body.classList.add('is-portal');
+    el('storePortal').classList.add('show');
+    el('spName').textContent = (STORE_ROW && STORE_ROW.name) || CURRENT.name;
+    const mails = (STORE_ROW && STORE_ROW.emails) || [];
+    ['spMail1', 'spMail2', 'spMail3'].forEach((id, i) => { el(id).value = mails[i] || ''; });
+    el('spEnabled').checked = !STORE_ROW || STORE_ROW.mail_enabled !== false;
+    spMsg('');
+    await renderPortalHistory();
   }
 
-  // Panneau des préférences, rouvrable : adresse, formats, et la porte de
-  // sortie vers la gestion manuelle.
-  function openMailPrefs() {
-    if (!isSimpleUser()) return;
-    el('emailGate').classList.add('show');
-    el('egTitle').textContent = 'Vos envois par mail';
-    el('egSub').textContent = "Adresse de réception et format d'impression de vos affiches.";
-    el('egChoices').style.display = 'none';
-    el('egInputWrap').style.display = 'block';
-    el('egCancel').style.display = 'none';
-    el('egClose').style.display = 'inline-block';
-    el('egOptOutWrap').style.display = isMailOptIn() ? 'block' : 'none';
-    egMsg('');
-
-    const input = el('egInput');
-    input.value = isMailOptIn() ? storeEmail() : '';
-    egFillPrefs(STORE_ROW && STORE_ROW.mail_prefs);
-
-    el('egClose').onclick = () => el('emailGate').classList.remove('show');
-    el('egSave').onclick = async () => {
-      const val = input.value.trim();
-      if (!isMail(val)) { egMsg('Adresse e-mail invalide.', 'err'); return; }
-      egMsg('Enregistrement…', 'wait');
-      try {
-        const bascule = await egSave(val, egReadPrefs());
-        egMsg('Enregistré ✓', 'ok');
-        setTimeout(() => bascule ? location.reload() : el('emailGate').classList.remove('show'), 800);
-      } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
-    };
-    // repasser en gestion manuelle : le magasin retrouve ses outils
-    el('egOptOut').onclick = async () => {
-      if (!confirm("Ne plus recevoir vos affiches par mail ?\n\nVous devrez les générer et les imprimer vous-même depuis les outils.")) return;
-      egMsg('Enregistrement…', 'wait');
-      try {
-        await egSave(MAIL_REFUSE, null);
-        egMsg('Envois désactivés — rechargement…', 'ok');
-        setTimeout(() => location.reload(), 900);
-      } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
-    };
+  async function onPortalSave() {
+    const emails = ['spMail1', 'spMail2', 'spMail3'].map(id => el(id).value.trim().toLowerCase()).filter(Boolean);
+    if (!emails.length) { spMsg('Au moins une adresse e-mail est requise.', 'err'); return; }
+    if (emails.some(e => !isMail(e))) { spMsg('Adresse e-mail invalide.', 'err'); return; }
+    if (new Set(emails).size !== emails.length) { spMsg('Une même adresse est saisie deux fois.', 'err'); return; }
+    const enabled = el('spEnabled').checked;
+    const btn = el('spSave'); btn.disabled = true;
+    spMsg('Enregistrement…', 'wait');
+    try {
+      const { error } = await sb.rpc('set_my_mail_settings', { p_emails: emails, p_enabled: enabled });
+      if (error) throw new Error(error.message);
+      STORE_ROW = Object.assign({}, STORE_ROW || {}, { emails, mail_enabled: enabled });
+      spMsg(enabled ? 'Enregistré ✓' : 'Enregistré ✓ — la réception des mails est désactivée.', 'ok');
+    } catch (e) { spMsg('Erreur : ' + (e.message || e), 'err'); }
+    finally { btn.disabled = false; }
   }
 
-  // Portail posé une seule fois : tant que stores.email vaut NULL, la question
-  // n'a jamais été posée à ce magasin.
-  async function enforceEmailGate() {
-    if (!isSimpleUser()) return true;
-    if (!STORE_ROW) await loadStoreRow();
-    // fiche introuvable : on n'a rien à demander, et surtout rien à bloquer
-    if (!STORE_ROW || STORE_ROW.email !== null) return true;
-
-    return new Promise(resolve => {
-      el('emailGate').classList.add('show');
-      el('egTitle').textContent = 'Vos affiches par mail';
-      el('egSub').textContent = 'Souhaitez-vous recevoir les plans promo TV, PEM et Star spécifiques à votre magasin automatiquement par mail ?';
-      el('egChoices').style.display = 'flex';
-      el('egInputWrap').style.display = 'none';
-      el('egCancel').style.display = 'inline-block';
-      el('egClose').style.display = 'none';
-      el('egOptOutWrap').style.display = 'none';
-      el('egInput').value = '';
-      egMsg('');
-
-      el('egYes').onclick = () => {
-        el('egChoices').style.display = 'none';
-        el('egInputWrap').style.display = 'block';
-        el('egInput').focus();
-      };
-      el('egCancel').onclick = () => {
-        el('egInputWrap').style.display = 'none';
-        el('egChoices').style.display = 'flex';
-        el('egInput').value = '';
-        egMsg('');
-      };
-
-      const terminer = (bascule, texte) => {
-        egMsg(texte, 'ok');
-        setTimeout(() => {
-          // le « oui » réduit le périmètre à SISTO Checker : on recharge pour
-          // que la coque se reconstruise dans le bon profil, plutôt que de
-          // retirer des cartes déjà posées
-          if (bascule) { location.reload(); return; }
-          el('emailGate').classList.remove('show');
-          resolve(true);
-        }, bascule ? 1800 : 1200);
-      };
-
-      el('egNo').onclick = async () => {
-        egMsg('Enregistrement…', 'wait');
-        try {
-          const bascule = await egSave(MAIL_REFUSE, null);
-          terminer(bascule, 'Choix enregistré.');
-        } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
-      };
-      el('egSave').onclick = async () => {
-        const val = el('egInput').value.trim();
-        if (!isMail(val)) { egMsg('Adresse e-mail invalide.', 'err'); return; }
-        egMsg('Enregistrement…', 'wait');
-        try {
-          const bascule = await egSave(val, egReadPrefs());
-          terminer(bascule, 'Merci — vos affiches vous seront envoyées par mail.');
-        } catch (e) { egMsg('Erreur : ' + (e.message || e), 'err'); }
-      };
-    });
+  async function renderPortalHistory() {
+    const host = el('spHist');
+    try {
+      const { data, error } = await sb.from('campagne_mails')
+        .select('email, subject, plans, operations, products, pages, sent_at')
+        .eq('store_id', CURRENT.storeId).order('sent_at', { ascending: false }).limit(200);
+      if (error) throw error;
+      if (!data || !data.length) { host.innerHTML = '<div class="gempty">Aucun mail envoyé pour le moment.</div>'; return; }
+      host.innerHTML = `<table class="sp-table"><thead><tr><th>Date</th><th>Destinataire</th><th>Contenu</th><th>Affiches</th></tr></thead><tbody>${
+        data.map(m => `<tr>
+          <td>${esc(new Date(m.sent_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))}</td>
+          <td>${esc(m.email)}</td>
+          <td>${esc(m.operations || m.plans || m.subject || '')}</td>
+          <td>${m.products != null ? esc(m.products) : '—'}</td></tr>`).join('')
+      }</tbody></table>`;
+    } catch (e) {
+      host.innerHTML = `<div class="gempty">Historique indisponible : ${esc(e.message || e)}</div>`;
+    }
   }
 
-
-  function vgMsg(text, cls) { const m = el('vgMsg'); if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; } }
-
-  async function onValoGateFile(file) {
-    if (!file) return;
-    const isPdf = (file.type === 'application/pdf') || /\.pdf$/i.test(file.name || '');
-    if (!isPdf) { vgMsg('Format invalide — le PDF de valorisation est attendu.', 'err'); return; }
-    vgMsg('Lecture et envoi en cours…', 'wait');
-    // setValoFile lit le PDF puis déclenche onValoLocallySet (envoi cloud) :
-    // le portail se ferme sur l'événement de sauvegarde, pas avant.
-    try { await window.setValoFile(file); }
-    catch (e) { vgMsg('Échec : ' + (e.message || e), 'err'); }
+  /* ---------- Création de compte magasin (sans session) ----------
+     Nom du magasin, mot de passe, 1 à 3 adresses, valorisation PDF : tout est
+     obligatoire. Le PDF est relu ici pour vérifier qu'il contient bien des
+     codes EAN (une valorisation), puis tout part à la fonction Edge
+     « store-signup », qui crée le compte en une seule fois. */
+  let suFile = null;
+  function showSignup(on) {
+    el('agForm').hidden = !!on;
+    el('suForm').hidden = !on;
+    el('agSubTitle').textContent = on ? 'Créer le compte de votre magasin' : 'Connexion';
+    el('agErr').classList.remove('show'); el('suErr').classList.remove('show');
   }
-  document.addEventListener('gefec:valo-saved', () => {
-    vgMsg('Valorisation enregistrée ✓', 'ok');
-    setTimeout(() => {
-      hideValoGate();
-      if (isSimpleUser()) enforceEmailGate();
-    }, 600);
-    renderHomeStatus();
-  });
-  document.addEventListener('gefec:valo-error', e => {
-    vgMsg('Envoi impossible : ' + ((e.detail && e.detail.message) || 'réessayez'), 'err');
-  });
+  function suError(t) { const e = el('suErr'); e.textContent = t; e.classList.add('show'); }
+  function suPick(file) {
+    const ok = file && ((file.type === 'application/pdf') || /\.pdf$/i.test(file.name || ''));
+    if (!ok) { suFile = null; el('suDropT').textContent = 'Déposez votre valorisation (PDF)'; suError('Format invalide — un PDF est attendu.'); return; }
+    suFile = file;
+    el('suErr').classList.remove('show');
+    el('suDropT').textContent = '📄 ' + file.name;
+    el('suDrop').classList.add('loaded');
+  }
+  async function countPdfEans(file) {
+    const lib = window.pdfjsLib;
+    if (!lib) return null;                    // pas de lecteur : la fonction vérifiera le format
+    try { lib.GlobalWorkerOptions.workerSrc = lib.GlobalWorkerOptions.workerSrc || 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+    const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const set = new Set();
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const text = (await (await pdf.getPage(i)).getTextContent()).items.map(t => t.str).join(' ');
+      (text.match(/\b\d{13}\b/g) || []).forEach(e => set.add(e));
+    }
+    return set.size;
+  }
+  async function onSignupSubmit(e) {
+    e.preventDefault();
+    el('suErr').classList.remove('show');
+    const name = el('suName').value.trim().replace(/\s+/g, ' ');
+    const pass = el('suPass').value, pass2 = el('suPass2').value;
+    const emails = ['suMail1', 'suMail2', 'suMail3'].map(id => el(id).value.trim().toLowerCase()).filter(Boolean);
+    if (loginSlug(name).length < 2) return suError('Indiquez le nom de votre magasin.');
+    if (pass.length < 8) return suError('Le mot de passe doit faire au moins 8 caractères.');
+    if (pass !== pass2) return suError('Les deux mots de passe ne correspondent pas.');
+    if (!emails.length) return suError('Au moins une adresse e-mail est requise.');
+    if (emails.some(m => !isMail(m))) return suError('Adresse e-mail invalide.');
+    if (new Set(emails).size !== emails.length) return suError('Une même adresse est saisie deux fois.');
+    if (!suFile) return suError('La valorisation PDF est obligatoire.');
+
+    const btn = el('suSubmit'); btn.disabled = true; btn.textContent = 'Vérification de la valorisation…';
+    try {
+      let n = null;
+      try { n = await countPdfEans(suFile); } catch (x) { throw new Error('Ce PDF est illisible.'); }
+      if (n === 0) throw new Error("Ce PDF ne contient aucun code EAN : ce n'est pas une valorisation du stock.");
+
+      btn.textContent = 'Création du compte…';
+      const fd = new FormData();
+      fd.append('store_name', name);
+      fd.append('password', pass);
+      fd.append('emails', JSON.stringify(emails));
+      if (n != null) fd.append('ean_count', String(n));
+      fd.append('file', suFile, suFile.name || 'valorisation.pdf');
+      const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/store-signup`, {
+        method: 'POST', headers: { apikey: cfg.SUPABASE_KEY, Authorization: `Bearer ${cfg.SUPABASE_KEY}` }, body: fd,
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.ok) throw new Error(out.error || `Création impossible (HTTP ${res.status}).`);
+
+      btn.textContent = 'Connexion…';
+      const { error } = await sb.auth.signInWithPassword({ email: `${out.login}@${cfg.EMAIL_DOMAIN || 'gefec.local'}`, password: pass });
+      if (error) throw new Error('Compte créé — connectez-vous avec le nom du magasin.');
+      await onAuthed();
+    } catch (ex) {
+      suError(ex.message || String(ex));
+    } finally {
+      btn.disabled = false; btn.textContent = 'Créer mon compte';
+    }
+  }
 
   // Ruban de statut : valorisation + documents partagés (chips inline)
   async function renderHomeStatus() {
@@ -1175,7 +1108,7 @@
   }
   // Portail consulté par le moteur avant d'ouvrir un outil
   window.moduleGate = function (name) {
-    if (isSimpleUser()) return true;      // magasin : aucun pop-up, on ouvre l'outil
+    if (isStoreUser()) return true;       // magasin : aucun outil, aucun pop-up
     const ids = MODULE_DOC[name];
     if (!ids) return true;                // module sans document partagé
     if (moduleSeen[name]) return true;    // déjà vu cette session
@@ -1686,11 +1619,14 @@
     list.innerHTML = '<div class="gempty">Chargement…</div>';
     try {
       // 1) magasins (noms) + 2) métadonnées éventuelles
-      // la colonne « email » n'existe qu'après la migration add-affiches-mail.sql
-      let stores = null, serr = null;
-      ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region, email').order('id'));
-      if (serr) ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region').order('id'));
+      // adresses de réception (1 à 3) et interrupteur : migration comptes-autonomes.sql
+      const { data: stores, error: serr } = await sb.from('stores').select('id, name, region, emails, mail_enabled').order('id');
       if (serr) throw serr;
+      // s.email = adresse principale, seulement si le magasin reçoit ses mails
+      (stores || []).forEach(s => {
+        s.emails = s.emails || [];
+        s.email = s.mail_enabled !== false && s.emails.length ? s.emails[0] : null;
+      });
       let metaBy = {};
       try {
         const { data: metas } = await sb.from('valorisations').select('store_id, ean_count, updated_at');
@@ -1741,7 +1677,7 @@
 
       // envoi groupé : réservé à l'administrateur, sur les magasins dont la
       // valorisation est déposée ET dont l'adresse du directeur est connue
-      const sendable = enriched.filter(e => e.has && e.s.email && e.s.email !== 'REFUSE');
+      const sendable = enriched.filter(e => e.has && e.s.email);
       const bulk = (CURRENT && CURRENT.role === 'admin')
         ? `<div class="gpromo-actions" style="margin:0 0 14px">
              <button class="gbtn" id="stMailAll"${sendable.length ? '' : ' disabled'}>✉️ Envoyer les affiches aux ${sendable.length} magasin(s) prêt(s)</button>
@@ -1764,7 +1700,7 @@
         const seenTxt = e.seen ? `connexion ${relAge(e.seen)}` : 'jamais connecté';
         const mailTxt = e.mail
           ? `✉️ affiches envoyées ${relAge(new Date(e.mail.sent_at))} à ${esc(e.mail.email)}`
-          : (e.s.email === 'REFUSE' ? `<span style="color:#f87171">Ne souhaite pas d'affiches par mail</span>` : (e.s.email ? `✉️ ${esc(e.s.email)}` : ''));
+          : (e.s.mail_enabled === false ? `<span style="color:#f87171">Réception des mails désactivée</span>` : (e.s.emails.length ? `✉️ ${esc(e.s.emails.join(', '))}` : ''));
         const isAdmin = CURRENT && CURRENT.role === 'admin';
         return `<div class="grow">
           ${badge}
@@ -1773,7 +1709,7 @@
             ${mailTxt ? `<div class="stmail">${mailTxt}</div>` : ''}</div>
           ${e.has ? `<button data-load="${esc(e.s.id)}">Charger dans les outils</button>
                      <button data-dl="${esc(e.s.id)}">Télécharger</button>` : ''}
-          ${e.has && isAdmin && e.s.email !== 'REFUSE' ? `<button data-mail="${esc(e.s.id)}">✉️ Affiches</button>` : ''}
+          ${e.has && isAdmin && e.s.mail_enabled !== false ? `<button data-mail="${esc(e.s.id)}">✉️ Affiches</button>` : ''}
         </div>`;
       }).join('');
       list.innerHTML = summary + rowsHtml;
@@ -1955,11 +1891,15 @@
     } catch (e) { /* journal facultatif : l'envoi, lui, a bien eu lieu */ }
   }
 
+  // l'adresse saisie par l'admin devient l'adresse principale (3 au maximum)
   async function saveStoreEmail(store, to) {
-    if (!to || store.email === to) return;
-    const { error } = await sb.from('stores').update({ email: to }).eq('id', store.id);
-    if (error) { toast("Adresse non mémorisée (migration add-affiches-mail.sql ?) : " + error.message, true); return; }
-    store.email = to;
+    to = String(to || '').trim().toLowerCase();
+    const cur = store.emails || [];
+    if (!to || cur[0] === to) return;
+    const emails = [to, ...cur.filter(m => m !== to)].slice(0, 3);
+    const { error } = await sb.from('stores').update({ emails }).eq('id', store.id);
+    if (error) { toast('Adresse non mémorisée : ' + error.message, true); return; }
+    store.emails = emails; store.email = to;
   }
 
   /* ---------- Modale d'envoi ---------- */
@@ -2019,7 +1959,7 @@
       if (send && !isMail(to)) { msg.className = 'gmsg err'; msg.textContent = "Indiquez l'adresse e-mail du directeur du magasin."; return; }
       jobs.push({ store, to });
     } else {
-      for (const store of affTargets) if (isMail(store.email)) jobs.push({ store, to: store.email });
+      for (const store of affTargets) if (isMail(store.email)) jobs.push({ store, to: store.email }); // adresse principale
       if (!jobs.length) { msg.className = 'gmsg err'; msg.textContent = "Aucun magasin prêt : il faut une valorisation déposée et l'adresse de son directeur."; return; }
       if (send && !confirm(`Envoyer les affiches à ${jobs.length} magasin(s) ?\nChaque directeur recevra le PDF de SON magasin.`)) return;
     }
