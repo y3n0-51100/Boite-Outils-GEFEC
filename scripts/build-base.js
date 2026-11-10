@@ -8,6 +8,13 @@
  *
  * Le champ `updated` n'est mis à jour que si les données (eco/libellé/prix)
  * ont réellement changé, afin d'éviter des commits quotidiens inutiles.
+ *
+ * Deux sources, fusionnées :
+ *   - base.xlsx      (argument 1) : éco-participations DEA + DEEE (seule source),
+ *                                   libellés et prix en repli ;
+ *   - products.json  (argument 4, facultatif) : libellés et prix fond de rayon
+ *                                   à jour, publiés par le site sous forme JSON.
+ * base-checked.js note si chaque source a été lue correctement (BASE_OK).
  */
 const fs = require('fs');
 const XLSX = require('xlsx');
@@ -15,6 +22,7 @@ const XLSX = require('xlsx');
 const SRC = process.argv[2] || 'base.xlsx';
 const OUT = process.argv[3] || 'base-eco.js';
 const CHECKED = process.argv[4] || 'base-checked.js';
+const JSON_SRC = process.argv[5] || '';
 
 const normCode = s => String(s).replace(/^0+/, '');
 function parsePrice(s) {
@@ -146,6 +154,34 @@ if (!eco.size) {
   process.exit(1);
 }
 
+// products.json : libellés + prix fond de rayon à jour (remplacent ceux du classeur)
+let jsonOk = false;
+if (JSON_SRC) {
+  try {
+    const list = JSON.parse(fs.readFileSync(JSON_SRC, 'utf8'));
+    if (!Array.isArray(list) || list.length < 1000) throw new Error('liste de produits vide ou incomplète');
+    let n = 0;
+    for (const p of list) {
+      const code = String(p && p.ean != null ? p.ean : '').trim();
+      if (!/^\d{8,13}$/.test(code)) continue;
+      const price = typeof p.prixFdr === 'number' ? p.prixFdr : parsePrice(p.prixFdr);
+      const name = String(p.designation || '').trim().slice(0, 90);
+      if (!name && price == null) continue;
+      const k = normCode(code);
+      const cur = info.get(k) || { name: '', price: null };
+      info.set(k, { name: name || cur.name, price: price != null ? price : cur.price });
+      n++;
+    }
+    if (n < 1000) throw new Error('trop peu de produits exploitables (' + n + ')');
+    jsonOk = true;
+    console.log(`✓ products.json : ${n} produits (libellés + prix fond de rayon).`);
+  } catch (e) {
+    console.log('⚠️ products.json illisible — libellés et prix du classeur conservés : ' + e.message);
+  }
+} else {
+  console.log('⚠️ products.json absent — libellés et prix du classeur conservés.');
+}
+
 const prev = readExisting();
 const now = new Date().toISOString();
 
@@ -164,7 +200,9 @@ fs.writeFileSync(CHECKED,
   + 'window.BASE_CHECKED = ' + JSON.stringify(now) + ';\n'
   + 'window.BASE_DATA_UPDATED = ' + JSON.stringify(sameData ? prev.updated : now) + ';\n'
   // vraie date des données : la photo de la base (colonne DT_PHOTO du classeur)
-  + 'window.BASE_PHOTO = ' + JSON.stringify(photo) + ';\n');
+  + 'window.BASE_PHOTO = ' + JSON.stringify(photo) + ';\n'
+  // état des deux sources lors de ce passage (logo OK de l'accueil)
+  + 'window.BASE_OK = ' + JSON.stringify({ xlsx: true, json: jsonOk }) + ';\n');
 
 if (sameData) {
   console.log(`✓ Données identiques (${eco.size} éco, ${info.size} libellés/prix) — base-eco.js inchangé, ${CHECKED} mis à jour.`);

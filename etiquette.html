@@ -2980,9 +2980,7 @@ function applySimpleMode() {
       state.baseInfo = new Map(Object.entries(BASE_ECO.info).map(([k, a]) =>
         [k, { name: (a && a[0]) || '', price: a && a[1] != null ? +a[1] : null }]));
     }
-    const dd = window.BASE_PHOTO || BASE_ECO.updated;      // photo de la base (DT_PHOTO) en priorité
-    const d = dd ? new Date(dd).toLocaleDateString('fr-FR') : '?';
-    setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s) — base du ${d}`);
+    setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s) — base en ligne`);
   } else {
     try {
       const baseEco = await kvGet('baseEco');
