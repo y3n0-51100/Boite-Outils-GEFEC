@@ -168,39 +168,47 @@ plan par plan.
 
 ## L'outil « ✉️ Envoi Campagne Mail » (administrateur)
 
-L'administrateur dépose ses fichiers promo comme avant — rien ne change — puis
-ouvre l'outil. **Tous les magasins apparaissent en liste**, chacun avec son
-bouton. Un clic, et l'outil fait tout, seul :
+Les affiches ne partent plus en bloc : **chaque affiche TV ou PEM part le jour
+où son offre démarre**, sur le masque de l'opération commerciale en cours, et
+**une seule fois** par magasin. Pas d'affiche à mettre en place : pas de mail.
 
-| Étape | Ce que fait l'outil |
+### Trois onglets
+
+| Onglet | Contenu |
 | --- | --- |
-| 1 · Contrôle | La valorisation du magasin doit avoir **moins de 20 jours**. Au-delà — ou si elle n'a jamais été déposée — la ligne est marquée et ses boutons restent inactifs : des affiches issues d'une photo périmée porteraient sur des produits qui ne sont plus exposés. |
-| 2 · Génération | `etiquette.html?export=1` est chargé hors écran (le moteur d'affiches, sans interface) : `gefecBuildCampagne()` croise les plans promo publiés avec la valorisation du magasin et rend **un PDF par plan** — Plan Promo TV et Plan Promo PEM. Le type d'affiche, le format (A4 ou A5 ×2) et le papier (blanc ou pré-imprimé) sont choisis par l'administrateur en tête d'écran. |
-| 3 · Dépôt | Les PDF sont déposés dans le bucket privé `affiches`, sous `<code magasin>/campagne/<plan>.pdf`, remplacés à chaque campagne. |
-| 4 · Envoi | La fonction Edge `send-campagne-mail` relit les PDF **côté serveur** et poste le mail avec les **deux pièces jointes** et le message annonçant le plan promo envoyé. Les mégaoctets ne repassent jamais par le navigateur. |
-| 5 · Trace | Table `campagne_mails` : « dernière campagne il y a 3 jours à … » sous chaque magasin. |
+| **📅 Opérations** | Les opérations commerciales (nom, du, au, **masque des offres PROMO**, **masque des offres BON PLAN** — officiels ou masques perso), sur une frise et en liste. En dessous, les **réglages de l'envoi automatique** : activation, date de mise en service, adresse d'alerte, papier, objet et message du mail. |
+| **📬 Envois programmés** | Le calendrier des 45 prochains jours : pour chaque jour, les offres qui démarrent, leur type (PROMO / BON PLAN), le masque retenu. Puis les magasins : **👁 Aperçu** (télécharge ce que le magasin recevra le jour choisi), **✉️ Envoyer maintenant**, **▶️ Lancer la tournée du jour**, et **📦 Campagne complète** (l'ancien mode : tous les plans, Star et CETELEM compris, sans tenir compte des dates). |
+| **🕘 Historique** | Les tournées (automatiques ou manuelles, statut, magasins servis, alertes) et les 60 derniers mails. |
 
-Le bouton **« ⬇️ PDF »** fait les étapes 1 et 2 seulement et télécharge les
-fichiers sur le poste de l'administrateur : de quoi contrôler une campagne avant
-de l'envoyer. Le bouton **« ✉️ Envoyer à tous les magasins prêts (N) »** enchaîne
-les magasins dont la valorisation est fraîche **et** l'adresse renseignée.
+### Les règles
 
-**Les adresses ne sont pas génériques** : une par magasin, saisie sur sa ligne
-dans l'outil et mémorisée sur sa fiche (`stores.email`).
+| Règle | Détail |
+| --- | --- |
+| Quand | Chaque matin à **6 h** (heure de Paris), GitHub Actions lance la tournée (`.github/workflows/envoi-auto-affiches.yml`). |
+| Quelles offres | Celles **en cours** ce jour-là (du ≤ J ≤ au), dont le début est postérieur à la **mise en service**, et **jamais envoyées** à ce magasin. Une offre ratée (plan publié en retard) part donc à la tournée suivante. |
+| Doublons | Clé `plan + EAN + du + au + prix` mémorisée dans `auto_sent` : une offre reprise à l'identique d'un plan promo à l'autre ne repart jamais ; si le prix ou les dates changent, l'affiche repart. |
+| PROMO ou BON PLAN | Prix du plan **inférieur** au prix de vente de la base NOSICA → PROMO, avec le prix NOSICA **barré** ; sinon BON PLAN. |
+| Masque | Celui de l'opération qui couvre la **date de début** de l'offre. Aucune opération → PROMO DU MOMENT / BON PLAN, et alerte. |
+| Destinataires | Les magasins qui ont donné leur adresse (`stores.email`), au format qu'ils ont choisi (A4 / A5 par plan). |
+| Valorisation | Plus de **20 jours** → rien n'est envoyé au magasin, alerte à l'administrateur. |
+| Alertes | Un mail à l'adresse d'alerte **seulement s'il y a un problème** : valorisation périmée ou absente, offre sans opération, masque introuvable, échec d'envoi, base NOSICA non vérifiée depuis 48 h. |
 
-**L'adresse d'expédition se règle dans ⚙️ Réglages → « Envoi des campagnes
-mail »** (nom de l'expéditeur, adresse, adresse de réponse, objet et message par
-défaut). Elle est stockée dans la table `app_settings` et lue par la fonction
-d'envoi : la changer ne demande aucun redéploiement. Le bouton « ✉️ Envoyer un
-test » y envoie un vrai mail sans pièce jointe pour valider la configuration.
-L'objet et le message acceptent `{magasin}`, `{code}`, `{plans}`, `{affiches}`,
-`{pages}` et `{date}`.
+### Architecture
 
-Mise en place : exécuter [`supabase/add-campagne-mail.sql`](./supabase/add-campagne-mail.sql)
-puis déployer la fonction `send-campagne-mail` — étape 7 de
-[`supabase/SETUP.md`](./supabase/SETUP.md). Les voies d'envoi (SMTP, Brevo ou
-Resend) sont **les mêmes secrets** que pour le mail « affiches prêtes » : si
-celui-ci est déjà configuré, il n'y a rien à ajouter.
+- `auto-engine.js` — le moteur (réglages, opérations, croisement, dépôt, mail,
+  mémorisation, journal). **Le même code** sert l'outil admin et la tournée.
+- `etiquette.html?export=1` — `gefecBuildAuto()` génère les affiches du jour
+  d'un magasin (masque **par produit**), `gefecPlanOffers()` liste les offres
+  pour le calendrier.
+- `auto-run.html` + `scripts/run-auto.js` — la tournée sans écran : Chromium
+  (Playwright) ouvre la page, se connecte avec un **compte robot
+  administrateur**, et lance `runDay()`.
+- Mail : fonction Edge `send-campagne-mail`, inchangée (pièces jointes
+  `<code magasin>/campagne/auto-tv.pdf` et `auto-pem.pdf`).
+- Tables : `operations`, `auto_sent`, `auto_runs` ; réglages dans
+  `app_settings` (clé `auto`) — [`supabase/add-envoi-auto.sql`](./supabase/add-envoi-auto.sql).
+
+Mise en place : étape 8 de [`supabase/SETUP.md`](./supabase/SETUP.md).
 
 ## Documentation
 

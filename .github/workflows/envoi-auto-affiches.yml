@@ -1,0 +1,56 @@
+name: Envoi automatique des affiches
+
+# Chaque matin à 6 h (heure de Paris), envoie à chaque magasin inscrit les
+# affiches des offres TV / PEM qui démarrent, sur le masque de l'opération
+# commerciale renseignée par l'administrateur. Pas d'affiche = pas de mail.
+# GitHub planifie en UTC : deux passages (4 h et 5 h UTC) couvrent l'heure
+# d'été et l'heure d'hiver ; le script ne part qu'à partir de 6 h à Paris et
+# une seule tournée réussie par jour est faite.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Rejouer un autre jour (AAAA-MM-JJ, vide = aujourd’hui)'
+        required: false
+        default: ''
+      force:
+        description: 'Forcer (ignore l’heure et une tournée déjà faite)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: envoi-auto-affiches
+  cancel-in-progress: false
+
+jobs:
+  tournee:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Installation de Playwright (Chromium)
+        run: |
+          npm install playwright@1.48.2 --no-save
+          npx playwright install --with-deps chromium
+
+      - name: Tournée du jour
+        env:
+          GEFEC_ROBOT_USER: ${{ secrets.GEFEC_ROBOT_USER }}
+          GEFEC_ROBOT_PASS: ${{ secrets.GEFEC_ROBOT_PASS }}
+          GEFEC_DATE: ${{ github.event.inputs.date }}
+          GEFEC_FORCE: ${{ github.event.inputs.force }}
+        run: node scripts/run-auto.js

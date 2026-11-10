@@ -1,50 +1,24 @@
 /* ════════════════════════════════════════════════════════════════
    ENVOI CAMPAGNE MAIL — outil administrateur
    ────────────────────────────────────────────────────────────────
-   Tous les magasins en liste ; chacun a son bouton. Un clic et l'outil,
-   seul, sans application tierce :
-     1. contrôle la valorisation du magasin (moins de 20 jours) ;
-     2. croise les plans promo publiés avec cette valorisation, dans un
-        cadre etiquette.html?export=1 hors écran (le moteur d'affiches) ;
-     3. fabrique UN PDF PAR PLAN — Plan Promo TV et Plan Promo PEM : ce
-        sont les deux pièces jointes du mail ;
-     4. dépose les PDF dans le bucket privé « affiches » ;
-     5. appelle la fonction Edge « send-campagne-mail », qui relit les
-        fichiers côté serveur et poste le mail depuis l'adresse réglée
-        dans ⚙️ Réglages.
+   Trois onglets :
+     · Opérations        — périodes commerciales (nom, du, au, masque PROMO,
+                           masque BON PLAN) + réglages de l'envoi automatique ;
+     · Envois programmés — calendrier des offres TV / PEM par jour de
+                           démarrage, magasins (aperçu, envoi immédiat,
+                           campagne complète « ancien mode ») ;
+     · Historique        — tournées (auto_runs) et derniers mails.
+   Le travail réel (génération, envoi, mémorisation) est fait par
+   auto-engine.js, le même moteur que la tournée quotidienne de 6 h.
    ════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
 
   const cfg = window.GEFEC_CONFIG || {};
-
-  /* La valorisation doit être fraîche : au-delà, les affiches portent sur des
-     produits qui ne sont plus en exposition. C'est le contrôle demandé avant
-     tout envoi de campagne. */
   const VALO_MAX_DAYS = 20;
 
-  const AFF_BUCKET = 'affiches';
-  const SETTINGS_KEY = 'mail';
-
-  const DEFAULT_SUBJECT = 'Votre plan promo — {plans} — {magasin}';
-  const DEFAULT_MESSAGE = [
-    'Bonjour,',
-    '',
-    'Voici la campagne promo à mettre en place dans votre magasin : {plans}.',
-    '',
-    'Vous trouverez en pièces jointes les affiches prix correspondant aux produits',
-    'réellement présents chez vous ({affiches} affiche(s), {pages} page(s) à imprimer).',
-    'Elles ont été générées à partir de la valorisation que vous avez déposée.',
-    '',
-    "Il n'y a plus qu'à imprimer et à poser en rayon.",
-    '',
-    'Bonne vente,',
-  ].join('\n');
-
-  let sb = null;
-  let ME = null;                 // { userId, role }
-  let SETTINGS = {};             // contenu de app_settings.mail
-  let STORES = [];               // lignes enrichies
+  let sb = null, ME = null, E = null;   // client Supabase, utilisateur, moteur
+  let SETTINGS = null, OPS = [], STORES = [], MASKS = [], OFFERS = [];
   let busy = false;
 
   /* ---------- Outils ---------- */
@@ -52,15 +26,14 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const isMail = (v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || '').trim());
-  const daysSince = (d) => Math.floor((Date.now() - d.getTime()) / 86400000);
-  function slugify(s) {
-    return String(s || '').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '')
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'magasin';
-  }
+  const fmtPrice = (n) => n == null ? '–' : (+n).toFixed(2).replace('.', ',') + ' €';
+  const dayName = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const frDate = (iso) => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+  const frDT = (ts) => ts ? new Date(ts).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   function relAge(dt) {
-    const d = daysSince(dt);
+    const d = Math.floor((Date.now() - dt.getTime()) / 864e5);
     if (d <= 0) return "aujourd'hui";
-    if (d === 1) return 'il y a 1 jour';
+    if (d === 1) return 'hier';
     if (d < 7) return `il y a ${d} jours`;
     const w = Math.floor(d / 7);
     return w === 1 ? 'il y a 1 semaine' : `il y a ${w} semaines`;
@@ -69,760 +42,756 @@
   function toast(msg, err) {
     const t = el('toast');
     t.textContent = msg;
-    t.classList.toggle('error', !!err);
-    t.classList.add('show');
+    t.classList.toggle('is-error', !!err);
+    t.classList.add('is-show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+    toastTimer = setTimeout(() => t.classList.remove('is-show'), 3600);
+  }
+  function setMsg(id, cls, txt) { const m = el(id); m.className = 'msg' + (cls ? ' is-' + cls : ''); m.textContent = txt || ''; }
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
   function guard(html) {
-    const g = el('guard');
-    g.innerHTML = html; g.hidden = false;
-    el('cardOpts').hidden = true; el('cardStores').hidden = true;
-    el('btnAll').disabled = true; el('btnReload').disabled = true;
+    const g = el('guard'); g.innerHTML = html; g.hidden = false;
+    el('tabs').hidden = true;
+    document.querySelectorAll('.tabs_pane').forEach(p => { p.hidden = true; });
   }
 
-  /* La coque (app-auth.js) a déjà un client Supabase authentifié : on le
-     réutilise plutôt que d'en ouvrir un second qui rafraîchirait le même
-     jeton en parallèle. Hors coque, on crée le nôtre. */
+  /* La coque a déjà un client Supabase authentifié : on le réutilise. */
   function getSb() {
     try {
-      if (window.parent && window.parent !== window && window.parent.GEFEC_SB)
-        return window.parent.GEFEC_SB;
-    } catch (e) { /* origine différente : on prend la voie normale */ }
+      if (window.parent && window.parent !== window && window.parent.GEFEC_SB) return window.parent.GEFEC_SB;
+    } catch (e) {}
     if (!window.supabase || !cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) return null;
     return window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY, {
       auth: { persistSession: true, autoRefreshToken: false },
     });
   }
 
-  /* ---------- Réglages d'envoi (⚙️ Réglages de la coque) ---------- */
-  async function loadSettings() {
-    try {
-      const { data } = await sb.from('app_settings').select('value').eq('key', SETTINGS_KEY).maybeSingle();
-      SETTINGS = (data && data.value) || {};
-    } catch (e) { SETTINGS = {}; }
-    el('optSubject').value = SETTINGS.subject || DEFAULT_SUBJECT;
-    el('optMessage').value = SETTINGS.message || DEFAULT_MESSAGE;
-    const from = String(SETTINGS.from_email || '').trim();
-    const m = el('fromMsg');
-    if (isMail(from)) {
-      m.className = 'msg ok';
-      m.textContent = `Expéditeur : ${SETTINGS.from_name ? SETTINGS.from_name + ' <' + from + '>' : from}`
-        + (SETTINGS.reply_to ? ` · réponses vers ${SETTINGS.reply_to}` : '');
-    } else {
-      m.className = 'msg warn';
-      m.textContent = "Aucune adresse d'expédition enregistrée : renseignez-la dans ⚙️ Réglages → « Envoi des campagnes mail ». "
-        + "À défaut, la fonction utilisera le secret MAIL_FROM s'il est défini.";
-    }
+  /* ---------- Onglets ---------- */
+  function showTab(name) {
+    document.querySelectorAll('.tabs_link').forEach(b => b.classList.toggle('is-active', b.dataset.tab === name));
+    document.querySelectorAll('.tabs_pane').forEach(p => { p.hidden = p.dataset.pane !== name; });
+    try { localStorage.setItem('gefec_campagne_tab', name); } catch (e) {}
+    if (name === 'histo') loadHistory();
   }
 
-  /* ---------- Plans promo publiés par l'administrateur ----------
-     Mêmes documents partagés que la coque (bucket « shared » + table
-     « shared_docs »). Le résultat est gardé tant que la publication n'a pas
-     changé : une campagne sur 16 magasins ne relit pas 16 fois les mêmes PDF. */
-  let planCache = null;
-  const isFolder = (p) => typeof p === 'string' && p.endsWith('/');
-
-  async function fetchSharedMeta(id) {
-    try {
-      const { data } = await sb.from('shared_docs')
-        .select('file_path, file_name, updated_at').eq('id', id).maybeSingle();
-      return data || null;
-    } catch (e) { return null; }
-  }
-  async function listShared(prefix) {
-    try {
-      const { data } = await sb.storage.from('shared').list(prefix.replace(/\/$/, ''), { limit: 200 });
-      return (data || []).filter(f => f && f.name && f.id !== null)
-        .map(f => prefix.replace(/\/$/, '') + '/' + f.name);
-    } catch (e) { return []; }
-  }
-  async function planFiles() {
-    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo-star', 'plan-promo', 'affiches-cetelem'];
-    const metas = {};
-    for (const id of ids) metas[id] = await fetchSharedMeta(id);
-    const token = ids.map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
-    if (planCache && planCache.token === token) return planCache;
-
-    const plans = { tv: [], pem: [], star: [], auto: [], cet: [] }, labels = [];
-    const hasNew = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
-    const pick = async (id, slot, label) => {
-      const meta = metas[id];
-      if (!meta || !meta.file_path) return;
-      const paths = isFolder(meta.file_path) ? (await listShared(meta.file_path)).sort() : [meta.file_path];
-      let n = 0;
-      for (const p of paths) {
-        const { data, error } = await sb.storage.from('shared').download(p);
-        if (error || !data) continue;
-        const name = (p.split('/').pop() || id).replace(/^\d+_/, '');
-        plans[slot].push({ data: await data.arrayBuffer(), name });
-        n++;
-      }
-      if (n) labels.push(label);
-    };
-    await pick('plan-promo-tv', 'tv', 'Plan Promo TV');
-    await pick('plan-promo-pem', 'pem', 'Plan Promo PEM');
-    await pick('plan-promo-star', 'star', 'Produits Star');
-    await pick('affiches-cetelem', 'cet', 'Affiches CETELEM');
-    // transition : l'ancien plan unique ne sert que si aucun des deux nouveaux
-    // n'est publié (le moteur reconnaît alors lui-même le type de chaque PDF)
-    if (!hasNew) await pick('plan-promo', 'auto', 'Plan promo (format unique)');
-    planCache = { plans, labels, token, count: plans.tv.length + plans.pem.length + plans.star.length + plans.auto.length + plans.cet.length };
-    return planCache;
-  }
-  async function refreshPlanStatus() {
-    const st = el('planMsg');
-    st.className = 'msg'; st.textContent = 'Vérification des plans promo publiés…';
-    try {
-      const p = await planFiles();
-      if (!p.count) {
-        st.className = 'msg err';
-        st.textContent = "Aucun plan promo publié : déposez d'abord les plans TV, PEM et/ou Star dans ⚙️ Réglages.";
-      } else {
-        st.className = 'msg ok';
-        st.textContent = `Plans pris en compte : ${p.labels.join(' + ')} — ${p.count} fichier(s).`;
-      }
-      return p;
-    } catch (e) {
-      st.className = 'msg err';
-      st.textContent = 'Plans promo : ' + ((e && e.message) || e);
-      return null;
-    }
-  }
-
-  /* ---------- Masques personnalisés publiés par l'administrateur ----------
-     Même stockage que la coque (bucket « shared », masks/manifest.json).
-     Ils sont ajoutés au choix « Type d'affiche » et transmis au générateur. */
-  let CUSTOM_MASKS = [];   // [{id,name,calage,a4:dataURL,a5:dataURL}]
-  function blobToDataURL(blob) {
-    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
-  }
-  async function loadCustomMasks() {
-    let manifest = [];
-    try {
-      const { data, error } = await sb.storage.from('shared').download('masks/manifest.json');
-      if (!error && data) {
-        const j = JSON.parse(await data.text());
-        manifest = Array.isArray(j.masks) ? j.masks : [];
-      }
-    } catch (e) { manifest = []; }
-    const out = [];
-    for (const m of manifest) {
-      try {
-        const a4 = m.a4 ? await sb.storage.from('shared').download(m.a4) : null;
-        const a5 = m.a5 ? await sb.storage.from('shared').download(m.a5) : null;
-        const d4 = a4 && !a4.error && a4.data ? await blobToDataURL(a4.data) : null;
-        if (!d4) continue;   // pas de fond A4 lisible : masque inutilisable
-        out.push({
-          id: m.id, name: m.name, calage: m.calage || 'promo', a4: d4,
-          a5: a5 && !a5.error && a5.data ? await blobToDataURL(a5.data) : null,
-        });
-      } catch (e) {}
-    }
-    CUSTOM_MASKS = out;
-    // options du sélecteur : masques officiels + masques perso
-    const sel = el('optTpl');
+  /* ---------- Masques (officiels + perso) ---------- */
+  const maskName = (id) => id === 'promo' ? 'PROMO DU MOMENT' : id === 'bonplan' ? 'BON PLAN'
+    : ((MASKS.find(m => m.id === id) || {}).name || id + ' (introuvable)');
+  function fillMaskSelect(sel, def) {
     const prev = sel.value;
-    sel.querySelectorAll('option[data-custom]').forEach(o => o.remove());
-    for (const m of out) {
-      const o = document.createElement('option');
-      o.value = m.id; o.dataset.custom = '1';
-      o.textContent = m.name + (m.a5 ? '' : ' (A4 seul)');
-      sel.appendChild(o);
+    sel.innerHTML = [['promo', 'PROMO DU MOMENT'], ['bonplan', 'BON PLAN'],
+      ...MASKS.map(m => [m.id, m.name + (m.a5 ? '' : ' (A4 seul)')])]
+      .map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+    sel.value = [...sel.options].some(o => o.value === prev) ? prev : def;
+  }
+
+  /* ════════════════════════ OPÉRATIONS ════════════════════════ */
+  async function loadOps() {
+    try { OPS = await E.loadOperations(); }
+    catch (e) { el('opList').innerHTML = `<div class="empty">Erreur : ${esc(e.message)}</div>`; return; }
+    renderOps();
+  }
+  function opState(op, today) {
+    if (op.date_to < today) return ['Terminée', ''];
+    if (op.date_from <= today) return ['En cours', 'is-ok'];
+    return ['À venir', 'is-info'];
+  }
+  function renderOps() {
+    const today = E.parisDate();
+    el('cntOps').textContent = OPS.filter(o => o.date_to >= today).length;
+    renderTimeline(today);
+    if (!OPS.length) {
+      el('opList').innerHTML = '<div class="empty">Aucune opération : les offres partiront sur PROMO DU MOMENT / BON PLAN.</div>';
+      return;
     }
-    sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'bonplan';
+    // à venir et en cours d'abord, terminées ensuite
+    const list = [...OPS].sort((a, b) => (a.date_to < today) - (b.date_to < today) || a.date_from.localeCompare(b.date_from));
+    el('opList').innerHTML = list.map(op => {
+      const [st, cls] = opState(op, today);
+      const overlap = OPS.some(o => o.id !== op.id && o.date_from <= op.date_to && op.date_from <= o.date_to);
+      return `<div class="op_item" data-id="${op.id}">
+        <div>
+          <div class="op_name">${esc(op.name)}</div>
+          <div class="op_dates">du ${frDate(op.date_from)} au ${frDate(op.date_to)}${overlap ? ' · <span style="color:var(--warn)">chevauche une autre opération</span>' : ''}</div>
+        </div>
+        <span class="tag ${cls}">${st}</span>
+        <div class="op_masks">
+          <span class="tag is-promo" title="Masque des offres PROMO">PROMO → ${esc(maskName(op.mask_promo))}</span>
+          <span class="tag is-bonplan" title="Masque des offres BON PLAN">BON PLAN → ${esc(maskName(op.mask_bonplan))}</span>
+        </div>
+        <div class="op_actions">
+          <button class="button is-small" data-edit type="button">Modifier</button>
+          <button class="button is-small is-danger" data-del type="button" aria-label="Supprimer">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+    el('opList').querySelectorAll('.op_item').forEach(row => {
+      const op = OPS.find(o => String(o.id) === row.dataset.id);
+      row.querySelector('[data-edit]').addEventListener('click', () => editOp(op));
+      row.querySelector('[data-del]').addEventListener('click', () => delOp(op));
+    });
   }
-
-  /* ---------- Le générateur : etiquette.html, hors écran ---------- */
-  let genFrameP = null;
-  function getGenFrame() {
-    if (genFrameP) return genFrameP;
-    genFrameP = new Promise((res, rej) => {
-      const fr = document.createElement('iframe');
-      fr.id = 'genFrame';
-      fr.title = "Générateur d'affiches";
-      fr.setAttribute('aria-hidden', 'true');
-      fr.addEventListener('load', () => res(fr));
-      fr.addEventListener('error', () => rej(new Error("générateur d'affiches introuvable")));
-      fr.src = 'etiquette.html?export=1';
-      document.body.appendChild(fr);
-      setTimeout(() => rej(new Error("le générateur d'affiches n'a pas démarré")), 90000);
-    }).catch(e => { genFrameP = null; throw e; });
-    return genFrameP;
-  }
-
-  /* ---------- Le générateur CETELEM, hors écran lui aussi ----------
-     L'outil « Affiches CETELEM » vit dans un gabarit de la coque
-     (<script type="text/template" id="tool-match">), pas dans un fichier à
-     part : on le recharge donc ici dans NOTRE propre cadre caché, à partir du
-     texte du gabarit. Viser directement l'iframe visible de la coque
-     reviendrait à détourner l'outil que l'administrateur a sous les yeux —
-     sa valorisation et ses résultats seraient écrasés à chaque magasin. */
-  let cetFrameP = null;
-  function getCetelemFrame() {
-    if (cetFrameP) return cetFrameP;
-    cetFrameP = new Promise((res, rej) => {
-      let tpl = null;
-      try { tpl = window.parent.document.getElementById('tool-match'); }
-      catch (e) { /* origine différente : traité juste après */ }
-      if (!tpl) { rej(new Error("générateur CETELEM introuvable dans la coque")); return; }
-
-      const fr = document.createElement('iframe');
-      fr.id = 'cetFrame';
-      fr.title = 'Générateur CETELEM';
-      fr.setAttribute('aria-hidden', 'true');
-      fr.addEventListener('load', () => {
-        // le gabarit charge pdf.js, JSZip et pdf-lib depuis le CDN : on attend
-        // que son script ait publié la fonction avant de rendre la main
-        const t0 = Date.now();
-        (function attendre() {
-          const w = fr.contentWindow;
-          if (w && typeof w.gefecBuildCetelem === 'function') return res(fr);
-          if (Date.now() - t0 > 60000) return rej(new Error("le générateur CETELEM n'a pas démarré"));
-          setTimeout(attendre, 100);
-        })();
-      });
-      fr.addEventListener('error', () => rej(new Error('générateur CETELEM introuvable')));
-      fr.srcdoc = tpl.textContent.replace(/<\\\/script/g, '</script');
-      document.body.appendChild(fr);
-      setTimeout(() => rej(new Error("le générateur CETELEM n'a pas démarré")), 90000);
-    }).catch(e => { cetFrameP = null; throw e; });
-    return cetFrameP;
-  }
-
-  const PHASE = {
-    libs: 'préparation du générateur…', valo: 'lecture de la valorisation…',
-    plans: 'lecture des plans promo…', match: 'croisement plan × valorisation…',
-  };
-
-  // -> { files:[{id,label,blob,pages,products}], pages, products, plans }
-  async function buildPdfs(store, plans, opts, onStep) {
-    const win = (await getGenFrame()).contentWindow;
-    if (!win || typeof win.gefecBuildCampagne !== 'function')
-      throw new Error("générateur d'affiches indisponible");
-    const { data, error } = await sb.storage.from('valorisations')
-      .download(`${store.id}/valorisation.pdf`);
-    if (error || !data) throw new Error('aucune valorisation déposée pour ce magasin');
-    
-    const valoBuffer = await data.arrayBuffer();
-    let files = [];
-    let pages = 0;
-    let products = 0;
-
-    const filteredPlans = { tv: [], pem: [], star: [], auto: [] };
-    if (opts.chkTV) filteredPlans.tv = plans.plans.tv || [];
-    if (opts.chkPEM) filteredPlans.pem = plans.plans.pem || [];
-    if (opts.chkStar) filteredPlans.star = plans.plans.star || [];
-    filteredPlans.auto = plans.plans.auto || [];
-
-    if (filteredPlans.tv.length || filteredPlans.pem.length || filteredPlans.star.length || filteredPlans.auto.length) {
-      const res = await win.gefecBuildCampagne({
-        valo: valoBuffer.slice(0), valoName: `valorisation-${store.id}.pdf`,
-        plans: filteredPlans, plansToken: plans.token,
-        tpl: opts.tpl,
-        masks: CUSTOM_MASKS,
-        fmtTV: opts.storePrefs.tv || 'a4',
-        fmtPEM: opts.storePrefs.pem || 'a4',
-        fmtStar: opts.storePrefs.star || 'a4',
-        printBg: opts.printBg,
-        onProgress: onStep,
-      });
-      files.push(...res.files);
-      pages += res.pages;
-      products += res.products;
+  /* frise : de J-7 à J+60 */
+  function renderTimeline(today) {
+    const start = E.addDays(today, -7), span = 68;
+    const pos = (iso) => {
+      const d = (new Date(iso + 'T12:00:00Z') - new Date(start + 'T12:00:00Z')) / 864e5;
+      return Math.max(0, Math.min(100, d / span * 100));
+    };
+    const visible = OPS.filter(o => o.date_to >= start && o.date_from <= E.addDays(start, span));
+    let ticks = '';
+    for (let i = 0; i <= span; i += 7) {
+      const d = E.addDays(start, i);
+      ticks += `<span class="timeline_tick" style="left:${i / span * 100}%">${d.slice(8, 10)}/${d.slice(5, 7)}</span>`;
     }
-    
-    if (opts.chkCET && plans.plans.cet && plans.plans.cet.length) {
-      const cetWin = (await getCetelemFrame()).contentWindow;
-      onStep('match', 0, 1);
-      try {
-        const cetRes = await cetWin.gefecBuildCetelem({
-          valo: valoBuffer.slice(0),
-          plans: plans.plans.cet,
-          fmt: opts.storePrefs.cetelem || 'a4',
-          onProgress: onStep
-        });
-        files.push(...cetRes);
-        for (const c of cetRes) {
-          pages += c.pages;
-          products += c.products;
-        }
-      } catch (e) {
-        // « aucune affiche pour ce magasin » n'est pas une panne : le magasin
-        // n'expose simplement aucun produit du dépliant. Tout le reste l'est.
-        if (e.message !== 'aucune affiche CETELEM ne correspond à votre valorisation') throw e;
-      }
-    }
-    
-    if (files.length === 0) throw new Error("Aucun plan généré (aucun produit trouvé ou plans décochés).");
-
-    return { files, pages, products, plans: files.map(f => ({ id: f.id, label: f.label, n: f.products })) };
+    // une ligne par opération qui se chevauche avec la précédente
+    const lanes = [];
+    const bars = visible.map(op => {
+      let lane = lanes.findIndex(end => end < op.date_from);
+      if (lane < 0) { lane = lanes.length; lanes.push(op.date_to); } else lanes[lane] = op.date_to;
+      const l = pos(op.date_from), r = pos(E.addDays(op.date_to, 1));
+      return `<div class="timeline_bar ${op.date_to < today ? 'is-past' : ''}" data-id="${op.id}"
+        style="left:${l}%;width:${Math.max(r - l, 1.2)}%;top:${7 + lane * 32}px"
+        title="${esc(op.name)} — du ${frDate(op.date_from)} au ${frDate(op.date_to)}">${esc(op.name)}</div>`;
+    }).join('');
+    const h = Math.max(40, 14 + lanes.length * 32);
+    el('timeline').innerHTML = `<div class="timeline_scale">${ticks}</div>
+      <div class="timeline_track" style="height:${h}px">${bars}
+        <div class="timeline_today" style="left:${pos(today)}%"><span class="timeline_today-label">Aujourd'hui</span></div>
+      </div>`;
+    el('timeline').querySelectorAll('.timeline_bar').forEach(b =>
+      b.addEventListener('click', () => editOp(OPS.find(o => String(o.id) === b.dataset.id))));
   }
-
-  /* ---------- Dépôt des PDF (bucket privé « affiches ») ----------
-     Un fichier par plan et par magasin, remplacé à chaque campagne. La
-     fonction Edge les relit côté serveur pour les joindre au mail : les
-     mégaoctets ne repassent pas par le navigateur. */
-  async function uploadPdfs(store, files, dateStr) {
-    const out = [];
-    for (const f of files) {
-      const path = `${store.id}/campagne/${f.id}.pdf`;
-      const { error } = await sb.storage.from(AFF_BUCKET)
-        .upload(path, f.blob, { upsert: true, contentType: 'application/pdf' });
-      if (error) throw new Error('dépôt du PDF : ' + error.message);
-      out.push({
-        path,
-        filename: `affiches-${f.id}-${slugify(store.name || store.id)}-${dateStr}.pdf`,
-        label: f.label, pages: f.pages, products: f.products, bytes: f.blob.size,
-      });
-    }
-    return out;
+  function resetOpForm() {
+    el('opId').value = ''; el('opName').value = '';
+    el('opFrom').value = ''; el('opTo').value = '';
+    el('opMaskPromo').value = 'promo'; el('opMaskBonplan').value = 'bonplan';
+    el('opSave').textContent = "＋ Ajouter l'opération";
+    el('opCancel').hidden = true;
   }
-
-  /* ---------- Le mail (fonction Edge) ----------
-     supabase-js ne remonte qu'un message générique (« Edge Function returned a
-     non-2xx status code ») : le motif réel est dans le CORPS de la réponse. Et
-     les erreurs de la plateforme elle-même (fonction absente, budget de calcul
-     dépassé) n'ont même pas le champ « error » de nos réponses — d'où la table
-     de correspondance par code HTTP. Sans cela, l'écran affiche une phrase qui
-     ne dit rien de ce qu'il faut corriger. */
-  const FN_HINT = {
-    401: 'session expirée — reconnectez-vous',
-    403: "action réservée au compte administrateur",
-    404: "la fonction « send-campagne-mail » n'est pas déployée (ou porte un autre nom)",
-    504: "la fonction a dépassé son temps d'exécution",
-    546: "la fonction a dépassé son budget de calcul : les pièces jointes sont trop lourdes — passez en format A5, ou envoyez un plan à la fois",
-  };
-  async function fnErrorMessage(error) {
-    const res = error && error.context;
-    const status = res && res.status;
-    let detail = '';
+  function editOp(op) {
+    if (!op) return;
+    el('opId').value = op.id; el('opName').value = op.name;
+    el('opFrom').value = op.date_from; el('opTo').value = op.date_to;
+    el('opMaskPromo').value = op.mask_promo; el('opMaskBonplan').value = op.mask_bonplan;
+    el('opSave').textContent = '✓ Enregistrer les modifications';
+    el('opCancel').hidden = false;
+    setMsg('opMsg', '', '');
+    el('opName').focus();
+    el('opForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  async function saveOp() {
+    const op = {
+      id: el('opId').value ? +el('opId').value : null,
+      name: el('opName').value, date_from: el('opFrom').value, date_to: el('opTo').value,
+      mask_promo: el('opMaskPromo').value, mask_bonplan: el('opMaskBonplan').value,
+    };
     try {
-      if (res && typeof res.text === 'function') {
-        const raw = (await res.text()).trim();
-        if (raw) {
-          try {
-            const j = JSON.parse(raw);
-            detail = j.error || j.message || j.msg || (j.code ? 'code ' + j.code : '') || raw;
-          } catch (e) { detail = raw.slice(0, 300); }
-        }
-      }
-    } catch (e) { /* corps déjà lu ou illisible : on garde l'indice du code */ }
-    const hint = FN_HINT[status];
-    const parts = [];
-    if (hint) parts.push(hint);
-    if (detail && detail !== hint) parts.push(detail);
-    if (!parts.length) parts.push((error && error.message) || 'erreur inconnue');
-    return parts.join(' — ') + (status ? ` (HTTP ${status})` : '');
+      await E.saveOperation(op, ME.userId);
+      setMsg('opMsg', 'ok', op.id ? 'Opération modifiée ✓' : 'Opération ajoutée ✓');
+      resetOpForm();
+      await loadOps();
+      renderSchedule();
+    } catch (e) { setMsg('opMsg', 'err', e.message); }
+  }
+  async function delOp(op) {
+    if (!op || !confirm(`Supprimer l'opération « ${op.name} » ?`)) return;
+    try { await E.deleteOperation(op.id); toast('Opération supprimée'); await loadOps(); renderSchedule(); }
+    catch (e) { toast(e.message, true); }
   }
 
-  async function sendMail(payload) {
-    const { data, error } = await sb.functions.invoke('send-campagne-mail', { body: payload });
-    if (error) throw new Error(await fnErrorMessage(error));
-    if (data && data.ok === false) throw new Error(data.error || 'envoi non configuré');
-    if (data && data.error) throw new Error(data.error);
-    return data || {};
+  /* ---------- Réglages de l'envoi automatique ---------- */
+  function renderChip() {
+    const on = SETTINGS && SETTINGS.enabled;
+    el('autoChip').className = 'status-chip ' + (on ? 'is-on' : 'is-off');
+    el('autoChipTxt').textContent = on ? 'Envoi automatique actif · 6 h' : 'Envoi automatique désactivé';
   }
-
-  async function logCampagne(store, to, subject, files, res, info) {
+  async function loadSettingsUI() {
+    SETTINGS = await E.loadSettings();
+    el('setEnabled').checked = SETTINGS.enabled;
+    el('setSince').value = SETTINGS.since || '';
+    el('setAdmin').value = SETTINGS.admin_email || '';
+    el('setBg').value = SETTINGS.print_bg ? '1' : '0';
+    el('setSubject').value = SETTINGS.subject;
+    el('setMessage').value = SETTINGS.message;
+    renderChip();
+  }
+  async function saveSettingsUI() {
+    const admin = el('setAdmin').value.trim();
+    if (admin && !isMail(admin)) { setMsg('setMsg', 'err', "Adresse d'alerte invalide."); return; }
+    const enabled = el('setEnabled').checked;
+    // première activation sans date : mise en service aujourd'hui, pour ne
+    // pas inonder les magasins d'affiches déjà en place
+    let since = el('setSince').value || null;
+    if (enabled && !since) { since = E.parisDate(); el('setSince').value = since; }
+    const v = {
+      enabled, since, admin_email: admin, print_bg: el('setBg').value === '1',
+      subject: el('setSubject').value.trim() || E.DEFAULT_SUBJECT,
+      message: el('setMessage').value.trim() || E.DEFAULT_MESSAGE,
+    };
     try {
-      await sb.from('campagne_mails').insert({
-        store_id: store.id, email: to, subject,
-        plans: info.plansLabel, files, pages: info.pages, products: info.products,
-        valo_days: info.valoDays, provider: (res && res.provider) || null,
-        sent_by: ME.userId,
-      });
-    } catch (e) { /* journal facultatif : le mail, lui, est parti */ }
+      await E.saveSettings(v, ME.userId);
+      SETTINGS = v; renderChip();
+      setMsg('setMsg', 'ok', 'Réglages enregistrés ✓');
+    } catch (e) { setMsg('setMsg', 'err', e.message); }
+  }
+  async function loadLastRun() {
+    try {
+      const { data } = await sb.from('auto_runs').select('run_date, trigger, status, stores_sent, affiches, finished_at, started_at')
+        .order('started_at', { ascending: false }).limit(1);
+      const r = data && data[0];
+      el('lastRunTxt').textContent = r
+        ? `Dernière tournée : ${frDT(r.finished_at || r.started_at)} (${r.trigger === 'cron' ? 'automatique' : 'manuelle'}) — ${RUN_STATUS[r.status] || r.status}, ${r.stores_sent} magasin(s), ${r.affiches} affiche(s)`
+        : 'Dernière tournée : aucune pour le moment';
+    } catch (e) {}
   }
 
-  // L'adresse n'est pas générique : une par magasin, mémorisée sur sa fiche.
-  // Un champ vidé retire l'adresse (le magasin sort de l'envoi groupé).
-  async function saveStoreEmail(store, to) {
-    const v = String(to || '').trim() || null;
-    if ((store.email || null) === v) return;
-    const { error } = await sb.from('stores').update({ email: v }).eq('id', store.id);
-    if (error) throw new Error('adresse non mémorisée : ' + error.message);
-    store.email = v;
+  /* ════════════════════════ ENVOIS PROGRAMMÉS ════════════════════════ */
+  async function loadOffers() {
+    setMsg('planMsg', '', 'Lecture des plans promo publiés…');
+    el('schedule').innerHTML = '<div class="empty">Lecture des plans promo…</div>';
+    try {
+      OFFERS = await E.planOffers();
+      const tv = OFFERS.filter(o => o.plan === 'tv').length, pem = OFFERS.length - tv;
+      if (!OFFERS.length) setMsg('planMsg', 'err', 'Aucun plan TV ou PEM publié.');
+      else setMsg('planMsg', 'ok', `${tv} offre(s) TV · ${pem} offre(s) PEM`);
+    } catch (e) {
+      OFFERS = [];
+      setMsg('planMsg', 'err', 'Plans promo : ' + e.message);
+    }
+    renderSchedule();
+  }
+  function renderSchedule() {
+    const host = el('schedule');
+    if (!E) return;
+    const today = E.parisDate();
+    const since = SETTINGS && SETTINGS.since;
+    const horizon = E.addDays(today, 45);
+    const byDay = new Map();
+    let dated = 0;
+    for (const o of OFFERS) {
+      if (!o.from || !o.to) continue;
+      dated++;
+      // déjà commencée : elle part à la prochaine tournée si elle n'est pas
+      // encore partie (et si elle a démarré après la mise en service)
+      let day = o.from;
+      if (o.to < today) continue;
+      if (since && o.from < since) continue;
+      if (day < today) day = today;
+      if (day > horizon) continue;
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day).push(o);
+    }
+    const days = [...byDay.keys()].sort();
+    el('cntDays').textContent = days.length;
+    if (!OFFERS.length) { host.innerHTML = '<div class="empty">Publiez les plans TV et PEM dans ⚙️ Réglages pour voir les envois à venir.</div>'; return; }
+    if (!days.length) { host.innerHTML = `<div class="empty">Aucune offre ne démarre d'ici 45 jours${since ? ` (mise en service le ${frDate(since)})` : ''}.</div>`; return; }
+    host.innerHTML = days.map(day => {
+      const list = byDay.get(day).sort((a, b) => a.plan.localeCompare(b.plan) || (a.cat || '').localeCompare(b.cat || '') || (a.name || '').localeCompare(b.name || ''));
+      const tv = list.filter(o => o.plan === 'tv').length, pem = list.length - tv;
+      const nPromo = list.filter(o => o.kind === 'promo').length;
+      const opNames = [...new Set(list.map(o => (opFor(o.from) || {}).name || '—'))];
+      const rows = list.map(o => {
+        const op = opFor(o.from);
+        const mask = op ? (o.kind === 'promo' ? op.mask_promo : op.mask_bonplan) : o.kind;
+        return `<tr>
+          <td>${o.plan === 'tv' ? 'TV' : 'PEM'}</td>
+          <td>${esc(o.cat)}<br><b>${esc(o.brand)} ${esc(o.name)}</b></td>
+          <td>${esc(o.ean)}</td>
+          <td class="is-num">${fmtPrice(o.price)}${o.kind === 'promo' ? `<br><s style="color:var(--text-3)">${fmtPrice(o.base)}</s>` : ''}</td>
+          <td><span class="tag ${o.kind === 'promo' ? 'is-promo' : 'is-bonplan'}">${o.kind === 'promo' ? 'PROMO' : 'BON PLAN'}</span></td>
+          <td>${esc(maskName(mask))}</td>
+          <td>${frDate(o.from)} → ${frDate(o.to)}</td>
+        </tr>`;
+      }).join('');
+      return `<details class="schedule_day ${day === today ? 'is-today' : ''}">
+        <summary>
+          <div class="schedule_date">${day === today ? "Aujourd'hui" : frDate(day)}<small>${esc(dayName(day))}</small></div>
+          <div class="schedule_info">
+            <span class="schedule_op">${esc(opNames.join(' + '))}</span>
+            ${opNames.includes('—') ? '<span class="tag is-warn">sans opération → masques standard</span>' : ''}
+            <span class="tag is-promo">${nPromo} promo</span><span class="tag is-bonplan">${list.length - nPromo} bon plan</span>
+          </div>
+          <div class="schedule_count">${tv ? tv + ' TV' : ''}${tv && pem ? ' · ' : ''}${pem ? pem + ' PEM' : ''}</div>
+        </summary>
+        <div class="schedule_body">
+          <table class="table_component">
+            <thead><tr><th>Plan</th><th>Produit</th><th>EAN</th><th class="is-num">Prix</th><th>Type</th><th>Masque</th><th>Période</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </details>`;
+    }).join('');
+  }
+  function opFor(iso) {
+    const hits = OPS.filter(op => op.date_from <= iso && iso <= op.date_to);
+    hits.sort((a, b) => b.date_from.localeCompare(a.date_from));
+    return hits[0] || null;
   }
 
-  /* ---------- Le texte du mail ---------- */
-  function fill(tpl, vars) {
-    return String(tpl || '').replace(/\{(magasin|code|plans|affiches|pages|date)\}/g, (m, k) =>
-      vars[k] != null ? String(vars[k]) : m);
-  }
-
-  /* ---------- Liste des magasins ---------- */
+  /* ---------- Magasins ---------- */
   async function loadStores() {
-    const host = el('rows');
+    const host = el('stores');
     host.innerHTML = '<div class="empty">Chargement…</div>';
     try {
-      let stores = null, serr = null;
-      ({ data: stores, error: serr } = await sb.from('stores').select('id, name, region, email, mail_prefs').order('id'));
-      if (serr) throw serr;
-      if (!stores || !stores.length) {
-        host.innerHTML = '<div class="empty">Aucun magasin enregistré.</div>';
-        el('pills').innerHTML = ''; STORES = []; syncBulk(); return;
-      }
-
-      const metaBy = {};
-      try {
-        const { data } = await sb.from('valorisations').select('store_id, ean_count, updated_at');
-        (data || []).forEach(m => { metaBy[m.store_id] = m; });
-      } catch (e) {}
-
+      STORES = await E.loadStores();
       const lastBy = {};
       try {
-        const { data } = await sb.from('campagne_mails')
-          .select('store_id, email, sent_at, products, plans').order('sent_at', { ascending: false });
+        const { data } = await sb.from('campagne_mails').select('store_id, email, sent_at, products, plans, auto, operations')
+          .order('sent_at', { ascending: false }).limit(500);
         (data || []).forEach(m => { if (!lastBy[m.store_id]) lastBy[m.store_id] = m; });
       } catch (e) {}
-
-      // vérité = le fichier réellement présent dans le Storage
-      const rows = await Promise.all(stores.map(async s => {
-        let file = null;
-        try {
-          const { data } = await sb.storage.from('valorisations').list(String(s.id), { limit: 100 });
-          file = (data || []).find(f => f.name === 'valorisation.pdf') || null;
-        } catch (e) {}
-        const meta = metaBy[s.id];
-        const when = (meta && meta.updated_at) || (file && (file.updated_at || file.created_at));
-        const dt = when ? new Date(when) : null;
-        const has = !!file;
-        const ageDays = (has && dt && !isNaN(dt.getTime())) ? daysSince(dt) : null;
-        const status = !has ? 'never' : (ageDays != null && ageDays > VALO_MAX_DAYS ? 'late' : 'ok');
-        return { ...s, has, meta, dt, ageDays, status, last: lastBy[s.id] || null };
-      }));
-
-      STORES = rows;
+      STORES.forEach(s => { s.last = lastBy[s.id] || null; });
       renderStores();
     } catch (e) {
       host.innerHTML = `<div class="empty">Erreur : ${esc(e.message || e)}</div>`;
     }
   }
-
   function renderPills() {
-    const nOk = STORES.filter(s => s.status === 'ok').length;
-    const nLate = STORES.filter(s => s.status === 'late').length;
-    const nNever = STORES.filter(s => s.status === 'never').length;
-    const nMail = STORES.filter(s => isMail(s.email)).length;
+    const n = (f) => STORES.filter(f).length;
     el('pills').innerHTML = `
-      <span class="pill ok">Valorisation à jour<b>${nOk}</b></span>
-      <span class="pill late">Périmée (&gt; ${VALO_MAX_DAYS} j)<b>${nLate}</b></span>
-      <span class="pill never">Jamais déposée<b>${nNever}</b></span>
-      <span class="pill">Adresse renseignée<b>${nMail}</b></span>
+      <span class="pill is-ok">Inscrits à l'envoi auto<b>${n(s => s.auto)}</b></span>
+      <span class="pill is-ok">Valorisation à jour<b>${n(s => s.valo === 'ok')}</b></span>
+      <span class="pill is-warn">Périmée (&gt; ${VALO_MAX_DAYS} j)<b>${n(s => s.valo === 'late')}</b></span>
+      <span class="pill is-ko">Jamais déposée<b>${n(s => s.valo === 'never')}</b></span>
       <span class="pill">Total<b>${STORES.length}</b></span>`;
   }
-
   function renderStores() {
     renderPills();
-    el('rows').innerHTML = STORES.map(s => {
-      const badge = s.status === 'ok'
-        ? `<span class="badge ok">Valorisation ${s.ageDays === 0 ? 'du jour' : s.ageDays + ' j'}</span>`
-        : s.status === 'late'
-          ? `<span class="badge late">Périmée · ${s.ageDays} j</span>`
-          : '<span class="badge never">Aucune valorisation</span>';
-      const sub = s.has
-        ? `${s.meta && s.meta.ean_count != null ? s.meta.ean_count + ' EAN · ' : ''}déposée le ${s.dt ? s.dt.toLocaleDateString('fr-FR') : '?'}`
-        : 'le magasin n’a pas encore déposé sa valorisation';
+    if (!STORES.length) { el('stores').innerHTML = '<div class="empty">Aucun magasin enregistré.</div>'; return; }
+    el('stores').innerHTML = STORES.map(s => {
+      const badge = s.valo === 'ok'
+        ? `<span class="tag is-ok">Valo ${s.ageDays === 0 ? 'du jour' : s.ageDays + ' j'}</span>`
+        : s.valo === 'late' ? `<span class="tag is-warn">Périmée · ${s.ageDays} j</span>`
+          : '<span class="tag is-ko">Sans valo</span>';
+      const sub = [s.id, s.region, s.meta && s.meta.ean_count != null ? s.meta.ean_count + ' EAN' : '',
+        s.email === 'REFUSE' ? 'ne souhaite pas de mails' : (!s.auto ? 'pas inscrit à l’envoi auto' : '')]
+        .filter(Boolean).join(' · ');
       const last = s.last
-        ? `✉️ dernière campagne ${relAge(new Date(s.last.sent_at))} à ${esc(s.last.email)}${s.last.plans ? ' — ' + esc(s.last.plans) : ''}`
+        ? `✉️ ${s.last.auto ? 'envoi auto' : 'campagne'} ${relAge(new Date(s.last.sent_at))} — ${esc(s.last.operations || s.last.plans || '')} (${s.last.products || 0} affiche(s))`
         : '';
-      const blocked = s.status !== 'ok';
-      return `<div class="row" data-id="${esc(s.id)}">
+      const blocked = s.valo !== 'ok';
+      return `<div class="store_item" data-id="${esc(s.id)}">
         ${badge}
-        <div class="main">
-          <b>${esc(s.name || s.id)}</b>
-          <div class="sub">${esc(s.id)}${s.region ? ' · ' + esc(s.region) : ''} — ${esc(sub)}</div>
-          ${last ? `<div class="last">${last}</div>` : ''}
+        <div class="store_main">
+          <div class="store_name">${esc(s.name || s.id)}</div>
+          <div class="store_sub">${esc(sub)}</div>
+          ${last ? `<div class="store_last">${last}</div>` : ''}
         </div>
-        <input class="mail" type="email" data-mail spellcheck="false" autocapitalize="none"
-               placeholder="${s.email === 'REFUSE' ? 'Ne souhaite pas de mails' : 'adresse du magasin'}" 
-               value="${esc(s.email === 'REFUSE' ? '' : (s.email || ''))}">
-        <div class="acts">
-          <button class="btn small" data-remind type="button"${s.status === 'ok' ? ' style="display:none"' : ''}>🔔 Relancer</button>
-          <button class="btn small" data-pdf type="button"${blocked ? ' disabled' : ''}>⬇️ PDF</button>
-          <button class="btn primary small" data-send type="button"${blocked ? ' disabled' : ''}>✉️ Générer &amp; envoyer</button>
+        <input class="form_input" type="email" data-mail spellcheck="false" autocapitalize="none"
+          placeholder="${s.email === 'REFUSE' ? 'Ne souhaite pas de mails' : 'adresse du magasin'}"
+          value="${esc(s.email === 'REFUSE' ? '' : (s.email || ''))}" aria-label="Adresse e-mail du magasin">
+        <div class="store_actions">
+          ${s.valo !== 'ok' ? '<button class="button is-small" data-remind type="button">🔔 Relancer</button>' : ''}
+          <button class="button is-small" data-preview type="button"${blocked ? ' disabled' : ''} title="Télécharger les affiches du jour choisi">👁 Aperçu</button>
+          <button class="button is-small is-primary" data-send type="button"${blocked ? ' disabled' : ''}>✉️ Envoyer maintenant</button>
+          <button class="button is-small" data-legacy type="button"${blocked ? ' disabled' : ''} title="Campagne complète (ancien mode)">📦</button>
         </div>
-        <div class="bar" hidden><i></i></div>
-        <div class="st"></div>
+        <div class="progress_bar" hidden><i></i></div>
+        <div class="store_status"></div>
       </div>`;
     }).join('');
-
-    el('rows').querySelectorAll('.row').forEach(row => {
-      const id = row.dataset.id;
-      const store = STORES.find(s => String(s.id) === id);
-      if (!store) return;
-      row.querySelector('[data-send]').addEventListener('click', () => runOne(store, true));
-      row.querySelector('[data-pdf]').addEventListener('click', () => runOne(store, false));
-      const remindBtn = row.querySelector('[data-remind]');
-      if (remindBtn) remindBtn.addEventListener('click', () => remindStore(store));
+    el('stores').querySelectorAll('.store_item').forEach(row => {
+      const s = STORES.find(x => String(x.id) === row.dataset.id);
+      row.querySelector('[data-preview]').addEventListener('click', () => preview(s));
+      row.querySelector('[data-send]').addEventListener('click', () => sendNow(s));
+      row.querySelector('[data-legacy]').addEventListener('click', () => legacyOne(s));
+      const r = row.querySelector('[data-remind]');
+      if (r) r.addEventListener('click', () => remind(s));
       const inp = row.querySelector('[data-mail]');
-      inp.addEventListener('change', async () => {
-        const v = inp.value.trim();
-        if (v && !isMail(v)) { setStatus(store, 'ko', 'Adresse e-mail invalide.'); return; }
-        try {
-          await saveStoreEmail(store, v);
-          setStatus(store, 'ok', v ? 'Adresse mémorisée ✓' : 'Adresse retirée.');
-        } catch (e) {
-          setStatus(store, 'ko', (e && e.message) || String(e));
-        }
-        renderPills(); syncBulk();
-      });
+      inp.addEventListener('change', () => saveEmail(s, inp.value));
     });
-    syncBulk();
+    syncLegacyBulk();
+  }
+  const rowOf = (s) => el('stores').querySelector(`.store_item[data-id="${CSS.escape(String(s.id))}"]`);
+  function setStatus(s, cls, txt) {
+    const row = rowOf(s); if (!row) return;
+    const st = row.querySelector('.store_status');
+    st.className = 'store_status' + (cls ? ' is-' + cls : ''); st.textContent = txt || '';
+  }
+  function setBar(s, pct) {
+    const row = rowOf(s); if (!row) return;
+    const bar = row.querySelector('.progress_bar');
+    bar.hidden = pct == null;
+    bar.querySelector('i').style.width = (pct || 0) + '%';
+  }
+  const PHASE = { libs: 'préparation du générateur…', valo: 'lecture de la valorisation…', plans: 'lecture des plans promo…', match: 'croisement plan × valorisation…' };
+  const stepper = (s) => (phase, i, n) => {
+    if (phase === 'pdf') { setStatus(s, 'run', n ? `affiche ${i}/${n}` : 'mise en page…'); setBar(s, n ? Math.round(i / n * 100) : 0); }
+    else setStatus(s, 'run', PHASE[phase] || 'en cours…');
+  };
+  function lock(on) {
+    busy = on;
+    el('btnRunNow').disabled = on;
+    el('btnReload').disabled = on;
+    el('stores').querySelectorAll('button').forEach(b => {
+      const s = STORES.find(x => String(x.id) === b.closest('.store_item').dataset.id);
+      b.disabled = on || (!b.hasAttribute('data-remind') && (!s || s.valo !== 'ok'));
+    });
+    syncLegacyBulk();
   }
 
-  async function remindStore(store) {
-    const row = rowOf(store);
-    const to = ((row && row.querySelector('[data-mail]').value) || store.email || '').trim();
-    if (!isMail(to)) {
-      setStatus(store, 'ko', "Adresse e-mail manquante pour la relance.");
-      return;
-    }
-    const age = store.ageDays != null ? store.ageDays : 'plusieurs';
-    const msg = `Bonjour,
-
-Votre valorisation magasin enregistrée date de ${age} jours. 
-Afin de pouvoir générer les affiches promotionnelles (TV, PEM, CETELEM) correspondant exactement à votre stock exposé, merci de vous connecter à l'outil pour y déposer votre nouvelle valorisation PDF issue de NOSICA.
-
-Ceci est un message automatique, merci de ne pas y répondre.`;
-
-    setStatus(store, 'run', `envoi de la relance à ${to}…`);
-    try {
-      await sendMail({
-        to, store_id: store.id, store_name: store.name || store.id,
-        subject: `Mise à jour de votre valorisation magasin nécessaire`,
-        message: msg,
-        files: [],
-        no_attachment: true,   // relance : un message seul, sans affiche jointe
-      });
-      setStatus(store, 'ok', `Relance envoyée avec succès à ${to}.`);
-    } catch (e) {
-      setStatus(store, 'ko', `Relance échouée : ${e.message}`);
-    }
-  }
-
-  // le mail vient de partir : on rafraîchit « dernière campagne » sans
-  // re-rendre la liste, sinon le compte rendu de l'envoi disparaîtrait
-  function touchLast(store, to, plansLabel) {
-    store.last = { sent_at: new Date().toISOString(), email: to, plans: plansLabel };
-    const row = rowOf(store); if (!row) return;
-    let node = row.querySelector('.last');
-    if (!node) {
-      node = document.createElement('div');
-      node.className = 'last';
-      row.querySelector('.main').appendChild(node);
-    }
-    node.innerHTML = `✉️ dernière campagne aujourd'hui à ${esc(to)}${plansLabel ? ' — ' + esc(plansLabel) : ''}`;
+  async function saveEmail(s, v) {
+    v = String(v || '').trim();
+    if (v && !isMail(v)) { setStatus(s, 'ko', 'Adresse e-mail invalide.'); return; }
+    const val = v || null;
+    if ((s.email || null) === val) return;
+    const { error } = await sb.from('stores').update({ email: val }).eq('id', s.id);
+    if (error) { setStatus(s, 'ko', 'Adresse non mémorisée : ' + error.message); return; }
+    s.email = val; s.auto = isMail(val);
+    setStatus(s, 'ok', val ? 'Adresse mémorisée ✓ — magasin inscrit à l’envoi automatique' : 'Adresse retirée.');
     renderPills();
   }
 
-  function rowOf(store) { return el('rows').querySelector(`.row[data-id="${CSS.escape(String(store.id))}"]`); }
-  function setStatus(store, cls, txt) {
-    const row = rowOf(store); if (!row) return;
-    const st = row.querySelector('.st');
-    st.className = 'st ' + (cls || ''); st.textContent = txt || '';
-  }
-  function setBar(store, pct) {
-    const row = rowOf(store); if (!row) return;
-    const bar = row.querySelector('.bar');
-    bar.hidden = pct == null;
-    bar.querySelector('i').style.width = (pct == null ? 0 : pct) + '%';
-  }
-  function lockRows(on) {
-    busy = on;
-    el('btnAll').disabled = on || !readyStores().length;
-    el('btnReload').disabled = on;
-    el('rows').querySelectorAll('button[data-send],button[data-pdf]').forEach(b => {
-      const store = STORES.find(s => String(s.id) === b.closest('.row').dataset.id);
-      b.disabled = on || !store || store.status !== 'ok';
-    });
-  }
-  const readyStores = () => STORES.filter(s => s.status === 'ok' && isMail(s.email));
-  function syncBulk() {
-    const n = readyStores().length;
-    el('btnAll').textContent = `✉️ Envoyer à tous les magasins prêts (${n})`;
-    el('btnAll').disabled = busy || !n;
+  /* Aperçu : les affiches que le magasin recevra le jour choisi (compte
+     tenu de ce qui lui a déjà été envoyé), téléchargées sans rien envoyer */
+  async function preview(s) {
+    if (busy) return;
+    const date = el('previewDate').value || E.parisDate();
+    lock(true); setBar(s, 0);
+    try {
+      const res = await E.buildStore(s, date, { onStep: stepper(s), operations: OPS, settings: SETTINGS });
+      setBar(s, null);
+      if (!res.files.length) { setStatus(s, 'ok', `Rien à mettre en place le ${frDate(date)} pour ce magasin.`); return; }
+      await E.localBlobs(res);
+      for (const f of res.files) download(f.blob, `apercu-${f.plan}-${E.slugify(s.name || s.id)}-${date}.pdf`);
+      setStatus(s, 'ok', `Aperçu du ${frDate(date)} : ${res.products} affiche(s), ${res.pages} page(s) — ${res.operations.join(' + ') || 'masques standard'}`);
+    } catch (e) {
+      setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message);
+    } finally { lock(false); }
   }
 
-  /* ---------- Le traitement d'un magasin ---------- */
-  function currentOpts() {
+  async function sendNow(s) {
+    if (busy) return;
+    const row = rowOf(s);
+    const to = (row.querySelector('[data-mail]').value || '').trim();
+    if (!isMail(to)) { setStatus(s, 'ko', 'Adresse e-mail du magasin manquante ou invalide.'); return; }
+    await saveEmail(s, to);
+    const date = E.parisDate();
+    lock(true); setBar(s, 0);
+    try {
+      const res = await E.buildStore(s, date, { onStep: stepper(s), operations: OPS, settings: SETTINGS });
+      setBar(s, null);
+      if (!res.files.length) { setStatus(s, 'ok', "Rien à mettre en place aujourd'hui qui ne soit déjà parti : aucun mail envoyé."); return; }
+      setStatus(s, 'run', `envoi du mail à ${to}…`);
+      const d = await E.deliver(s, date, res, { settings: SETTINGS });
+      setStatus(s, 'ok', `Mail envoyé à ${d.to} — ${res.products} affiche(s), ${res.pages} page(s) · ${res.operations.join(' + ') || 'masques standard'}`);
+      toast(`Affiches envoyées à ${s.name || s.id} ✓`);
+    } catch (e) {
+      setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message); toast('Échec : ' + e.message, true);
+    } finally { lock(false); }
+  }
+
+  async function runNow() {
+    if (busy) return;
+    const n = STORES.filter(s => s.auto).length;
+    if (!confirm(`Lancer la tournée d'aujourd'hui maintenant ?\n${n} magasin(s) inscrit(s) recevront les affiches à mettre en place qui ne leur ont pas encore été envoyées.`)) return;
+    lock(true);
+    const LBL = { generation: ['run', 'génération des affiches…'], envoi: ['run', 'envoi du mail…'], rien: ['ok', 'rien à mettre en place'], envoye: ['ok', 'affiches envoyées ✓'], valo_perimee: ['ko', 'valorisation périmée — rien envoyé'], sans_valo: ['ko', 'pas de valorisation — rien envoyé'], echec: ['ko', 'échec'] };
+    try {
+      const out = await E.runDay({
+        trigger: 'manuel',
+        onStore: (s, st, extra) => {
+          const [c, t] = LBL[st] || ['run', st];
+          setStatus(s, c, st === 'echec' ? 'Échec : ' + extra : st === 'envoye' ? `${extra.products} affiche(s) envoyée(s) ✓` : t);
+        },
+      });
+      toast(`Tournée terminée : ${out.storesSent} magasin(s) servi(s), ${out.affiches} affiche(s)${out.alerts.length ? ` · ${out.alerts.length} alerte(s)` : ''}`, out.status === 'echec');
+      loadLastRun();
+    } catch (e) { toast('Tournée interrompue : ' + e.message, true); }
+    finally { lock(false); }
+  }
+
+  async function remind(s) {
+    const to = ((rowOf(s).querySelector('[data-mail]').value) || s.email || '').trim();
+    if (!isMail(to)) { setStatus(s, 'ko', 'Adresse e-mail manquante pour la relance.'); return; }
+    setStatus(s, 'run', `envoi de la relance à ${to}…`);
+    try {
+      await E.sendMail({
+        to, store_id: s.id, store_name: s.name || s.id,
+        subject: 'Mise à jour de votre valorisation magasin nécessaire',
+        message: `Bonjour,\n\nVotre valorisation magasin ${s.ageDays != null ? `date de ${s.ageDays} jours` : "n'a pas encore été déposée"}.\nPour recevoir automatiquement les affiches promo (TV, PEM) correspondant exactement à votre stock exposé, merci de vous connecter à l'outil et d'y déposer votre nouvelle valorisation PDF issue de NOSICA.\n\nCeci est un message automatique, merci de ne pas y répondre.`,
+        files: [], no_attachment: true,
+      });
+      setStatus(s, 'ok', `Relance envoyée à ${to}.`);
+    } catch (e) { setStatus(s, 'ko', 'Relance échouée : ' + e.message); }
+  }
+
+  /* ════════════════════════ CAMPAGNE COMPLÈTE (ancien mode) ════════════════════════
+     Toutes les offres des plans cochés, sans tenir compte des dates ni des
+     envois précédents — inchangé par rapport à l'outil historique. */
+  const LEGACY_SUBJECT = 'Votre plan promo — {plans} — {magasin}';
+  const LEGACY_MESSAGE = [
+    'Bonjour,', '',
+    'Voici la campagne promo à mettre en place dans votre magasin : {plans}.', '',
+    'Vous trouverez en pièces jointes les affiches prix correspondant aux produits',
+    'réellement présents chez vous ({affiches} affiche(s), {pages} page(s) à imprimer).', '',
+    "Il n'y a plus qu'à imprimer et à poser en rayon.", '', 'Bonne vente,',
+  ].join('\n');
+  let legacyPlanCache = null;
+  async function legacyPlans() {
+    const ids = ['plan-promo-tv', 'plan-promo-pem', 'plan-promo-star', 'plan-promo', 'affiches-cetelem'];
+    const metas = {};
+    for (const id of ids) {
+      try { const { data } = await sb.from('shared_docs').select('file_path, updated_at').eq('id', id).maybeSingle(); metas[id] = data; }
+      catch (e) { metas[id] = null; }
+    }
+    const token = ids.map(id => (metas[id] && metas[id].file_path ? metas[id].updated_at : '-')).join('|');
+    if (legacyPlanCache && legacyPlanCache.token === token) return legacyPlanCache;
+    const plans = { tv: [], pem: [], star: [], auto: [], cet: [] };
+    const pick = async (id, slot) => {
+      const m = metas[id]; if (!m || !m.file_path) return;
+      let paths = [m.file_path];
+      if (m.file_path.endsWith('/')) {
+        const prefix = m.file_path.replace(/\/$/, '');
+        const { data } = await sb.storage.from('shared').list(prefix, { limit: 200 });
+        paths = (data || []).filter(f => f && f.name && f.id !== null).map(f => prefix + '/' + f.name).sort();
+      }
+      for (const p of paths) {
+        const { data, error } = await sb.storage.from('shared').download(p);
+        if (!error && data) plans[slot].push({ data: await data.arrayBuffer(), name: (p.split('/').pop() || id).replace(/^\d+_/, '') });
+      }
+    };
+    await pick('plan-promo-tv', 'tv'); await pick('plan-promo-pem', 'pem');
+    await pick('plan-promo-star', 'star'); await pick('affiches-cetelem', 'cet');
+    if (!plans.tv.length && !plans.pem.length) await pick('plan-promo', 'auto');
+    legacyPlanCache = { plans, token, count: Object.values(plans).reduce((n, l) => n + l.length, 0) };
+    return legacyPlanCache;
+  }
+  /* générateur CETELEM : gabarit de la coque rechargé dans un cadre caché */
+  let cetFrameP = null;
+  function cetelemWin() {
+    if (!cetFrameP) {
+      cetFrameP = new Promise((res, rej) => {
+        let tpl = null;
+        try { tpl = window.parent.document.getElementById('tool-match'); } catch (e) {}
+        if (!tpl) { rej(new Error('générateur CETELEM introuvable dans la coque')); return; }
+        const fr = document.createElement('iframe');
+        fr.setAttribute('aria-hidden', 'true');
+        fr.style.cssText = 'position:fixed;left:-20000px;top:0;width:1200px;height:1600px;border:0;z-index:-1';
+        fr.addEventListener('load', () => {
+          const t0 = Date.now();
+          (function wait() {
+            const w = fr.contentWindow;
+            if (w && typeof w.gefecBuildCetelem === 'function') return res(w);
+            if (Date.now() - t0 > 60000) return rej(new Error("le générateur CETELEM n'a pas démarré"));
+            setTimeout(wait, 100);
+          })();
+        });
+        fr.srcdoc = tpl.textContent.replace(/<\\\/script/g, '</script');
+        document.body.appendChild(fr);
+      }).catch(e => { cetFrameP = null; throw e; });
+    }
+    return cetFrameP;
+  }
+  function legacyOpts() {
     return {
-      tpl: el('optTpl').value,
-      printBg: el('optBg').value === '1',
-      subject: el('optSubject').value || DEFAULT_SUBJECT,
-      message: el('optMessage').value || DEFAULT_MESSAGE,
-      chkTV: el('chkTV').checked,
-      chkPEM: el('chkPEM').checked,
-      chkStar: el('chkStar').checked,
-      chkCET: el('chkCET').checked,
+      tpl: el('optTpl').value, printBg: el('optBg').value === '1',
+      subject: el('optSubject').value || LEGACY_SUBJECT, message: el('optMessage').value || LEGACY_MESSAGE,
+      tv: el('chkTV').checked, pem: el('chkPEM').checked, star: el('chkStar').checked, cet: el('chkCET').checked,
     };
   }
-
-  // send = true : génération + envoi. send = false : génération seule, les PDF
-  // sont téléchargés sur le poste de l'administrateur (contrôle avant campagne).
-  async function processStore(store, send, opts, plans) {
-    if (store.status === 'never') throw new Error("ce magasin n'a pas déposé de valorisation");
-    if (store.status === 'late')
-      throw new Error(`valorisation de ${store.ageDays} jours — au-delà de ${VALO_MAX_DAYS} jours, elle ne reflète plus le stock exposé`);
-
-    opts.storePrefs = store.mail_prefs || {};
-
-    let to = '';
-    if (send) {
-      const row = rowOf(store);
-      to = ((row && row.querySelector('[data-mail]').value) || store.email || '').trim();
-      if (!isMail(to)) throw new Error("adresse e-mail du magasin manquante ou invalide");
+  const legacyFill = (tpl, v) => String(tpl || '').replace(/\{(magasin|code|plans|affiches|pages|date)\}/g, (m, k) => v[k] != null ? String(v[k]) : m);
+  async function legacyProcess(s, o, plans) {
+    if (s.valo !== 'ok') throw new Error('valorisation absente ou périmée');
+    const to = ((rowOf(s).querySelector('[data-mail]').value) || s.email || '').trim();
+    if (!isMail(to)) throw new Error('adresse e-mail du magasin manquante ou invalide');
+    const prefs = s.mail_prefs || {};
+    const { data, error } = await sb.storage.from('valorisations').download(`${s.id}/valorisation.pdf`);
+    if (error || !data) throw new Error('valorisation introuvable');
+    const valo = await data.arrayBuffer();
+    const files = []; let pages = 0, products = 0;
+    const sel = { tv: o.tv ? plans.plans.tv : [], pem: o.pem ? plans.plans.pem : [], star: o.star ? plans.plans.star : [], auto: plans.plans.auto };
+    if (sel.tv.length || sel.pem.length || sel.star.length || sel.auto.length) {
+      const w = await E.genWin();
+      const r = await w.gefecBuildCampagne({
+        valo: valo.slice(0), valoName: `valorisation-${s.id}.pdf`, plans: sel, plansToken: plans.token,
+        tpl: o.tpl, masks: MASKS, fmtTV: prefs.tv || 'a4', fmtPEM: prefs.pem || 'a4', fmtStar: prefs.star || 'a4',
+        printBg: o.printBg, onProgress: stepper(s),
+      });
+      files.push(...r.files); pages += r.pages; products += r.products;
     }
-
-    setStatus(store, 'run', 'génération des affiches…');
-    setBar(store, 0);
-    const res = await buildPdfs(store, plans, opts, (phase, i, n) => {
-      if (phase === 'pdf') {
-        setStatus(store, 'run', n ? `affiche ${i}/${n}` : 'mise en page…');
-        setBar(store, n ? Math.round(i / n * 100) : 0);
-      } else setStatus(store, 'run', PHASE[phase] || 'en cours…');
-    });
-    setBar(store, null);
-
-    // Les PDF sortent du cadre générateur : ce sont des Blob d'un AUTRE realm
-    // JS, qui échouent aux tests instanceof des bibliothèques (même piège que
-    // l'injection des documents partagés). On les reconstruit ici.
-    for (const f of res.files) f.blob = new Blob([await f.blob.arrayBuffer()], { type: 'application/pdf' });
-
-    const plansLabel = res.plans.map(p => p.label).join(' + ');
-    const dateStr = new Date().toISOString().slice(0, 10);
-
-    if (!send) {
-      for (const f of res.files) {
-        const url = URL.createObjectURL(f.blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `affiches-${f.id}-${slugify(store.name || store.id)}-${dateStr}.pdf`;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      }
-      const poids = res.files.reduce((n, f) => n + f.blob.size, 0) / 1048576;
-      setStatus(store, 'ok', `${res.files.length} PDF téléchargé(s) (${poids.toFixed(1)} Mo) — `
-        + `${res.products} affiche(s), ${res.pages} page(s) · ${plansLabel}`);
-      return { sent: false };
+    if (o.cet && plans.plans.cet.length) {
+      try {
+        const cw = await cetelemWin();
+        const cr = await cw.gefecBuildCetelem({ valo: valo.slice(0), plans: plans.plans.cet, fmt: prefs.cetelem || 'a4', onProgress: stepper(s) });
+        files.push(...cr); cr.forEach(c => { pages += c.pages; products += c.products; });
+      } catch (e) { if (e.message !== 'aucune affiche CETELEM ne correspond à votre valorisation') throw e; }
     }
-
-    setStatus(store, 'run', 'dépôt des PDF…');
-    const files = await uploadPdfs(store, res.files, dateStr);
-    const mo = files.reduce((n, f) => n + (f.bytes || 0), 0) / 1048576;
-    await saveStoreEmail(store, to);
-
-    const vars = {
-      magasin: store.name || store.id, code: store.id, plans: plansLabel,
-      affiches: res.products, pages: res.pages,
-      date: new Date().toLocaleDateString('fr-FR'),
-    };
-    const subject = fill(opts.subject, vars);
-    const message = fill(opts.message, vars);
-
-    setStatus(store, 'run', `envoi du mail à ${to} — ${mo.toFixed(1)} Mo de pièces jointes…`);
-    const out = await sendMail({
-      to, store_id: store.id, store_name: store.name || store.id,
-      subject, message,
-      files: files.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })),
-    });
-
-    await logCampagne(store, to, subject, files, out, {
-      plansLabel, pages: res.pages, products: res.products, valoDays: store.ageDays,
-    });
-    touchLast(store, to, plansLabel);
-    setStatus(store, 'ok',
-      `Mail envoyé à ${to} — ${files.length} pièce(s) jointe(s) (${mo.toFixed(1)} Mo), `
-      + `${res.products} affiche(s), ${res.pages} page(s) · ${plansLabel}`);
-    return { sent: true };
-  }
-
-  async function runOne(store, send) {
-    if (busy) return;
-    const opts = currentOpts();
-    lockRows(true);
+    if (!files.length) throw new Error('aucune affiche générée (aucun produit trouvé ou plans décochés)');
+    setBar(s, null);
+    for (const f of files) f.blob = new Blob([await f.blob.arrayBuffer()], { type: 'application/pdf' });
+    const date = new Date().toISOString().slice(0, 10);
+    const up = [];
+    for (const f of files) {
+      const path = `${s.id}/campagne/${f.id}.pdf`;
+      const { error: ue } = await sb.storage.from('affiches').upload(path, f.blob, { upsert: true, contentType: 'application/pdf' });
+      if (ue) throw new Error('dépôt du PDF : ' + ue.message);
+      up.push({ path, filename: `affiches-${f.id}-${E.slugify(s.name || s.id)}-${date}.pdf`, label: f.label, pages: f.pages, products: f.products, bytes: f.blob.size });
+    }
+    const plansLabel = files.map(f => f.label).join(' + ');
+    const vars = { magasin: s.name || s.id, code: s.id, plans: plansLabel, affiches: products, pages, date: new Date().toLocaleDateString('fr-FR') };
+    const subject = legacyFill(o.subject, vars);
+    setStatus(s, 'run', `envoi du mail à ${to}…`);
+    const out = await E.sendMail({ to, store_id: s.id, store_name: s.name || s.id, subject, message: legacyFill(o.message, vars),
+      files: up.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })) });
     try {
-      const plans = await planFiles();
-      if (!plans.count) throw new Error('aucun plan promo publié : déposez les plans TV, PEM et/ou Star dans ⚙️ Réglages');
-      const r = await processStore(store, send, opts, plans);
-      toast(r.sent ? `Campagne envoyée à ${store.name || store.id} ✓` : 'PDF généré ✓');
-    } catch (e) {
-      setBar(store, null);
-      setStatus(store, 'ko', 'Échec : ' + ((e && e.message) || e));
-      toast('Échec : ' + ((e && e.message) || e), true);
-    } finally {
-      lockRows(false);
-    }
+      await sb.from('campagne_mails').insert({ store_id: s.id, email: to, subject, plans: plansLabel, files: up, pages, products,
+        valo_days: s.ageDays, provider: out.provider || null, sent_by: ME.userId, auto: false });
+    } catch (e) {}
+    setStatus(s, 'ok', `Campagne complète envoyée à ${to} — ${products} affiche(s), ${pages} page(s) · ${plansLabel}`);
   }
-
-  async function runAll() {
+  async function legacyOne(s) {
     if (busy) return;
-    const targets = readyStores();
-    if (!targets.length) return;
-    if (!confirm(`Envoyer la campagne à ${targets.length} magasin(s) ?\n`
-      + `Chaque magasin reçoit les affiches de SON magasin en pièces jointes.`)) return;
-
-    const opts = currentOpts();
-    lockRows(true);
-    let done = 0, failed = 0, lastErr = '';
+    if (!confirm(`Envoyer la campagne complète (ancien mode) à ${s.name || s.id} ?`)) return;
+    lock(true); setBar(s, 0);
+    try { await legacyProcess(s, legacyOpts(), await legacyPlans()); }
+    catch (e) { setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message); }
+    finally { lock(false); }
+  }
+  const legacyReady = () => STORES.filter(s => s.valo === 'ok' && s.auto);
+  function syncLegacyBulk() {
+    const n = legacyReady().length;
+    el('btnAllLegacy').textContent = `📦 Campagne complète à tous les magasins prêts (${n})`;
+    el('btnAllLegacy').disabled = busy || !n;
+  }
+  async function legacyAll() {
+    const targets = legacyReady();
+    if (busy || !targets.length) return;
+    if (!confirm(`Envoyer la campagne complète à ${targets.length} magasin(s) ?`)) return;
+    lock(true);
+    let ok = 0, ko = 0;
     try {
-      const plans = await planFiles();
-      if (!plans.count) throw new Error('aucun plan promo publié : déposez les plans TV, PEM et/ou Star dans ⚙️ Réglages');
-      for (const store of targets) {
-        try { await processStore(store, true, opts, plans); done++; }
-        catch (e) {
-          failed++; lastErr = (e && e.message) || String(e);
-          setBar(store, null);
-          setStatus(store, 'ko', 'Échec : ' + lastErr);
-        }
+      const plans = await legacyPlans(), o = legacyOpts();
+      for (const s of targets) {
+        try { await legacyProcess(s, o, plans); ok++; }
+        catch (e) { ko++; setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message); }
       }
-    } catch (e) {
-      toast('Échec : ' + ((e && e.message) || e), true);
-    } finally {
-      lockRows(false);
-    }
-    if (done) toast(`${done} campagne(s) envoyée(s)${failed ? ` · ${failed} échec(s)` : ''} ✓`);
-    else if (failed) toast('Échec : ' + lastErr, true);
+    } catch (e) { toast('Échec : ' + e.message, true); }
+    finally { lock(false); }
+    toast(`${ok} campagne(s) envoyée(s)${ko ? ` · ${ko} échec(s)` : ''}`, !ok && ko);
+  }
+  async function loadLegacyFrom() {
+    try {
+      const { data } = await sb.from('app_settings').select('value').eq('key', 'mail').maybeSingle();
+      const v = (data && data.value) || {};
+      el('optSubject').value = v.subject || LEGACY_SUBJECT;
+      el('optMessage').value = v.message || LEGACY_MESSAGE;
+      if (isMail(v.from_email)) setMsg('fromMsg', 'ok', `Expéditeur : ${v.from_name ? v.from_name + ' <' + v.from_email + '>' : v.from_email}`);
+      else setMsg('fromMsg', 'warn', "Aucune adresse d'expédition : renseignez-la dans ⚙️ Réglages → « Envoi des campagnes mail ».");
+    } catch (e) {}
   }
 
-  /* ---------- Démarrage ---------- */
+  /* ════════════════════════ HISTORIQUE ════════════════════════ */
+  const RUN_STATUS = { ok: 'réussie', alertes: 'avec alertes', echec: 'en échec', en_cours: 'en cours', inactif: 'inactive' };
+  const RUN_TAG = { ok: 'is-ok', alertes: 'is-warn', echec: 'is-ko', en_cours: 'is-info' };
+  async function loadHistory() {
+    try {
+      const { data, error } = await sb.from('auto_runs').select('*').order('started_at', { ascending: false }).limit(40);
+      if (error) throw error;
+      el('runs').innerHTML = !(data || []).length ? '<div class="empty">Aucune tournée pour le moment.</div>'
+        : `<table class="table_component"><thead><tr><th>Jour</th><th>Lancement</th><th>Statut</th><th class="is-num">Magasins servis</th><th class="is-num">Affiches</th><th>Détail</th></tr></thead><tbody>${
+          data.map(r => {
+            const d = r.details || {};
+            const texts = d.texts || [];
+            const stores = (d.stores || []).filter(x => x.status === 'envoye').map(x => `${x.name} (${x.affiches})`);
+            return `<tr>
+              <td>${frDate(r.run_date)}</td>
+              <td>${r.trigger === 'cron' ? 'Automatique' : 'Manuel'}<br><span style="color:var(--text-3)">${frDT(r.started_at)}</span></td>
+              <td><span class="tag ${RUN_TAG[r.status] || ''}">${RUN_STATUS[r.status] || esc(r.status)}</span></td>
+              <td class="is-num">${r.stores_sent || 0}</td>
+              <td class="is-num">${r.affiches || 0}</td>
+              <td>${stores.length ? esc(stores.join(', ')) : '<span style="color:var(--text-3)">aucun envoi</span>'}
+                ${texts.length ? `<ul class="table_alerts">${texts.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}</td>
+            </tr>`;
+          }).join('')}</tbody></table>`;
+    } catch (e) { el('runs').innerHTML = `<div class="empty">Erreur : ${esc(e.message || e)}</div>`; }
+    try {
+      const { data, error } = await sb.from('campagne_mails').select('store_id, email, subject, plans, operations, products, pages, sent_at, auto')
+        .order('sent_at', { ascending: false }).limit(60);
+      if (error) throw error;
+      const nameOf = (id) => (STORES.find(s => s.id === id) || {}).name || id;
+      el('mails').innerHTML = !(data || []).length ? '<div class="empty">Aucun mail envoyé.</div>'
+        : `<table class="table_component"><thead><tr><th>Date</th><th>Magasin</th><th>Type</th><th>Contenu</th><th class="is-num">Affiches</th></tr></thead><tbody>${
+          data.map(m => `<tr>
+            <td>${frDT(m.sent_at)}</td>
+            <td><b>${esc(nameOf(m.store_id))}</b><br><span style="color:var(--text-3)">${esc(m.email)}</span></td>
+            <td><span class="tag ${m.auto ? 'is-info' : ''}">${m.auto ? 'Envoi auto' : 'Campagne'}</span></td>
+            <td>${esc(m.operations || m.plans || '')}</td>
+            <td class="is-num">${m.products || 0}</td>
+          </tr>`).join('')}</tbody></table>`;
+    } catch (e) { el('mails').innerHTML = `<div class="empty">Erreur : ${esc(e.message || e)}</div>`; }
+  }
+
+  /* ════════════════════════ DÉMARRAGE ════════════════════════ */
+  async function loadMasksUI() {
+    try { MASKS = await E.loadMasks(); } catch (e) { MASKS = []; }
+    fillMaskSelect(el('opMaskPromo'), 'promo');
+    fillMaskSelect(el('opMaskBonplan'), 'bonplan');
+    fillMaskSelect(el('optTpl'), 'bonplan');
+  }
+  async function reloadAll() {
+    if (busy) return;
+    E.resetCaches(); legacyPlanCache = null;
+    await loadSettingsUI();
+    await loadMasksUI();
+    await loadOps();
+    loadLastRun();
+    await loadStores();
+    await loadOffers();
+    if (!el('tabs').querySelector('.is-active[data-tab="histo"]')) return;
+    loadHistory();
+  }
+
   async function init() {
-    el('btnReload').addEventListener('click', async () => {
-      if (busy) return;
-      planCache = null;
-      await refreshPlanStatus();
-      await loadCustomMasks();
-      await loadStores();
-    });
-    el('btnAll').addEventListener('click', runAll);
+    document.querySelectorAll('.tabs_link').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+    el('btnReload').addEventListener('click', reloadAll);
+    el('opSave').addEventListener('click', saveOp);
+    el('opCancel').addEventListener('click', () => { resetOpForm(); setMsg('opMsg', '', ''); });
+    el('opForm').addEventListener('submit', (e) => { e.preventDefault(); saveOp(); });
+    el('opFrom').addEventListener('change', () => { if (!el('opTo').value || el('opTo').value < el('opFrom').value) el('opTo').value = el('opFrom').value; });
+    el('setSave').addEventListener('click', saveSettingsUI);
+    el('btnRunNow').addEventListener('click', runNow);
+    el('btnAllLegacy').addEventListener('click', legacyAll);
 
     sb = getSb();
-    if (!sb) {
-      guard("<b>Configuration Supabase manquante.</b><br>Vérifiez <code>app-config.js</code> et le chargement de la bibliothèque Supabase.");
-      return;
-    }
+    if (!sb) { guard('<b>Configuration Supabase manquante.</b><br>Vérifiez <code>app-config.js</code>.'); return; }
     let user = null;
     try { ({ data: { user } } = await sb.auth.getUser()); } catch (e) {}
     if (!user) { guard('<b>Session expirée.</b><br>Reconnectez-vous depuis la page d’accueil.'); return; }
-
     let prof = null;
-    try {
-      const { data } = await sb.from('profiles').select('role').eq('user_id', user.id).single();
-      prof = data;
-    } catch (e) {}
+    try { ({ data: prof } = await sb.from('profiles').select('role').eq('user_id', user.id).single()); } catch (e) {}
     if (!prof || prof.role !== 'admin') {
       guard("<b>Outil réservé à l'administrateur.</b><br>L'envoi des campagnes mail se pilote depuis le compte administrateur.");
       return;
     }
-    ME = { userId: user.id, role: prof.role };
+    ME = { userId: user.id };
+    E = window.GefecAuto.create(sb, { userId: user.id, log: (m) => console.log('[envoi auto] ' + m) });
 
-    el('cardOpts').hidden = false;
-    el('cardStores').hidden = false;
-    await loadSettings();
-    await refreshPlanStatus();
-    await loadCustomMasks();
+    el('tabs').hidden = false;
+    let tab = 'ops';
+    try { tab = localStorage.getItem('gefec_campagne_tab') || 'ops'; } catch (e) {}
+    showTab(['ops', 'envois', 'histo'].includes(tab) ? tab : 'ops');
+    el('previewDate').value = E.parisDate();
+    resetOpForm();
+
+    try { await loadSettingsUI(); }
+    catch (e) {
+      guard(`<b>Tables de l'envoi automatique introuvables.</b><br>Exécutez <code>supabase/add-envoi-auto.sql</code> dans Supabase. (${esc(e.message)})`);
+      return;
+    }
+    await loadMasksUI();
+    await loadOps();
+    loadLastRun();
+    loadLegacyFrom();
     await loadStores();
+    await loadOffers();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

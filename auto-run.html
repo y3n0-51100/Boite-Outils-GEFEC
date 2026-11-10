@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex">
+<title>Tournée automatique des affiches — GEFEC</title>
+<!-- Page technique, sans interface : ouverte chaque matin par GitHub Actions
+     (scripts/run-auto.js) dans un navigateur sans écran. Elle se connecte avec
+     le compte robot administrateur et lance la tournée du jour
+     (auto-engine.js → runDay). Ouverte à la main, elle ne fait rien. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="app-config.js"></script>
+<script src="auto-engine.js"></script>
+</head>
+<body>
+<p>Page technique de l'envoi automatique des affiches.</p>
+<script>
+window.gefecAutoRun = async function (o) {
+  const cfg = window.GEFEC_CONFIG || {};
+  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: true },
+  });
+  const id = String(o.user || '').trim();
+  const email = id.includes('@') ? id : `${id.toLowerCase()}@${cfg.EMAIL_DOMAIN || 'gefec.local'}`;
+  const { data: auth, error } = await sb.auth.signInWithPassword({ email, password: o.pass });
+  if (error || !auth || !auth.user) throw new Error('connexion du compte robot refusée : ' + ((error && error.message) || 'inconnu'));
+  const { data: prof } = await sb.from('profiles').select('role').eq('user_id', auth.user.id).single();
+  if (!prof || prof.role !== 'admin') throw new Error("le compte robot n'est pas administrateur");
+
+  const engine = window.GefecAuto.create(sb, { userId: auth.user.id, log: (m) => console.log('[tournée] ' + m) });
+  const out = await engine.runDay({ trigger: 'cron', date: o.date || undefined, force: !!o.force });
+  await sb.auth.signOut();
+  return out;
+};
+</script>
+</body>
+</html>

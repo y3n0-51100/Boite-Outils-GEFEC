@@ -198,6 +198,37 @@ aviez exécuté ce fichier avant, rejouez-le.
 
 ---
 
+## 8. L'envoi automatique des affiches (tous les matins à 6 h)
+
+### 8.1 Le schéma
+SQL Editor → coller [`add-envoi-auto.sql`](./add-envoi-auto.sql) → **Run**
+(tables `operations`, `auto_sent`, `auto_runs`, deux colonnes de plus dans
+`campagne_mails`). Idempotent.
+
+### 8.2 Le compte robot
+La tournée tourne sur GitHub, sans navigateur ouvert : elle se connecte avec
+un compte **administrateur dédié**. Dans l'outil, **Comptes** → créer par
+exemple `robot-affiches`, rôle **Administrateur**, avec un mot de passe long.
+
+### 8.3 Les secrets GitHub
+Dépôt GitHub → **Settings → Secrets and variables → Actions** :
+
+| Secret | Valeur |
+| --- | --- |
+| `GEFEC_ROBOT_USER` | l'identifiant du compte robot (ex. `robot-affiches`) |
+| `GEFEC_ROBOT_PASS` | son mot de passe |
+
+### 8.4 Activer
+Outil **✉️ Envoi Campagne Mail** → onglet **Opérations** → saisir les
+opérations, puis cocher **Activer l'envoi automatique**, renseigner la date de
+mise en service et l'adresse d'alerte → **Enregistrer**.
+
+Pour tester sans attendre 6 h : GitHub → **Actions → Envoi automatique des
+affiches → Run workflow** (option « Forcer »), ou le bouton **▶️ Lancer la
+tournée du jour** dans l'outil.
+
+---
+
 ## Ce que vous me transmettez ensuite
 - **Project URL**
 - **anon public key**

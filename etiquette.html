@@ -2206,7 +2206,9 @@ function labelHtml(p, fmtClass) {
   // utilisateur) — BON PLAN si prix fond de rayon seul, PROMO DU MOMENT dès
   // que le produit a une vraie promo (prix barré + pastille de remise).
   const isStar = state.plan === 'star';
-  const tpl = isStar ? (p && p.oldPrice != null ? 'promo' : 'bonplan') : state.tpl;
+  // _tpl : masque imposé produit par produit par l'envoi automatique
+  // (opération commerciale du jour), prioritaire sur tout le reste
+  const tpl = p && p._tpl ? p._tpl : (isStar ? (p && p.oldPrice != null ? 'promo' : 'bonplan') : state.tpl);
   const showDates = document.getElementById('showDates').checked;
   const showBrand = document.getElementById('showBrand').checked;
   const dates = showDates ? validityTextFor(p) : '';
@@ -2509,15 +2511,20 @@ async function pinFontStretch(root, fd) {
    html2canvas : c'est exactement ce que le magasin voit dans l'aperçu. */
 async function sheetsToPdf(sheets, fmt, onPage) {
   const { jsPDF } = window.jspdf;
-  const land = fmt === 'a5';                       // A5 x2 = planche A4 paysage
-  const W = land ? 297 : 210, H = land ? 210 : 297;
-  const pdf = new jsPDF({ orientation: land ? 'landscape' : 'portrait', unit: 'mm', format: 'a4', compress: true });
+  // une planche = du HTML (format commun `fmt`) ou { html, fmt } quand le
+  // format change d'une planche à l'autre (envoi automatique : un masque
+  // perso sans planche A5 sort en A4 au milieu d'un jeu A5)
+  const isLand = (sh) => ((sh && sh.fmt) || fmt) === 'a5';   // A5 x2 = planche A4 paysage
+  const land0 = isLand(sheets[0]);
+  const pdf = new jsPDF({ orientation: land0 ? 'landscape' : 'portrait', unit: 'mm', format: 'a4', compress: true });
   // au-delà d'une trentaine de planches on baisse la définition (~150 dpi au
   // lieu de ~190) pour que le PDF reste téléchargeable en magasin
   const scale = sheets.length > 30 ? 1.5 : 2;
   const fd = (await getRenderFrame()).contentDocument;
   for (let i = 0; i < sheets.length; i++) {
-    fd.body.innerHTML = sheets[i];
+    const land = isLand(sheets[i]);
+    const W = land ? 297 : 210, H = land ? 210 : 297;
+    fd.body.innerHTML = typeof sheets[i] === 'string' ? sheets[i] : sheets[i].html;
     const node = fd.body.firstElementChild;
     await waitImages(node);
     if (!i) { try { await fd.fonts.ready; } catch (e) {} }   // 1re planche : polices chargées
@@ -2693,6 +2700,195 @@ window.gefecBuildCampagne = async function (opts) {
     files, pages: total, plans: matched,
     products: matched.reduce((n, p) => n + p.n, 0),
     refs: state.storeKeys.size,
+  };
+};
+
+/* ============================================================
+   ENVOI AUTOMATIQUE — « les affiches à mettre en place ce jour »
+   ------------------------------------------------------------
+   Appelé par auto-engine.js (outil Campagne Mail ET tournée quotidienne
+   GitHub Actions) sur un cadre etiquette.html?export=1.
+
+   Différences avec gefecBuildCampagne :
+   · seuls les plans TV et PEM ;
+   · seules les offres EN COURS à la date demandée (du <= date <= au), dont
+     le début est postérieur à la date de mise en service, et jamais déjà
+     envoyées à ce magasin (clé plan|EAN|du|au|prix) ;
+   · masque choisi PAR PRODUIT : PROMO si le prix du plan est inférieur au
+     prix de vente de la base NOSICA (le prix NOSICA est alors barré), sinon
+     BON PLAN ; le masque réel est celui de l'opération commerciale qui
+     couvre le début de l'offre (à défaut, PROMO DU MOMENT / BON PLAN).
+   ============================================================ */
+
+/* plans TV / PEM publiés -> state.plans[t].promoProducts (relus une seule
+   fois tant que la publication ne change pas) */
+async function loadExportPlans(o, say) {
+  // jeton préfixé : ce chargement n'inclut pas Produits Star, il ne doit donc
+  // pas dispenser gefecBuildCampagne de relire les plans (même cadre)
+  const token = o.plansToken ? 'auto:' + o.plansToken : null;
+  if (token && token === lastPlansToken) return;
+  say('plans');
+  for (const t of ['tv', 'pem', 'star']) { state.plans[t].promoProducts = []; state.plans[t].products = []; }
+  for (const t of ['tv', 'pem', 'auto']) {
+    const list = (o.plans && o.plans[t]) || [];
+    if (!list.length) continue;
+    await handlePromoFile(list.map(f => fileFromShell(f.data, f.name)), t === 'auto' ? null : t);
+  }
+  lastPlansToken = token;
+}
+
+const AUTO_PLANS = ['tv', 'pem'];
+const autoKey = (plan, p) => [plan, p.ean || p.key, p.from || '', p.to || '',
+  p.price != null ? (+p.price).toFixed(2) : ''].join('|');
+
+/* PROMO ou BON PLAN : comparaison au prix de vente de la base NOSICA */
+function autoKind(p) {
+  const info = state.baseInfo.get(p.key);
+  const base = info && info.price != null ? +info.price : null;
+  if (base != null && p.price != null && base - p.price >= 0.01) return { kind: 'promo', base };
+  return { kind: 'bonplan', base };
+}
+/* opération qui couvre une date ISO (la plus récente si chevauchement) */
+function autoOpFor(ops, iso) {
+  if (!iso) return null;
+  const hits = (ops || []).filter(op => op.date_from <= iso && iso <= op.date_to);
+  hits.sort((a, b) => String(b.date_from).localeCompare(String(a.date_from)));
+  return hits[0] || null;
+}
+const autoMaskOk = (id) => id === 'promo' || id === 'bonplan' || state.customMasks.some(m => m.id === id);
+
+/* Offres des plans publiés, sans magasin : calendrier des « envois
+   programmés » de l'outil Campagne Mail.
+   -> { offers:[{plan,ean,name,brand,cat,price,base,kind,from,to}] } */
+window.gefecPlanOffers = async function (opts) {
+  const o = opts || {};
+  const say = typeof o.onProgress === 'function' ? o.onProgress : function () {};
+  await Promise.race([exportReadyP, new Promise(r => setTimeout(r, 15000))]);
+  if (o.masks && o.masks.length) { try { applyCustomMasks(o.masks); } catch (e) {} }
+  await loadExportPlans(o, say);
+  const offers = [];
+  for (const t of AUTO_PLANS) {
+    for (const p of state.plans[t].promoProducts) {
+      const k = autoKind(p);
+      offers.push({
+        plan: t, ean: p.ean, name: p.name || (state.baseInfo.get(p.key) || {}).name || '',
+        brand: p.brand || '', cat: t === 'tv' ? 'TÉLÉVISEUR' : (p.cat || ''),
+        price: p.price, base: k.base, kind: k.kind, from: p.from, to: p.to,
+      });
+    }
+  }
+  return { offers };
+};
+
+/* opts = {
+     valo, valoName, plans:{tv,pem,auto}, plansToken, masks,
+     date:'AAAA-MM-JJ'       jour de la tournée
+     since:'AAAA-MM-JJ'      mise en service (offres commencées avant : ignorées)
+     operations:[{id,name,date_from,date_to,mask_promo,mask_bonplan}],
+     sent:[clé, …]           affiches déjà envoyées à ce magasin
+     fmtTV, fmtPEM, printBg, onProgress
+   }
+   -> { files:[{id,label,blob,pages,products}], items:[…], pages, products,
+        operations:[noms], alerts:[{type,…}], refs }
+   files est vide quand il n'y a rien à mettre en place : pas d'erreur.   */
+window.gefecBuildAuto = async function (opts) {
+  const o = opts || {};
+  const say = typeof o.onProgress === 'function' ? o.onProgress : function () {};
+  const date = o.date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new Error('date de tournée invalide');
+  await Promise.race([exportReadyP, new Promise(r => setTimeout(r, 15000))]);
+  say('libs');
+  await ensureExportLibs();
+  if (o.masks && o.masks.length) { try { applyCustomMasks(o.masks); } catch (e) {} }
+
+  say('valo');
+  await handleValoFile(fileFromShell(o.valo, o.valoName || 'valorisation.pdf'));
+  if (!state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
+
+  await loadExportPlans(o, say);
+
+  say('match');
+  const sent = new Set(o.sent || []);
+  const ops = o.operations || [];
+  const alerts = [];
+  const noOp = new Set(), badMask = new Set();
+  let noDates = 0;
+  const groups = [];
+  for (const t of AUTO_PLANS) {
+    const pl = state.plans[t];
+    if (!pl.promoProducts.length) continue;
+    withPlan(t, doMatch);
+    const keep = [];
+    for (const p of pl.products) {
+      if (!p.from || !p.to) { noDates++; continue; }
+      if (p.from > date || p.to < date) continue;           // pas (ou plus) en cours
+      if (o.since && p.from < o.since) continue;             // avant la mise en service
+      const key = autoKey(t, { ...p, key: normCode(p.ean) });
+      if (sent.has(key)) continue;                           // déjà envoyée
+      const k = autoKind({ ...p, key: normCode(p.ean) });
+      const op = autoOpFor(ops, p.from) || autoOpFor(ops, date);
+      let tpl = op ? (k.kind === 'promo' ? op.mask_promo : op.mask_bonplan) : k.kind;
+      if (!op) noOp.add(p.from);
+      if (!autoMaskOk(tpl)) { badMask.add(tpl); tpl = k.kind; }
+      p.oldPrice = k.kind === 'promo' ? k.base : null;       // prix NOSICA barré
+      p._tpl = tpl;
+      p._key = key; p._kind = k.kind; p._op = op ? op.id : null; p._opName = op ? op.name : '';
+      p.selected = true;
+      keep.push(p);
+    }
+    pl.products = keep;
+    if (keep.length) groups.push({ id: t, label: pl.label, list: keep });
+  }
+  if (noOp.size) alerts.push({ type: 'sans_operation', dates: [...noOp].sort() });
+  if (badMask.size) alerts.push({ type: 'masque_introuvable', masks: [...badMask] });
+  if (noDates) alerts.push({ type: 'offres_sans_dates', n: noDates });
+
+  const empty = { files: [], items: [], pages: 0, products: 0, operations: [], alerts, refs: state.storeKeys.size };
+  if (!groups.length) return empty;
+
+  // réglages d'affiche, sans passer par setTpl/setFmt (préférences mémorisées)
+  state.printBg = o.printBg !== false;
+  setChk('showDates', true);
+  setChk('showBrand', o.showBrand !== false);
+  setChk('perProductDates', true);
+
+  // planches : un PDF par plan ; en A5, deux produits partagent un fond, on
+  // groupe donc par masque, et un masque sans planche A5 sort en A4
+  const byPlan = groups.map(g => {
+    const want = (g.id === 'tv' ? o.fmtTV : o.fmtPEM) === 'a5' ? 'a5' : 'a4';
+    const sheets = [];
+    const prevPlan = state.plan; state.plan = g.id;
+    try {
+      const tpls = [...new Set(g.list.map(p => p._tpl))];
+      for (const tpl of tpls) {
+        const list = g.list.filter(p => p._tpl === tpl);
+        if (want === 'a5' && maskHasA5(tpl)) {
+          state.fmt = 'a5';
+          for (const html of buildA5Sheets(list, tpl)) sheets.push({ html, fmt: 'a5' });
+        } else {
+          state.fmt = 'a4';
+          for (const p of list) sheets.push({ html: `<div class="sheet a4">${labelHtml(p, 'fa4')}</div>`, fmt: 'a4' });
+        }
+      }
+    } finally { state.plan = prevPlan; }
+    return { ...g, sheets };
+  });
+
+  const total = byPlan.reduce((n, p) => n + p.sheets.length, 0);
+  say('pdf', 0, total);
+  let done = 0;
+  const files = [];
+  for (const p of byPlan) {
+    const blob = await sheetsToPdf(p.sheets, 'a4', () => say('pdf', ++done, total));
+    files.push({ id: 'auto-' + p.id, plan: p.id, label: p.label, blob, pages: p.sheets.length, products: p.list.length });
+  }
+  const items = byPlan.flatMap(g => g.list.map(p => ({
+    plan: g.id, ean: p.ean, name: p.name, price: p.price, from: p.from, to: p.to,
+    key: p._key, kind: p._kind, mask: p._tpl, operation_id: p._op, operation: p._opName,
+  })));
+  return {
+    files, items, pages: total, products: items.length, alerts, refs: state.storeKeys.size,
+    operations: [...new Set(items.map(i => i.operation).filter(Boolean))],
   };
 };
 

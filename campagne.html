@@ -12,176 +12,400 @@
 <style>
 /* ════════════════════════════════════════════════════════════════
    ENVOI CAMPAGNE MAIL — outil administrateur
-   Charte identique à la coque (index.html) : l'outil est chargé en
-   iframe, il ne peut pas hériter de ses variables CSS, elles sont
-   donc redéclarées ici à l'identique.
+   Nommage Client-First (Finsweet) : [composant]_[élément], is-[variante],
+   classes utilitaires (text-size-*, text-color-*, margin-*).
+   Charte identique à la coque (index.html) : chargé en iframe, l'outil
+   ne peut pas hériter de ses variables CSS, elles sont redéclarées ici.
    ════════════════════════════════════════════════════════════════ */
 :root{
-  --bg:#0b0e14; --bg-2:#0e1219; --surface:#11151e; --surface-2:#1a2030; --surface-3:#232b3d;
+  --bg:#0b0e14; --surface:#11151e; --surface-2:#1a2030; --surface-3:#232b3d;
   --border:#2a334a; --border-2:#1f2638;
   --text:#e6e9f0; --text-2:#8a93a6; --text-3:#5c6478;
   --primary:#5b8cff; --primary-2:#8fb0ff;
-  --c-mail:#a78bfa;
+  --mail:#a78bfa; --mail-ink:#1b1233;
   --ok:#4ade80; --warn:#fbbf24; --ko:#f87171;
   --radius:16px;
   --font:'Manrope',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;
-  -webkit-font-smoothing:antialiased;padding:26px 22px 60px}
+  -webkit-font-smoothing:antialiased}
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit}
+[hidden]{display:none!important}
 
-.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+/* ── Structure ───────────────────────────────────────────── */
+.page-wrapper{padding:26px 16px 70px}
+.container-large{max-width:1140px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
 
 /* ── En-tête ─────────────────────────────────────────────── */
-.head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
-.head .ic{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+.header_component{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.header_icon{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;
   font-size:22px;background:linear-gradient(140deg,#c4b5fd,#7c3aed);flex-shrink:0}
-.head .txt{flex:1;min-width:240px}
-.h-title{font-size:21px;font-weight:800;letter-spacing:-.3px}
-.h-sub{font-size:12.5px;color:var(--text-3);font-weight:600;margin-top:3px}
-.h-actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.header_text{flex:1;min-width:220px}
+.heading-style-h3{font-size:21px;font-weight:800;letter-spacing:-.3px}
+.header_sub{font-size:12.5px;color:var(--text-3);font-weight:600;margin-top:2px}
+.header_actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 
-.btn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:10px;
+.status-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
+  font-size:12px;font-weight:800;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border)}
+.status-chip_dot{width:8px;height:8px;border-radius:50%;background:var(--text-3)}
+.status-chip.is-on{color:var(--ok);border-color:rgba(74,222,128,.35)}
+.status-chip.is-on .status-chip_dot{background:var(--ok);box-shadow:0 0 0 4px rgba(74,222,128,.15)}
+.status-chip.is-off{color:var(--warn);border-color:rgba(251,191,36,.35)}
+.status-chip.is-off .status-chip_dot{background:var(--warn)}
+
+/* ── Boutons ─────────────────────────────────────────────── */
+.button{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:10px;
   padding:9px 14px;font-size:12.5px;font-weight:700;transition:.15s;white-space:nowrap}
-.btn:hover:not(:disabled){background:var(--surface-3);color:var(--text)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.btn.primary{background:var(--c-mail);border-color:transparent;color:#1b1233}
-.btn.primary:hover:not(:disabled){filter:brightness(1.1);background:var(--c-mail);color:#1b1233}
-.btn.small{padding:7px 11px;font-size:11.5px;border-radius:9px}
+.button:hover:not(:disabled){background:var(--surface-3);color:var(--text)}
+.button:disabled{opacity:.45;cursor:not-allowed}
+.button.is-primary{background:var(--mail);border-color:transparent;color:var(--mail-ink)}
+.button.is-primary:hover:not(:disabled){filter:brightness(1.1);background:var(--mail);color:var(--mail-ink)}
+.button.is-small{padding:7px 11px;font-size:11.5px;border-radius:9px}
+.button.is-danger:hover:not(:disabled){color:var(--ko);border-color:rgba(248,113,113,.45)}
+
+/* ── Onglets ─────────────────────────────────────────────── */
+.tabs_menu{display:flex;gap:6px;padding:5px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;overflow-x:auto}
+.tabs_link{flex:1;min-width:max-content;border:0;background:transparent;color:var(--text-2);padding:10px 16px;
+  border-radius:10px;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px}
+.tabs_link:hover{color:var(--text);background:var(--surface-2)}
+.tabs_link.is-active{background:var(--surface-3);color:var(--text);box-shadow:inset 0 -2px 0 var(--mail)}
+.tabs_count{font-size:10.5px;background:var(--surface-2);border-radius:999px;padding:1px 7px;color:var(--text-2)}
+.tabs_pane{display:flex;flex-direction:column;gap:18px}
 
 /* ── Cartes ──────────────────────────────────────────────── */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px}
-.card-title{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--text-3);margin-bottom:14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
-label.f{display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:var(--text-2)}
-label.f.full{grid-column:1/-1}
-input[type=text],input[type=email],select,textarea{
-  border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;
-  background:var(--surface-2);color:var(--text);outline:none;width:100%;transition:.15s}
-input:focus,select:focus,textarea:focus{border-color:var(--primary)}
-textarea{resize:vertical;line-height:1.55;min-height:150px}
-.hint{font-size:11.5px;color:var(--text-3);font-weight:600;margin-top:8px}
-.hint code{background:var(--surface-2);border-radius:5px;padding:1px 5px;font-size:11px;color:var(--primary-2)}
-.msg{font-size:12.5px;font-weight:700;margin-top:10px;color:var(--text-2)}
-.msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)} .msg.err{color:var(--ko)}
+.card_component{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px}
+.card_head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.card_title{font-size:15px;font-weight:800}
+.card_desc{font-size:12px;color:var(--text-3);font-weight:600;margin-top:2px;max-width:640px}
+.card_tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
-/* ── Bandeau de blocage (non-admin, config manquante) ─────── */
+/* ── Formulaires ─────────────────────────────────────────── */
+.form_grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}
+.form_field{display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:700;color:var(--text-2)}
+.form_field.is-wide{grid-column:span 2}
+.form_field.is-full{grid-column:1/-1}
+.form_input{border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;
+  background:var(--surface-2);color:var(--text);outline:none;width:100%;transition:.15s;color-scheme:dark}
+.form_input:focus{border-color:var(--primary)}
+textarea.form_input{resize:vertical;line-height:1.55;min-height:150px}
+.form_hint{font-size:11.5px;color:var(--text-3);font-weight:600;margin-top:10px}
+.form_hint code{background:var(--surface-2);border-radius:5px;padding:1px 5px;font-size:11px;color:var(--primary-2)}
+.form_actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.form_details{margin-top:14px;border-top:1px solid var(--border-2);padding-top:12px}
+.form_details summary{cursor:pointer;font-size:12.5px;font-weight:800;color:var(--text-2)}
+.form_details[open] summary{margin-bottom:12px}
+
+/* interrupteur */
+.switch_component{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+.switch_input{position:absolute;opacity:0;pointer-events:none}
+.switch_track{width:44px;height:25px;border-radius:999px;background:var(--surface-3);border:1px solid var(--border);
+  position:relative;transition:.2s;flex-shrink:0}
+.switch_track::after{content:'';position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;
+  background:var(--text-2);transition:.2s}
+.switch_input:checked + .switch_track{background:rgba(74,222,128,.25);border-color:rgba(74,222,128,.5)}
+.switch_input:checked + .switch_track::after{left:22px;background:var(--ok)}
+.switch_input:focus-visible + .switch_track{outline:2px solid var(--primary);outline-offset:2px}
+.switch_label{font-size:13.5px;font-weight:800}
+.switch_sub{font-size:11.5px;color:var(--text-3);font-weight:600}
+
+/* ── Messages ────────────────────────────────────────────── */
+.msg{font-size:12.5px;font-weight:700;color:var(--text-2)}
+.msg:empty{display:none}
+.msg.is-ok{color:var(--ok)} .msg.is-warn{color:var(--warn)} .msg.is-err{color:var(--ko)}
 .guard{background:rgba(248,113,113,.09);border:1px solid rgba(248,113,113,.35);border-radius:var(--radius);
   padding:18px 20px;font-size:13.5px;font-weight:600;color:#fca5a5}
 .guard b{color:#fff}
-
-/* ── Pastilles de synthèse ───────────────────────────────── */
-.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.pill{padding:7px 13px;border-radius:10px;background:var(--surface-2);font-size:12.5px;font-weight:700;color:var(--text-2)}
-.pill b{font-size:15px;margin-left:4px}
-.pill.ok b{color:var(--ok)} .pill.late b{color:var(--warn)} .pill.never b{color:var(--ko)}
-
-/* ── Lignes magasin ──────────────────────────────────────── */
-.rows{display:flex;flex-direction:column}
-.row{display:grid;grid-template-columns:auto minmax(180px,1fr) minmax(190px,240px) auto;
-  gap:12px;align-items:center;padding:13px 4px;border-top:1px solid var(--border-2)}
-.row:first-child{border-top:none}
-.row .main{min-width:0}
-.row .main b{font-size:14px;font-weight:800}
-.row .sub{font-size:11.5px;color:var(--text-3);font-weight:600;margin-top:2px}
-.row .last{font-size:11px;color:var(--text-3);font-weight:700;margin-top:3px}
-.row .acts{display:flex;gap:7px;justify-content:flex-end}
-.row .st{grid-column:1/-1;font-size:12px;font-weight:700;min-height:0}
-.row .st:empty{display:none}
-.row .st.run{color:var(--warn)} .row .st.ok{color:var(--ok)} .row .st.ko{color:var(--ko)}
-.row.busy{opacity:.96}
-.bar{grid-column:1/-1;height:4px;border-radius:999px;background:var(--surface-3);overflow:hidden}
-.bar[hidden]{display:none}
-.bar i{display:block;height:100%;width:0;background:var(--c-mail);transition:width .2s}
-
-.badge{font-size:10px;font-weight:800;padding:4px 9px;border-radius:999px;white-space:nowrap}
-.badge.ok{background:rgba(74,222,128,.14);color:var(--ok)}
-.badge.late{background:rgba(251,191,36,.14);color:var(--warn)}
-.badge.never{background:rgba(248,113,113,.14);color:var(--ko)}
-
 .empty{font-size:13px;color:var(--text-3);font-weight:600;padding:22px 4px;text-align:center}
 
-/* ── Cadre générateur (etiquette.html hors écran) ─────────── */
-#genFrame{position:fixed;left:-20000px;top:0;width:1200px;height:1600px;border:0;z-index:-1}
+/* ── Frise des opérations ────────────────────────────────── */
+.timeline_component{position:relative;margin:4px 0 18px;padding-top:22px}
+.timeline_scale{position:relative;height:18px;margin-bottom:6px}
+.timeline_tick{position:absolute;top:0;font-size:10px;font-weight:700;color:var(--text-3);transform:translateX(-50%);white-space:nowrap}
+.timeline_track{position:relative;background:var(--surface-2);border-radius:10px;min-height:40px;overflow:hidden}
+.timeline_bar{position:absolute;height:26px;border-radius:7px;padding:0 8px;display:flex;align-items:center;
+  font-size:11px;font-weight:800;color:var(--mail-ink);background:var(--mail);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;cursor:pointer;border:1px solid rgba(255,255,255,.18)}
+.timeline_bar.is-past{opacity:.45}
+.timeline_today{position:absolute;top:0;bottom:0;width:2px;background:var(--ok);z-index:2}
+.timeline_today-label{position:absolute;top:-20px;transform:translateX(-50%);font-size:10px;font-weight:800;color:var(--ok)}
+
+/* ── Liste des opérations ────────────────────────────────── */
+.op_list{display:flex;flex-direction:column}
+.op_item{display:grid;grid-template-columns:minmax(160px,1fr) auto auto auto;gap:14px;align-items:center;
+  padding:12px 4px;border-top:1px solid var(--border-2)}
+.op_item:first-child{border-top:none}
+.op_name{font-size:14px;font-weight:800}
+.op_dates{font-size:12px;color:var(--text-3);font-weight:700;margin-top:2px}
+.op_masks{display:flex;gap:6px;flex-wrap:wrap}
+.op_actions{display:flex;gap:6px}
+
+.tag{font-size:10.5px;font-weight:800;padding:4px 9px;border-radius:999px;white-space:nowrap;background:var(--surface-2);color:var(--text-2)}
+.tag.is-promo{background:rgba(248,113,113,.14);color:#fca5a5}
+.tag.is-bonplan{background:rgba(251,191,36,.14);color:var(--warn)}
+.tag.is-ok{background:rgba(74,222,128,.14);color:var(--ok)}
+.tag.is-warn{background:rgba(251,191,36,.14);color:var(--warn)}
+.tag.is-ko{background:rgba(248,113,113,.14);color:var(--ko)}
+.tag.is-info{background:rgba(91,140,255,.14);color:var(--primary-2)}
+
+/* ── Calendrier des envois ───────────────────────────────── */
+.schedule_list{display:flex;flex-direction:column;gap:8px}
+.schedule_day{border:1px solid var(--border-2);border-radius:12px;background:var(--surface-2)}
+.schedule_day summary{list-style:none;display:grid;grid-template-columns:92px 1fr auto;gap:14px;align-items:center;
+  padding:12px 14px;cursor:pointer}
+.schedule_day summary::-webkit-details-marker{display:none}
+.schedule_date{font-weight:800;font-size:13px;line-height:1.25}
+.schedule_date small{display:block;font-size:11px;color:var(--text-3);font-weight:700;text-transform:capitalize}
+.schedule_day.is-today{border-color:rgba(74,222,128,.45)}
+.schedule_info{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-width:0}
+.schedule_op{font-size:12.5px;font-weight:800;margin-right:4px}
+.schedule_count{font-size:12px;font-weight:800;color:var(--text-2);white-space:nowrap}
+.schedule_body{padding:0 14px 12px;overflow-x:auto}
+
+/* ── Tableaux ────────────────────────────────────────────── */
+.table_component{width:100%;border-collapse:collapse;font-size:12.5px}
+.table_component th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);
+  font-weight:800;padding:8px 8px;border-bottom:1px solid var(--border)}
+.table_component td{padding:9px 8px;border-bottom:1px solid var(--border-2);font-weight:600;vertical-align:top}
+.table_component tr:last-child td{border-bottom:none}
+.table_component .is-num{text-align:right;white-space:nowrap}
+.table_wrap{overflow-x:auto}
+.table_alerts{margin-top:6px;padding-left:16px;color:var(--warn);font-size:11.5px}
+
+/* ── Lignes magasin ──────────────────────────────────────── */
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.pill{padding:7px 13px;border-radius:10px;background:var(--surface-2);font-size:12.5px;font-weight:700;color:var(--text-2)}
+.pill b{font-size:15px;margin-left:4px}
+.pill.is-ok b{color:var(--ok)} .pill.is-warn b{color:var(--warn)} .pill.is-ko b{color:var(--ko)}
+
+.store_list{display:flex;flex-direction:column}
+.store_item{display:grid;grid-template-columns:auto minmax(170px,1fr) minmax(180px,230px) auto;
+  gap:12px;align-items:center;padding:13px 4px;border-top:1px solid var(--border-2)}
+.store_item:first-child{border-top:none}
+.store_main{min-width:0}
+.store_name{font-size:14px;font-weight:800}
+.store_sub{font-size:11.5px;color:var(--text-3);font-weight:600;margin-top:2px}
+.store_last{font-size:11px;color:var(--text-3);font-weight:700;margin-top:3px}
+.store_actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.store_status{grid-column:1/-1;font-size:12px;font-weight:700}
+.store_status:empty{display:none}
+.store_status.is-run{color:var(--warn)} .store_status.is-ok{color:var(--ok)} .store_status.is-ko{color:var(--ko)}
+.progress_bar{grid-column:1/-1;height:4px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.progress_bar i{display:block;height:100%;width:0;background:var(--mail);transition:width .2s}
 
 /* ── Toast ───────────────────────────────────────────────── */
-.toast{position:fixed;bottom:18px;left:50%;transform:translate(-50%,14px);z-index:100;
+.toast{position:fixed;bottom:18px;left:50%;transform:translate(-50%,14px);z-index:100;max-width:calc(100% - 32px);
   background:var(--surface-3);border:1px solid var(--border);border-radius:11px;padding:11px 18px;
   font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.25s;box-shadow:0 18px 40px -18px #000}
-.toast.show{opacity:1;transform:translate(-50%,0)}
-.toast.error{border-color:rgba(248,113,113,.45);color:#fca5a5}
+.toast.is-show{opacity:1;transform:translate(-50%,0)}
+.toast.is-error{border-color:rgba(248,113,113,.45);color:#fca5a5}
 
 @media(max-width:860px){
-  .row{grid-template-columns:auto 1fr}
-  .row .acts{grid-column:1/-1;justify-content:flex-start}
-  .row input.mail{grid-column:1/-1}
+  .store_item{grid-template-columns:auto 1fr}
+  .store_actions{grid-column:1/-1;justify-content:flex-start}
+  .store_item .form_input{grid-column:1/-1}
+  .op_item{grid-template-columns:1fr}
+  .op_item > .tag{justify-self:start}
+  .timeline_tick:nth-child(even){display:none}
+  .form_field.is-wide{grid-column:1/-1}
+  .schedule_day summary{grid-template-columns:1fr auto}
+  .schedule_info{grid-column:1/-1;order:3}
 }
 </style>
 </head>
 <body>
+<div class="page-wrapper">
+<main class="container-large">
 
-<div class="wrap">
-
-  <header class="head">
-    <div class="ic">✉️</div>
-    <div class="txt">
-      <div class="h-title">Envoi Campagne Mail</div>
-      <div class="h-sub">Un magasin, un clic : contrôle de la valorisation, génération des affiches et envoi du mail avec les PDF en pièces jointes.</div>
+  <header class="header_component">
+    <div class="header_icon">✉️</div>
+    <div class="header_text">
+      <h1 class="heading-style-h3">Envoi Campagne Mail</h1>
+      <div class="header_sub">Les affiches TV et PEM partent seules, le jour où chaque offre démarre, sur le masque de l'opération commerciale.</div>
     </div>
-    <div class="h-actions">
-      <button class="btn small" id="btnReload" type="button">↻ Actualiser</button>
-      <button class="btn primary" id="btnAll" type="button" disabled>✉️ Envoyer à tous les magasins prêts</button>
+    <div class="header_actions">
+      <span class="status-chip" id="autoChip"><span class="status-chip_dot"></span><span id="autoChipTxt">Envoi automatique…</span></span>
+      <button class="button is-small" id="btnReload" type="button">↻ Actualiser</button>
     </div>
   </header>
 
   <div class="guard" id="guard" hidden></div>
 
-  <section class="card" id="cardOpts" hidden>
-    <div class="card-title">1 · Réglages de la campagne</div>
-    <div class="grid">
-      <label class="f full">Campagnes à générer et envoyer
-        <div style="display:flex;gap:15px;align-items:center;padding:5px 0;font-size:13px;font-weight:600;">
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkTV" checked> Plan Promo TV</label>
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkPEM" checked> Plan Promo PEM</label>
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkStar" checked> Produits Star</label>
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="chkCET"> Affiches CETELEM</label>
+  <nav class="tabs_menu" id="tabs" role="tablist" hidden>
+    <button class="tabs_link is-active" data-tab="ops" role="tab" type="button">📅 Opérations <span class="tabs_count" id="cntOps">0</span></button>
+    <button class="tabs_link" data-tab="envois" role="tab" type="button">📬 Envois programmés <span class="tabs_count" id="cntDays">0</span></button>
+    <button class="tabs_link" data-tab="histo" role="tab" type="button">🕘 Historique</button>
+  </nav>
+
+  <!-- ═════════════ ONGLET 1 · OPÉRATIONS ═════════════ -->
+  <section class="tabs_pane" data-pane="ops" hidden>
+
+    <div class="card_component">
+      <div class="card_head">
+        <div>
+          <div class="card_title">Opérations commerciales</div>
+          <div class="card_desc">Pour chaque période, le masque des offres en PROMO (prix inférieur au prix de vente NOSICA, qui est barré) et celui des offres en BON PLAN. Une offre prend le masque de l'opération qui couvre sa date de début.</div>
         </div>
-      </label>
-      <label class="f">Type d'affiche
-        <select id="optTpl">
-          <option value="bonplan">BON PLAN</option>
-          <option value="promo">PROMO DU MOMENT</option>
-        </select></label>
-      <label class="f">Papier
-        <select id="optBg">
-          <option value="1">Papier blanc — fond imprimé</option>
-          <option value="0">Papier pré-imprimé — contenu seul</option>
-        </select></label>
-      <label class="f full">Objet du mail
-        <input type="text" id="optSubject" placeholder="Plan promo — {plans} — {magasin}"></label>
-      <label class="f full">Message envoyé au magasin
-        <textarea id="optMessage" rows="9"></textarea></label>
+      </div>
+
+      <form class="form_grid" id="opForm" autocomplete="off">
+        <input type="hidden" id="opId">
+        <label class="form_field is-wide">Nom de l'opération
+          <input class="form_input" type="text" id="opName" placeholder="ex. Black Friday" maxlength="80" required></label>
+        <label class="form_field">Du
+          <input class="form_input" type="date" id="opFrom" required></label>
+        <label class="form_field">Au
+          <input class="form_input" type="date" id="opTo" required></label>
+        <label class="form_field">Masque des offres PROMO
+          <select class="form_input" id="opMaskPromo"></select></label>
+        <label class="form_field">Masque des offres BON PLAN
+          <select class="form_input" id="opMaskBonplan"></select></label>
+      </form>
+      <div class="form_actions">
+        <button class="button is-primary" id="opSave" type="button">＋ Ajouter l'opération</button>
+        <button class="button" id="opCancel" type="button" hidden>Annuler</button>
+        <span class="msg" id="opMsg"></span>
+      </div>
+
+      <div class="timeline_component" id="timeline"></div>
+      <div class="op_list" id="opList"><div class="empty">Chargement…</div></div>
     </div>
-    <div class="hint">Champs remplacés automatiquement :
-      <code>{magasin}</code> <code>{code}</code> <code>{plans}</code>
-      <code>{affiches}</code> <code>{pages}</code> <code>{date}</code>
-      — le modèle par défaut se règle dans ⚙️ Réglages.</div>
-    <div class="msg" id="planMsg">Vérification des plans promo publiés…</div>
-    <div class="msg" id="fromMsg"></div>
+
+    <div class="card_component">
+      <div class="card_head">
+        <div>
+          <div class="card_title">Envoi automatique</div>
+          <div class="card_desc">Chaque matin à 6 h, chaque magasin inscrit reçoit les affiches des offres qui démarrent, uniquement pour les produits de sa valorisation. Pas d'affiche à mettre en place : pas de mail.</div>
+        </div>
+      </div>
+      <label class="switch_component">
+        <input class="switch_input" type="checkbox" id="setEnabled">
+        <span class="switch_track"></span>
+        <span><span class="switch_label">Activer l'envoi automatique</span><br>
+          <span class="switch_sub" id="lastRunTxt">Dernière tournée : —</span></span>
+      </label>
+      <div class="form_grid" style="margin-top:16px">
+        <label class="form_field">Mise en service le
+          <input class="form_input" type="date" id="setSince"></label>
+        <label class="form_field is-wide">Adresse d'alerte (administrateur)
+          <input class="form_input" type="email" id="setAdmin" placeholder="vous@exemple.fr" spellcheck="false" autocapitalize="none"></label>
+        <label class="form_field">Papier
+          <select class="form_input" id="setBg">
+            <option value="1">Papier blanc — fond imprimé</option>
+            <option value="0">Papier pré-imprimé — contenu seul</option>
+          </select></label>
+      </div>
+      <div class="form_hint">Les offres qui ont démarré avant la mise en service ne partent pas. L'adresse d'alerte reçoit un mail seulement en cas de problème (valorisation périmée, offre sans opération, échec d'envoi, base NOSICA en panne).</div>
+      <details class="form_details">
+        <summary>Personnaliser le mail envoyé aux magasins</summary>
+        <div class="form_grid">
+          <label class="form_field is-full">Objet
+            <input class="form_input" type="text" id="setSubject"></label>
+          <label class="form_field is-full">Message
+            <textarea class="form_input" id="setMessage" rows="9"></textarea></label>
+        </div>
+        <div class="form_hint">Champs remplacés : <code>{magasin}</code> <code>{code}</code> <code>{operations}</code>
+          <code>{plans}</code> <code>{affiches}</code> <code>{pages}</code> <code>{date}</code></div>
+      </details>
+      <div class="form_actions">
+        <button class="button is-primary" id="setSave" type="button">Enregistrer les réglages</button>
+        <span class="msg" id="setMsg"></span>
+      </div>
+    </div>
   </section>
 
-  <section class="card" id="cardStores" hidden>
-    <div class="card-title">2 · Magasins</div>
-    <div class="pills" id="pills"></div>
-    <div class="rows" id="rows"><div class="empty">Chargement…</div></div>
+  <!-- ═════════════ ONGLET 2 · ENVOIS PROGRAMMÉS ═════════════ -->
+  <section class="tabs_pane" data-pane="envois" hidden>
+
+    <div class="card_component">
+      <div class="card_head">
+        <div>
+          <div class="card_title">Prochains envois</div>
+          <div class="card_desc">Offres des plans TV et PEM publiés, par jour de démarrage. Chaque magasin ne reçoit que les références présentes dans sa valorisation, et jamais deux fois la même affiche.</div>
+        </div>
+        <div class="card_tools"><span class="msg" id="planMsg"></span></div>
+      </div>
+      <div class="schedule_list" id="schedule"><div class="empty">Chargement…</div></div>
+    </div>
+
+    <div class="card_component">
+      <div class="card_head">
+        <div>
+          <div class="card_title">Magasins</div>
+          <div class="card_desc">« Aperçu » télécharge les affiches qu'un magasin recevra le jour choisi. « Envoyer maintenant » envoie ce qui est à mettre en place aujourd'hui et pas encore parti.</div>
+        </div>
+        <div class="card_tools">
+          <label class="form_field" style="flex-direction:row;align-items:center;gap:8px">Jour
+            <input class="form_input" type="date" id="previewDate" style="width:auto"></label>
+          <button class="button is-primary" id="btnRunNow" type="button">▶️ Lancer la tournée du jour</button>
+        </div>
+      </div>
+      <div class="pills" id="pills"></div>
+      <div class="store_list" id="stores"><div class="empty">Chargement…</div></div>
+    </div>
+
+    <details class="card_component" id="legacyCard">
+      <summary class="card_title" style="cursor:pointer">📦 Campagne complète manuelle (TV, PEM, Star, CETELEM)</summary>
+      <div class="card_desc" style="margin:6px 0 14px">L'ancien mode : toutes les offres des plans cochés, sans tenir compte des dates ni des envois précédents. Le bouton « 📦 » de chaque magasin l'utilise.</div>
+      <div class="form_grid">
+        <div class="form_field is-full">Plans à générer
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;font-weight:600;color:var(--text)">
+            <label><input type="checkbox" id="chkTV" checked> Plan Promo TV</label>
+            <label><input type="checkbox" id="chkPEM" checked> Plan Promo PEM</label>
+            <label><input type="checkbox" id="chkStar" checked> Produits Star</label>
+            <label><input type="checkbox" id="chkCET"> Affiches CETELEM</label>
+          </div>
+        </div>
+        <label class="form_field">Type d'affiche
+          <select class="form_input" id="optTpl"></select></label>
+        <label class="form_field">Papier
+          <select class="form_input" id="optBg">
+            <option value="1">Papier blanc — fond imprimé</option>
+            <option value="0">Papier pré-imprimé — contenu seul</option>
+          </select></label>
+        <label class="form_field is-full">Objet du mail
+          <input class="form_input" type="text" id="optSubject"></label>
+        <label class="form_field is-full">Message
+          <textarea class="form_input" id="optMessage" rows="8"></textarea></label>
+      </div>
+      <div class="form_hint">Champs : <code>{magasin}</code> <code>{code}</code> <code>{plans}</code> <code>{affiches}</code> <code>{pages}</code> <code>{date}</code></div>
+      <div class="form_actions">
+        <button class="button" id="btnAllLegacy" type="button" disabled>📦 Campagne complète à tous les magasins prêts</button>
+        <span class="msg" id="fromMsg"></span>
+      </div>
+    </details>
   </section>
 
+  <!-- ═════════════ ONGLET 3 · HISTORIQUE ═════════════ -->
+  <section class="tabs_pane" data-pane="histo" hidden>
+    <div class="card_component">
+      <div class="card_head">
+        <div>
+          <div class="card_title">Tournées</div>
+          <div class="card_desc">Une ligne par tournée, automatique (6 h) ou lancée à la main.</div>
+        </div>
+      </div>
+      <div class="table_wrap" id="runs"><div class="empty">Chargement…</div></div>
+    </div>
+    <div class="card_component">
+      <div class="card_head">
+        <div>
+          <div class="card_title">Derniers mails envoyés</div>
+          <div class="card_desc">Les 60 derniers envois aux magasins, automatiques et manuels.</div>
+        </div>
+      </div>
+      <div class="table_wrap" id="mails"><div class="empty">Chargement…</div></div>
+    </div>
+  </section>
+
+</main>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status"></div>
 
+<script src="auto-engine.js"></script>
 <script src="campagne.js"></script>
 </body>
 </html>

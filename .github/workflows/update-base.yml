@@ -27,7 +27,7 @@ jobs:
       - name: Installation de Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Téléchargement de la base Excel (source protégée)
         env:
@@ -39,9 +39,25 @@ jobs:
             echo "::error::Secrets manquants — définissez BASE_URL, BASE_USER et BASE_PASS dans Settings → Secrets and variables → Actions."
             exit 1
           fi
-          curl -fSL --retry 3 --retry-delay 5 \
-            --user "$BASE_USER:$BASE_PASS" \
-            "$BASE_URL" -o base.xlsx
+          # 3 tentatives ; un 401 = identifiants refusés par le site (le mot
+          # de passe a changé) : on le dit clairement au lieu d'un code curl
+          code=$(curl -sSL --retry 3 --retry-delay 10 --retry-all-errors -w '%{http_code}' \
+            --user "$BASE_USER:$BASE_PASS" "$BASE_URL" -o base.new.xlsx || true)
+          if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+            echo "::error::Identifiants refusés par le site NOSICA (HTTP $code) — mettez à jour BASE_USER / BASE_PASS dans Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          if [ "$code" != "200" ]; then
+            echo "::error::Téléchargement de la base impossible (HTTP $code)."
+            exit 1
+          fi
+          # un vrai classeur Excel est une archive ZIP (signature « PK ») :
+          # une page d'erreur HTML ne doit jamais écraser la base saine
+          if [ "$(head -c 2 base.new.xlsx)" != "PK" ] || [ "$(stat -c%s base.new.xlsx)" -lt 100000 ]; then
+            echo "::error::Le fichier reçu n'est pas une base Excel valide ($(stat -c%s base.new.xlsx) octets) — base actuelle conservée."
+            exit 1
+          fi
+          mv base.new.xlsx base.xlsx
           echo "Téléchargé : $(stat -c%s base.xlsx) octets"
 
       - name: Installation de SheetJS
@@ -59,5 +75,5 @@ jobs:
             echo "Aucun changement — la base est déjà à jour."
           else
             git commit -m "Mise à jour automatique de la base article ($(date -u +'%Y-%m-%d'))"
-            git push
+            git pull --rebase origin main && git push
           fi
