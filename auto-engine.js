@@ -24,6 +24,10 @@
   'use strict';
 
   const VALO_MAX_DAYS = 20;
+  // rappel « valorisation à mettre à jour » : au-delà de 30 jours, toutes les 72 h
+  const VALO_REMIND_DAYS = 30;
+  const VALO_REMIND_EVERY_H = 72;
+  const SITE_URL = 'https://y3n0-51100.github.io/Boite-Outils-GEFEC/';
   const BASE_MAX_HOURS = 48;
   const AFF_BUCKET = 'affiches';
 
@@ -159,7 +163,7 @@
 
     /* ---------- Magasins + valorisations ---------- */
     async function loadStores() {
-      const { data: stores, error } = await sb.from('stores').select('id, name, region, emails, mail_enabled, mail_prefs').order('id');
+      const { data: stores, error } = await sb.from('stores').select('id, name, region, emails, mail_enabled, mail_prefs, valo_reminded_at').order('id');
       if (error) throw new Error('magasins : ' + error.message);
       const metaBy = {};
       try {
@@ -417,12 +421,64 @@
        LA TOURNÉE D'UN JOUR
        o = { date, trigger:'cron'|'manuel', force, onStore(store, état) }
        ────────────────────────────────────────────────────────────── */
+    /* ---------- Rappel « valorisation à mettre à jour » ----------
+       Valorisation de plus de 30 jours -> un mail à chaque adresse du
+       magasin, renouvelé toutes les 72 h tant qu'elle n'est pas remplacée.
+       Indépendant de l'envoi des affiches : il part même si l'envoi
+       automatique est désactivé dans les réglages. Le magasin qui a coupé la
+       réception des mails ne reçoit rien. La tournée passant une fois par jour
+       à 6 h, une marge d'une heure évite de glisser au 4e jour. */
+    async function sendValoReminders() {
+      const now = Date.now();
+      const out = { sent: 0, failed: [] };
+      const stores = (await loadStores()).filter(s =>
+        s.mail_enabled !== false && s.recipients.length &&
+        s.ageDays != null && s.ageDays > VALO_REMIND_DAYS &&
+        (!s.valo_reminded_at || now - new Date(s.valo_reminded_at).getTime() >= (VALO_REMIND_EVERY_H - 1) * 36e5));
+      for (const s of stores) {
+        const subject = `Rappel — votre valorisation a ${s.ageDays} jours — ${s.name || s.id}`;
+        const message = [
+          'Bonjour,', '',
+          `La valorisation du magasin ${s.name || s.id} date du ${s.dt.toLocaleDateString('fr-FR')}, soit ${s.ageDays} jours.`,
+          "Tant qu'elle n'est pas mise à jour, les affiches ne peuvent plus être préparées pour votre magasin.", '',
+          `Connectez-vous à la Boîte à Outils GEFEC (${SITE_URL}) et déposez votre nouvelle valorisation PDF issue de NOSICA.`, '',
+          `Ce rappel vous sera renvoyé toutes les ${VALO_REMIND_EVERY_H} heures jusqu'à la mise à jour.`,
+        ].join('\n');
+        const sentTo = [];
+        for (const to of s.recipients) {
+          try {
+            await sendMail({ to, store_id: s.id, store_name: s.name || s.id, subject, message, files: [], no_attachment: true });
+            sentTo.push(to);
+          } catch (e) { out.failed.push(`${s.id} / ${to} : ${(e && e.message) || e}`); }
+        }
+        if (!sentTo.length) continue;
+        out.sent++;
+        log(`${s.id} : rappel valorisation (${s.ageDays} j) envoyé à ${sentTo.join(', ')}.`);
+        try { await sb.from('stores').update({ valo_reminded_at: new Date().toISOString() }).eq('id', s.id); } catch (e) {}
+        // visible dans l'historique de l'espace magasin
+        try {
+          await sb.from('campagne_mails').insert(sentTo.map(to => ({
+            store_id: s.id, email: to, subject, plans: 'Rappel valorisation', operations: 'Rappel : valorisation à mettre à jour',
+            products: 0, pages: 0, valo_days: s.ageDays, sent_by: env.userId || null, auto: true,
+          })));
+        } catch (e) {}
+      }
+      return out;
+    }
+
     async function runDay(o) {
       o = o || {};
       const date = o.date || parisDate();
       const trigger = o.trigger || 'manuel';
       const onStore = typeof o.onStore === 'function' ? o.onStore : function () {};
       const settings = await loadSettings();
+
+      // rappels de valorisation : avant tout le reste, quel que soit l'état de l'envoi auto
+      try {
+        const r = await sendValoReminders();
+        if (r.sent) log(`Rappels de valorisation : ${r.sent} magasin(s).`);
+        r.failed.forEach(f => log('⚠️ rappel non envoyé — ' + f));
+      } catch (e) { log('⚠️ rappels de valorisation — ' + ((e && e.message) || e)); }
 
       if (trigger === 'cron' && !settings.enabled) {
         log('Envoi automatique désactivé dans les réglages : rien à faire.');
@@ -526,7 +582,7 @@
       parisDate, parisHour, addDays, frDate, isMail, slugify, alertText,
       loadSettings, saveSettings, loadOperations, saveOperation, deleteOperation,
       loadStores, planFiles, loadMasks, resetCaches, planOffers, sentKeys,
-      buildStore, localBlobs, deliver, runDay, sendMail, genWin,
+      buildStore, localBlobs, deliver, runDay, sendMail, genWin, sendValoReminders,
       VALO_MAX_DAYS, DEFAULT_SUBJECT, DEFAULT_MESSAGE, PLAN_LABEL,
     };
   }

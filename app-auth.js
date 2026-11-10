@@ -162,6 +162,8 @@
   .sp-switch{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:14px;font-weight:700;cursor:pointer}
   .sp-switch input{width:18px;height:18px;accent-color:var(--primary,#5b8cff)}
   .sp-actions{margin-top:16px}
+  .sp-drop{margin-top:16px}
+  .sp-dl{display:inline-block;margin-top:10px}
   .sp-hist{margin-top:14px;overflow-x:auto}
   .sp-table{width:100%;border-collapse:collapse;font-size:12.5px}
   .sp-table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3,#5c6478);padding:8px 6px;border-bottom:1px solid var(--border,#2a334a)}
@@ -509,6 +511,18 @@
         </section>
 
         <section class="vgate-card sp-card">
+          <div class="vgate-title">Ma valorisation</div>
+          <div class="vgate-sub" id="spValoInfo">Chargement…</div>
+          <div class="agate-drop sp-drop" id="spDrop" tabindex="0" role="button">
+            <span>Déposez votre nouvelle valorisation (PDF)</span>
+            <small>ou cliquez pour la choisir · .pdf</small>
+            <input type="file" id="spFile" accept="application/pdf,.pdf" hidden>
+          </div>
+          <a class="agate-dl sp-dl" href="docs/Comment-ajouter-sa-valorisation.pdf" download>⬇️ Comment ajouter sa valorisation (PDF)</a>
+          <div class="vgate-msg" id="spValoMsg"></div>
+        </section>
+
+        <section class="vgate-card sp-card">
           <div class="vgate-title">Historique des mails envoyés</div>
           <div class="sp-hist" id="spHist"><div class="gempty">Chargement…</div></div>
         </section>
@@ -516,6 +530,16 @@
     document.body.appendChild(sp);
     el('spLogout').addEventListener('click', doLogout);
     el('spSave').addEventListener('click', onPortalSave);
+    const spDrop = el('spDrop');
+    spDrop.addEventListener('click', () => el('spFile').click());
+    spDrop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el('spFile').click(); } });
+    el('spFile').addEventListener('change', e => { if (e.target.files[0]) onPortalValo(e.target.files[0]); e.target.value = ''; });
+    spDrop.addEventListener('dragover', e => { e.preventDefault(); spDrop.classList.add('over'); });
+    spDrop.addEventListener('dragleave', () => spDrop.classList.remove('over'));
+    spDrop.addEventListener('drop', e => {
+      e.preventDefault(); spDrop.classList.remove('over');
+      if (e.dataTransfer.files.length) onPortalValo(e.dataTransfer.files[0]);
+    });
   }
 
   function syncStoreFields() {
@@ -638,7 +662,44 @@
     ['spMail1', 'spMail2', 'spMail3'].forEach((id, i) => { el(id).value = mails[i] || ''; });
     el('spEnabled').checked = !STORE_ROW || STORE_ROW.mail_enabled !== false;
     spMsg('');
-    await renderPortalHistory();
+    await Promise.all([renderPortalValo(), renderPortalHistory()]);
+  }
+
+  /* Valorisation : le magasin la met à jour lui-même. Au-delà de 30 jours,
+     la tournée quotidienne lui envoie un rappel toutes les 72 h. */
+  const VALO_REMIND_DAYS = 30;
+  function spValoMsg(text, cls) {
+    const m = el('spValoMsg'); if (m) { m.className = 'vgate-msg ' + (cls || ''); m.textContent = text; }
+  }
+  async function renderPortalValo() {
+    const info = el('spValoInfo');
+    const upd = await getValoUpdatedAt(CURRENT.storeId);
+    if (!upd || isNaN(upd.getTime())) { info.innerHTML = 'Aucune valorisation enregistrée.'; return; }
+    const age = Math.floor((Date.now() - upd.getTime()) / 86400000);
+    const late = age > VALO_REMIND_DAYS;
+    info.innerHTML = `Dernier dépôt le <b>${esc(upd.toLocaleDateString('fr-FR', { dateStyle: 'long' }))}</b> (${age} jour${age > 1 ? 's' : ''}).`
+      + (late ? ` <span style="color:#f87171;font-weight:700">Plus de ${VALO_REMIND_DAYS} jours : mettez-la à jour.</span>` : '');
+  }
+  async function onPortalValo(file) {
+    const isPdf = (file.type === 'application/pdf') || /\.pdf$/i.test(file.name || '');
+    if (!isPdf) { spValoMsg('Format invalide — un PDF est attendu.', 'err'); return; }
+    spValoMsg('Vérification de la valorisation…', 'wait');
+    try {
+      let n = null;
+      try { n = await countPdfEans(file); } catch (x) { throw new Error('ce PDF est illisible'); }
+      if (n === 0) throw new Error("ce PDF ne contient aucun code EAN : ce n'est pas une valorisation du stock");
+      spValoMsg('Envoi…', 'wait');
+      const path = `${CURRENT.storeId}/valorisation.pdf`;
+      const { error } = await sb.storage.from('valorisations').upload(path, file, { upsert: true, contentType: 'application/pdf' });
+      if (error) throw new Error(error.message);
+      const { error: merr } = await sb.from('valorisations').upsert({
+        store_id: CURRENT.storeId, file_path: path, file_name: file.name, ean_count: n,
+        updated_at: new Date().toISOString(), updated_by: CURRENT.userId,
+      });
+      if (merr) throw new Error(merr.message);
+      spValoMsg(`Valorisation enregistrée ✓${n != null ? ` — ${n} EAN` : ''}`, 'ok');
+      await renderPortalValo();
+    } catch (e) { spValoMsg('Échec : ' + (e.message || e), 'err'); }
   }
 
   async function onPortalSave() {

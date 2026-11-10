@@ -166,6 +166,14 @@ pas chargée. Son espace se limite à :
 - l'**historique des mails** envoyés à ses adresses (`campagne_mails`) ;
 - ses **adresses de réception**, modifiables à tout moment ;
 - l'interrupteur **Recevoir les affiches par mail** (`stores.mail_enabled`).
+- la **mise à jour de sa valorisation** (dépôt du PDF, contrôle des EAN).
+
+**Rappel de valorisation** : dès que la valorisation a plus de **30 jours**, la
+tournée de 6 h envoie un mail de rappel à chaque adresse du magasin, puis
+**toutes les 72 h** tant qu'elle n'est pas remplacée (`stores.valo_reminded_at`,
+[`supabase/rappel-valorisation.sql`](./supabase/rappel-valorisation.sql)). Le
+rappel part même si l'envoi automatique des affiches est désactivé, mais pas
+au magasin qui a coupé la réception des mails. Il apparaît dans son historique.
 
 Les adresses et l'interrupteur s'enregistrent via la fonction SQL
 `set_my_mail_settings()` — le magasin ne peut rien modifier d'autre sur sa
