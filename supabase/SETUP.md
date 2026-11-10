@@ -240,6 +240,17 @@ tournée du jour** dans l'outil.
 
 ---
 
+## 10. Bouton « Mise à jour de la base NOSICA » (administrateur)
+
+Le bouton relance le workflow GitHub `update-base.yml` via la fonction Edge
+[`trigger-base-update`](./functions/trigger-base-update/index.ts) (vérification JWT activée).
+
+1. GitHub → **Settings → Developer settings → Fine-grained tokens → Generate new token** :
+   dépôt **Boite-Outils-GEFEC** uniquement, permission **Actions : Read and write**.
+2. Supabase → **Edge Functions → Secrets** → ajouter `GH_DISPATCH_TOKEN` = ce jeton.
+
+---
+
 ## Ce que vous me transmettez ensuite
 - **Project URL**
 - **anon public key**

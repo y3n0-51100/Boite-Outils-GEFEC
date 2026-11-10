@@ -341,6 +341,21 @@
 
         </div>
 
+        <div data-adm="base">
+        <div class="gpromo-sub" style="margin-top:0">La base article NOSICA (éco-participations, libellés, prix de vente) se met à jour automatiquement chaque nuit. Ce bouton relance la même mise à jour tout de suite : téléchargement de la base, conversion, publication. Comptez 1 à 3 minutes, puis rechargez la page.</div>
+        <div class="gpromo">
+          <div class="gpromo-title">Base actuellement chargée</div>
+          <div class="gmsg" id="baseCurrent"></div>
+          <div class="gpromo-title" style="margin-top:12px">Dernière mise à jour lancée</div>
+          <div class="gmsg" id="baseRun">Chargement…</div>
+          <div class="gpromo-actions">
+            <button class="gbtn" id="baseUpdate" type="button">🔄 Mise à jour de la base NOSICA</button>
+            <a class="gbtn alt help-link" id="baseRunLink" href="#" target="_blank" rel="noopener" hidden>Voir le détail sur GitHub</a>
+          </div>
+          <div class="gmsg" id="baseMsg"></div>
+        </div>
+        </div>
+
         <div data-adm="comptes">
         <div class="gmodal-sub">Créez les accès magasins (16) et directeurs régionaux (2). Identifiant + mot de passe.</div>
         <div class="gform">
@@ -387,6 +402,9 @@
     // réglages d'envoi des campagnes mail (expéditeur + modèle de message)
     el('mailSave').addEventListener('click', onSaveMailSettings);
     el('mailTest').addEventListener('click', onTestMailSettings);
+
+    // mise à jour manuelle de la base NOSICA
+    el('baseUpdate').addEventListener('click', onBaseUpdate);
 
     // modale valorisations (admin + directeurs)
     const stores = document.createElement('div'); stores.className = 'gmodal'; stores.id = 'storesModal';
@@ -1465,6 +1483,7 @@
   const ADM_SECTIONS = {
     docs:    { titre: '📤 Plans promo & documents partagés', charge: refreshAllSharedStatus },
     masks:   { titre: '🎭 Masques personnalisés',            charge: refreshMasksList },
+    base:    { titre: '🔄 Base article NOSICA',              charge: refreshBaseStatus },
     mail:    { titre: "✉️ Réglages d'envoi des campagnes",   charge: refreshMailSettings },
     comptes: { titre: '👥 Comptes utilisateurs',             charge: () => { syncStoreFields(); refreshAccounts(); } },
   };
@@ -1611,6 +1630,82 @@
       msg.textContent = 'Échec du test : ' + (e.message || e);
     } finally { btn.disabled = false; }
   }
+  /* ---------- Base NOSICA : mise à jour manuelle (admin) ----------
+     La fonction Edge « trigger-base-update » lance le workflow GitHub
+     update-base.yml (celui de la mise à jour de nuit) puis on suit la
+     dernière exécution jusqu'à son terme. */
+  async function baseFn(action) {
+    const { data, error } = await sb.functions.invoke('trigger-base-update', { body: { action } });
+    if (error) {
+      let m = error.message || 'Erreur';
+      try { const j = await error.context?.json?.(); if (j && j.error) m = j.error; } catch (x) {}
+      throw new Error(m);
+    }
+    if (data && data.error) throw new Error(data.error);
+    return data || {};
+  }
+  const RUN_LABEL = {
+    queued: ['', '⏳ en file d’attente…'], in_progress: ['', '⚙️ en cours…'],
+    success: ['ok', '✓ terminée avec succès'], failure: ['err', '✗ échec'],
+    cancelled: ['err', 'annulée'], skipped: ['err', 'ignorée'],
+  };
+  function showRun(run) {
+    const box = el('baseRun'), link = el('baseRunLink');
+    if (!run) { box.className = 'gmsg'; box.textContent = 'Aucune exécution trouvée.'; link.hidden = true; return; }
+    const key = run.status === 'completed' ? (run.conclusion || 'failure') : run.status;
+    const [cls, txt] = RUN_LABEL[key] || ['', key];
+    const qui = run.event === 'workflow_dispatch' ? 'manuelle' : 'automatique (nuit)';
+    box.className = 'gmsg ' + cls;
+    box.textContent = `${txt} — ${qui}, lancée le ${new Date(run.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`;
+    link.href = run.url; link.hidden = false;
+  }
+  function showBaseCurrent() {
+    const b = window.BASE_ECO, fmt = (v) => v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '?';
+    const n = b && b.info ? Object.keys(b.info).length : (b && b.data ? Object.keys(b.data).length : 0);
+    el('baseCurrent').textContent = b
+      ? `${n.toLocaleString('fr-FR')} références · données du ${fmt(b.updated)} · source vérifiée le ${fmt(window.BASE_CHECKED)}`
+      : 'Base non chargée.';
+  }
+  async function refreshBaseStatus() {
+    showBaseCurrent();
+    el('baseMsg').className = 'gmsg'; el('baseMsg').textContent = '';
+    try { showRun((await baseFn('status')).run); }
+    catch (e) { el('baseRun').className = 'gmsg err'; el('baseRun').textContent = e.message; }
+  }
+  let basePolling = false;
+  async function onBaseUpdate() {
+    if (basePolling) return;
+    const btn = el('baseUpdate'), msg = el('baseMsg');
+    btn.disabled = true; basePolling = true;
+    msg.className = 'gmsg'; msg.textContent = 'Lancement de la mise à jour…';
+    try {
+      const { started_at } = await baseFn('run');
+      const depuis = new Date(started_at).getTime() - 60e3;
+      msg.textContent = 'Mise à jour lancée — suivi en cours (1 à 3 minutes)…';
+      // suivi : toutes les 10 s, 8 minutes au plus
+      for (let i = 0; i < 48; i++) {
+        await new Promise(r => setTimeout(r, 10e3));
+        let run = null;
+        try { run = (await baseFn('status')).run; } catch (e) { continue; }
+        if (!run || new Date(run.created_at).getTime() < depuis) continue;   // pas encore visible
+        showRun(run);
+        if (run.status !== 'completed') continue;
+        if (run.conclusion === 'success') {
+          msg.className = 'gmsg ok';
+          msg.textContent = 'Base NOSICA mise à jour ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour l’utiliser.';
+          toast('Base NOSICA mise à jour ✓');
+        } else {
+          msg.className = 'gmsg err';
+          msg.textContent = 'La mise à jour a échoué — ouvrez le détail sur GitHub pour voir la cause (identifiants NOSICA, fichier invalide…).';
+        }
+        return;
+      }
+      msg.textContent = 'Toujours en cours — rouvrez cette section dans quelques minutes pour voir le résultat.';
+    } catch (e) {
+      msg.className = 'gmsg err'; msg.textContent = 'Échec : ' + (e.message || e);
+    } finally { btn.disabled = false; basePolling = false; }
+  }
+
   async function callFn(body) {
     const { data, error } = await sb.functions.invoke('admin-create-user', { body });
     if (error) {
