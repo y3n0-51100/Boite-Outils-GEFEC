@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Étiquette prix souriante, penchée, avec une étincelle : la promo de bonne humeur -->
+  <g transform="rotate(-14 32 36)">
+    <path d="M8 16h34l18 20-18 20H8a5 5 0 0 1-5-5V21a5 5 0 0 1 5-5z" fill="#e30613" stroke="#9e000b" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="47" cy="36" r="4" fill="#ffe07a"/>
+    <circle cx="15" cy="30" r="3.4" fill="#fff"/>
+    <circle cx="29" cy="30" r="3.4" fill="#fff"/>
+    <path d="M12 39c4 7 16 7 20 0" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <path d="M53 1l2.4 6.6L62 10l-6.6 2.4L53 19l-2.4-6.6L44 10l6.6-2.4z" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+</svg>
