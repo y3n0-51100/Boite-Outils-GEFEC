@@ -712,35 +712,6 @@ table.prod tr.multi:hover td{background:rgba(240,185,11,.10)}
   </div>
 
   <div class="card">
-    <h2>📊 Base article — mise à jour (administrateur)</h2>
-    <p class="hint"><b>1.</b> Récupérez la base depuis le lien (ou importez le fichier Excel téléchargé manuellement). <b>2.</b> Publiez-la sur GitHub : le fichier <code>base-eco.js</code> du dépôt est remplacé automatiquement et tous les magasins l'utilisent au prochain chargement de l'outil.</p>
-    <div class="fieldrow">
-      <input type="url" id="baseUrl" placeholder="https://… (lien de téléchargement de la base article)">
-    </div>
-    <div class="fieldrow">
-      <input type="text" id="baseLogin" placeholder="Identifiant">
-      <input type="password" id="basePass" placeholder="Mot de passe">
-      <button class="btn small" onclick="saveBaseCfg()">💾 Enregistrer</button>
-    </div>
-    <div class="fieldrow">
-      <button class="btn yellow small" onclick="fetchOnlineBase(true)">⬇️ Télécharger depuis le lien</button>
-      <button class="btn alt small" onclick="document.getElementById('adminBaseFile').click()">📂 …ou importer le fichier Excel téléchargé</button>
-      <input type="file" id="adminBaseFile" accept=".xlsx,.xls,.csv" style="display:none">
-    </div>
-    <div class="note" id="adminBaseStatus">Base actuellement chargée : aucune.</div>
-    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
-    <div class="fieldrow">
-      <input type="password" id="ghToken" placeholder="Jeton GitHub (fine-grained, droit « Contents : write »)">
-      <input type="text" id="ghRepo" placeholder="propriétaire/dépôt">
-      <input type="text" id="ghBranch" placeholder="branche (vide = branche par défaut)">
-    </div>
-    <div class="fieldrow">
-      <button class="btn small" onclick="pushBaseToGitHub()">🚀 Mettre à jour la base sur GitHub</button>
-    </div>
-    <div class="note">Le jeton GitHub reste stocké uniquement sur cet ordinateur (IndexedDB). Si le téléchargement direct échoue (site bloquant les requêtes inter-sites ou connexion par formulaire), téléchargez le fichier dans votre navigateur via le lien, puis utilisez « importer le fichier Excel téléchargé ».</div>
-  </div>
-
-  <div class="card">
     <h2>🧹 Données</h2>
     <div class="fieldrow">
       <button class="btn alt small" onclick="clearStoredBase()">Effacer la base article mémorisée</button>
@@ -830,12 +801,6 @@ if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
-
-const DEFAULT_BASE_CFG = {
-  url: 'https://ilvcredit.triangleoffensif.fr/vector/data/base.xlsx',
-  login: 'ILVCREDIT',
-  pass: 'avril2026BUT',
-};
 
 /* ============================================================
    PERSISTANCE LOCALE (IndexedDB) — fonds, base éco, réglages
@@ -1592,33 +1557,6 @@ async function handleStarFile(file) {
 function setBaseStatus(msg) {
   document.getElementById('dropBase').classList.add('loaded');
   document.getElementById('stBase').textContent = msg;
-  document.getElementById('adminBaseStatus').textContent = 'Base actuellement chargée : ' + msg;
-}
-async function handleBaseFile(fileOrBuffer, label) {
-  document.getElementById('stBase').textContent = '⏳ Lecture de la base…';
-  try {
-    const buf = fileOrBuffer instanceof ArrayBuffer ? fileOrBuffer : await fileOrBuffer.arrayBuffer();
-    const parsed = parseBaseWorkbook(buf);
-    state.ecoMap = parsed.eco;
-    state.baseInfo = parsed.info;
-    if (!state.ecoMap.size) throw new Error('Impossible de détecter les colonnes code / éco-participation.');
-    // nombre de références réellement présentes dans le classeur (codes distincts)
-    const nRefs = parsed.refs ? parsed.refs.size : state.baseInfo.size;
-    // « réf. avec libellé/prix » : utile seulement si toutes les références n'en ont pas
-    const withInfo = state.baseInfo.size && state.baseInfo.size !== nRefs ? ` · ${state.baseInfo.size} réf. avec libellé/prix` : '';
-    const fr = v => v.toLocaleString('fr-FR');
-    setBaseStatus(`✅ ${fr(nRefs)} référence(s) · ${fr(state.ecoMap.size)} éco-participation(s)${withInfo}${label ? ' — ' + label : ''}`);
-    // la coque affiche ce compte dans le ruban « Base NOSICA » de l'accueil
-    try { parent.postMessage({ type: 'gefec:base-count', refs: nRefs, eco: state.ecoMap.size, name: label || '' }, '*'); } catch (e) {}
-    await kvSet('baseEco', [...state.ecoMap.entries()]);
-    await kvSet('baseInfo', [...state.baseInfo.entries()]);
-    for (const t of Object.keys(state.plans))
-      state.plans[t].products.forEach(p => { if (p.eco == null && state.ecoMap.has(normCode(p.ean))) p.eco = state.ecoMap.get(normCode(p.ean)); });
-    renderTable();
-  } catch (e) {
-    document.getElementById('stBase').textContent = '';
-    toast('❌ Base article : ' + e.message);
-  }
 }
 
 /* Liste de codes EAN dans un classeur Excel/CSV : scanne toutes les cellules
@@ -1774,10 +1712,6 @@ document.getElementById('filePromoPem').addEventListener('change', e => {
 });
 document.getElementById('filePromoStar').addEventListener('change', e => {
   if (e.target.files[0]) handleStarFile(e.target.files[0]);
-});
-document.getElementById('adminBaseFile').addEventListener('change', e => {
-  if (e.target.files[0]) handleBaseFile(e.target.files[0], e.target.files[0].name);
-  e.target.value = '';
 });
 
 /* ============================================================
@@ -2943,89 +2877,6 @@ async function clearStoredBase() {
   document.getElementById('stBase').textContent = '';
   toast('🧹 Base article mémorisée effacée');
 }
-async function saveBaseCfg() {
-  await kvSet('baseCfg', {
-    url: document.getElementById('baseUrl').value,
-    login: document.getElementById('baseLogin').value,
-    pass: document.getElementById('basePass').value,
-  });
-  toast('💾 Lien et identifiants enregistrés (stockage local uniquement)');
-}
-
-/* base64 sûr en UTF-8 (les libellés contiennent des accents / € -> btoa direct échouerait) */
-function utf8ToB64(str) {
-  const bytes = new TextEncoder().encode(str);
-  let bin = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  return btoa(bin);
-}
-
-/* Publication de la base sur GitHub : remplace base-eco.js dans le dépôt,
-   tous les magasins récupèrent la nouvelle base au prochain chargement. */
-async function pushBaseToGitHub() {
-  if (!state.ecoMap.size) { toast('⚠️ Chargez d\'abord la base (lien ou fichier Excel)'); return; }
-  const token = document.getElementById('ghToken').value.trim();
-  const repo = document.getElementById('ghRepo').value.trim();
-  const branch = document.getElementById('ghBranch').value.trim();
-  if (!token || !repo) { toast('⚠️ Renseignez le jeton GitHub et le dépôt'); return; }
-  await kvSet('ghCfg', { token, repo, branch });
-  toast('⏳ Publication de la base sur GitHub…');
-  try {
-    // info compacte : { code: [libellé, prix] } pour limiter la taille du fichier
-    const infoData = {};
-    for (const [k, v] of state.baseInfo) infoData[k] = [v.name || '', v.price != null ? v.price : null];
-    const payload = '/* Base article (éco-participations, libellés, prix de vente) — générée par Étiquettes 2.0 */\n'
-      + 'window.BASE_ECO = ' + JSON.stringify({
-          updated: new Date().toISOString(),
-          count: state.ecoMap.size,
-          data: Object.fromEntries(state.ecoMap),
-          info: infoData,
-        }) + ';\n';
-    const api = `https://api.github.com/repos/${repo}/contents/base-eco.js`;
-    const headers = {
-      'Authorization': 'Bearer ' + token,
-      'Accept': 'application/vnd.github+json',
-    };
-    // sha du fichier existant (nécessaire pour le remplacer)
-    let sha;
-    const g = await fetch(api + (branch ? '?ref=' + encodeURIComponent(branch) : ''), { headers });
-    if (g.ok) sha = (await g.json()).sha;
-    const body = { message: 'Mise à jour de la base article (éco, libellés, prix)', content: utf8ToB64(payload) };
-    if (sha) body.sha = sha;
-    if (branch) body.branch = branch;
-    const r = await fetch(api, { method: 'PUT', headers, body: JSON.stringify(body) });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error('HTTP ' + r.status + (err.message ? ' — ' + err.message : ''));
-    }
-    toast(`✅ Base publiée sur GitHub (${state.ecoMap.size} références) — visible par tous les magasins`, 6000);
-  } catch (e) {
-    toast('❌ Publication impossible : ' + e.message, 7000);
-  }
-}
-async function fetchOnlineBase(verbose) {
-  const url = document.getElementById('baseUrl').value.trim();
-  if (!url) { if (verbose) toast('⚠️ Renseignez d\'abord le lien de la base'); return false; }
-  if (verbose) toast('⏳ Téléchargement de la base en cours…');
-  else document.getElementById('stBase').textContent = '⏳ Récupération de la base en ligne…';
-  try {
-    const login = document.getElementById('baseLogin').value;
-    const pass = document.getElementById('basePass').value;
-    const headers = {};
-    if (login || pass) headers['Authorization'] = 'Basic ' + btoa(login + ':' + pass);
-    const resp = await fetch(url, { headers });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const buf = await resp.arrayBuffer();
-    await handleBaseFile(buf, 'téléchargée en ligne');
-    return true;
-  } catch (e) {
-    if (verbose) toast('❌ Téléchargement impossible (' + e.message + '). Téléchargez le fichier manuellement puis importez-le à l\'étape 1.', 6000);
-    else document.getElementById('stBase').textContent = '';
-    return false;
-  }
-}
-
 /* ============================================================
    NAVIGATION
    ============================================================ */
@@ -3105,7 +2956,6 @@ function applySimpleMode() {
    INITIALISATION — recharge les données mémorisées
    ============================================================ */
 (async function init() {
-  let cfg = null, ghCfg = null;
   try {
     const masks = await kvGet('masks');
     if (masks) state.masks = masks;
@@ -3113,17 +2963,8 @@ function applySimpleMode() {
     if (useImg === false) { state.useMaskImages = false; document.getElementById('useMaskImages').checked = false; }
     if (!EXPORT_MODE) await applyPrintPrefs();   // réglages d'impression mémorisés
     // (le cadre d'export garde les réglages demandés par l'administrateur)
-    cfg = await kvGet('baseCfg');
-    ghCfg = await kvGet('ghCfg');
   } catch (e) { /* stockage indisponible : l'outil reste utilisable sans persistance */ }
   renderMaskSlots();
-  cfg = cfg || DEFAULT_BASE_CFG;
-  document.getElementById('baseUrl').value = cfg.url || '';
-  document.getElementById('baseLogin').value = cfg.login || '';
-  document.getElementById('basePass').value = cfg.pass || '';
-  document.getElementById('ghToken').value = (ghCfg && ghCfg.token) || '';
-  document.getElementById('ghRepo').value = (ghCfg && ghCfg.repo) || 'y3n0-51100/Etiquette-2.0';
-  document.getElementById('ghBranch').value = (ghCfg && ghCfg.branch) || '';
   // dates globales par défaut : aujourd'hui -> +4 semaines
   const today = new Date();
   const plus4w = new Date(today.getTime() + 28 * 864e5);

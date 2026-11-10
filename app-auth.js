@@ -344,11 +344,8 @@
         <div data-adm="base">
         <div class="gpromo-sub" style="margin-top:0">La base article NOSICA (éco-participations, libellés, prix de vente) se met à jour automatiquement chaque nuit. Ce bouton relance la même mise à jour tout de suite : téléchargement de la base, conversion, publication. Comptez 1 à 3 minutes, puis rechargez la page.</div>
         <div class="gpromo">
-          <div class="gpromo-title">Base automatique (mise à jour de nuit)</div>
+          <div class="gpromo-title">Base en ligne (mise à jour de nuit)</div>
           <div class="gmsg" id="baseCurrent"></div>
-          <div class="gpromo-title" style="margin-top:12px">Fichier Excel déposé à la main</div>
-          <div class="gmsg" id="baseManual"></div>
-          <div class="gpromo-sub" style="margin:4px 0 0">La plus récente des deux est utilisée par les outils.</div>
           <div class="gpromo-title" style="margin-top:12px">Dernière mise à jour lancée</div>
           <div class="gmsg" id="baseRun">Chargement…</div>
           <div class="gpromo-actions">
@@ -994,11 +991,6 @@
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
     'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true, hasMediaNum: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
-    // Base article NOSICA déposée à la main : le classeur est injecté dans les
-    // deux outils d'étiquettes (Plan Promo et Promo Perso), qui le relisent et
-    // remplacent la base automatique (éco-participations, libellés, prix).
-    'base-nosica':      { name: 'Base article NOSICA (fichier Excel)', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src^="etiquette.html"]', input: 'adminBaseFile',
-                          hint: "À utiliser quand la mise à jour automatique de nuit est en panne ou en retard : déposez le fichier Excel NOSICA téléchargé depuis le portail. Il remplace la base article (éco-participations, libellés, prix de vente) chez tous les magasins, dès leur prochaine connexion." },
   };
   const MODULE_DOC = { etiquette: ['plan-promo-tv', 'plan-promo-pem', 'plan-promo-star'], match: 'affiches-cetelem', solde: 'medias-soldes' };
   const sharedFiles = {};      // id -> [File, ...] chargés (1 pour les docs simples, N pour multi)
@@ -1124,37 +1116,16 @@
       tryInjectShared(id);
     } catch (e) {}
   }
-  // date des données de la base automatique (base-eco.js, chargé en différé)
-  async function autoBaseDate() {
-    for (let i = 0; i < 50 && !(window.BASE_ECO && window.BASE_ECO.updated); i++) await new Promise(r => setTimeout(r, 100));
-    const d = window.BASE_ECO && window.BASE_ECO.updated ? new Date(window.BASE_ECO.updated) : null;
-    return d && !isNaN(d.getTime()) ? d : null;
-  }
-  let AUTO_BASE_DATE = null;
-  function manualBaseIsNewer(meta) {
-    const m = meta && meta.updated_at ? new Date(meta.updated_at) : null;
-    if (!m || isNaN(m.getTime())) return false;
-    return !AUTO_BASE_DATE || m.getTime() > AUTO_BASE_DATE.getTime();
-  }
-
   async function loadAllSharedDocs() {
-    AUTO_BASE_DATE = await autoBaseDate();
     const metas = {};
     for (const id of Object.keys(SHARED)) metas[id] = await fetchSharedMeta(id);
     // migration : l'ancien plan promo unique n'est chargé que si NI le plan TV
     // NI le plan PEM n'est publié — sinon il ferait doublon dans l'outil
     const hasNewPlans = ['plan-promo-tv', 'plan-promo-pem'].some(id => metas[id] && metas[id].file_path);
-    // base article déposée à la main : elle ne remplace la base automatique que
-    // si elle est PLUS RÉCENTE que les données de celle-ci
-    const nb = metas['base-nosica'];
-    const manuelleActive = !!(nb && nb.file_path) && manualBaseIsNewer(nb);
     for (const id of Object.keys(SHARED)) {
       if (SHARED[id].legacy && hasNewPlans) continue;
-      if (id === 'base-nosica' && !manuelleActive) continue;
       if (metas[id]) await ensureSharedLoaded(id, metas[id]);
     }
-    // ruban d'accueil : base active + l'autre, pour mémoire
-    if (window.setSharedBaseInfo) window.setSharedBaseInfo(nb && nb.file_path ? Object.assign({}, nb, { active: manuelleActive }) : null);
   }
 
   function relAge(dt) {
@@ -1305,8 +1276,6 @@
       toast(cfg.name + mediaLabel + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
       input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
       refreshSharedStatus(id);
-      // une base publiée à l'instant est forcément la plus récente
-      if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(Object.assign({}, await fetchSharedMeta(id), { active: true }));
     } catch (e) {
       toast('Échec de la publication : ' + (e.message || e), true);
     } finally {
@@ -1344,7 +1313,6 @@
       document.querySelectorAll('.tool-frame').forEach(fr => { fr['__inj_' + id] = false; });
       toast(cfg.name + ' retiré pour tous les magasins.');
       refreshSharedStatus(id);
-      if (id === 'base-nosica' && window.setSharedBaseInfo) window.setSharedBaseInfo(null);
     } catch (e) {
       toast('Échec du retrait : ' + (e.message || e), true);
     } finally {
@@ -1692,19 +1660,8 @@
       ? `${n.toLocaleString('fr-FR')} références · données du ${fmtLong(data)} · dernière vérification le ${fmtLong(checked)}`
       : 'Base non chargée.';
   }
-  async function showBaseManual() {
-    const box = el('baseManual');
-    const meta = await fetchSharedMeta('base-nosica').catch(() => null);
-    if (!meta || !meta.file_path) { box.className = 'gmsg'; box.textContent = 'Aucun — la base automatique est utilisée.'; return; }
-    if (!AUTO_BASE_DATE) AUTO_BASE_DATE = await autoBaseDate();
-    const active = manualBaseIsNewer(meta);
-    box.className = 'gmsg ' + (active ? 'ok' : '');
-    box.textContent = `${meta.file_name || 'fichier Excel'} · publié le ${fmtLong(meta.updated_at)} — `
-      + (active ? 'utilisé (plus récent que la base automatique)' : 'ignoré (la base automatique est plus récente)');
-  }
   async function refreshBaseStatus() {
     showBaseCurrent();
-    showBaseManual();
     el('baseMsg').className = 'gmsg'; el('baseMsg').textContent = '';
     try { const st = await baseFn('status'); showRun(st.run); showBaseCurrent(st.base); }
     catch (e) { el('baseRun').className = 'gmsg err'; el('baseRun').textContent = e.message; }
