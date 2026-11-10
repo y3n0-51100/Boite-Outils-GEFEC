@@ -163,6 +163,10 @@
   .sp-switch input{width:18px;height:18px;accent-color:var(--primary,#5b8cff)}
   .sp-actions{margin-top:16px}
   .sp-drop{margin-top:16px}
+  .sp-banner{display:flex;align-items:center;gap:14px;padding:18px 22px;border-radius:16px;
+    background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#1a1205;box-shadow:0 10px 30px rgba(251,191,36,.25)}
+  .sp-banner_icon{font-size:28px;line-height:1;flex-shrink:0}
+  .sp-banner_text{font-size:17px;font-weight:800;letter-spacing:-.2px;line-height:1.35}
   .sp-dl{display:inline-block;margin-top:10px}
   .sp-hist{margin-top:14px;overflow-x:auto}
   .sp-table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -495,6 +499,11 @@
           <div class="agate-logo" style="margin:0">G</div>
           <div class="sp-title"><b id="spName"></b><span>Espace magasin · Boîte à Outils GEFEC</span></div>
           <button class="gbtn alt" id="spLogout" type="button">Déconnexion</button>
+        </div>
+
+        <div class="sp-banner" role="note">
+          <span class="sp-banner_icon" aria-hidden="true">📦</span>
+          <span class="sp-banner_text">Si je mets un produit à l'expo, je mets à jour ma valo :)</span>
         </div>
 
         <section class="vgate-card sp-card">
