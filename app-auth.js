@@ -1696,7 +1696,7 @@
           toast('Base NOSICA mise à jour ✓');
         } else {
           msg.className = 'gmsg err';
-          msg.textContent = 'La mise à jour a échoué — ouvrez le détail sur GitHub pour voir la cause (identifiants NOSICA, fichier invalide…).';
+          msg.textContent = 'La mise à jour a échoué — ouvrez le détail sur GitHub pour voir la cause (identifiants du site de la base article, fichier invalide…).';
         }
         return;
       }

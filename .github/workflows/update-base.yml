@@ -44,7 +44,7 @@ jobs:
           code=$(curl -sSL --retry 3 --retry-delay 10 --retry-all-errors -w '%{http_code}' \
             --user "$BASE_USER:$BASE_PASS" "$BASE_URL" -o base.new.xlsx || true)
           if [ "$code" = "401" ] || [ "$code" = "403" ]; then
-            echo "::error::Identifiants refusés par le site NOSICA (HTTP $code) — mettez à jour BASE_USER / BASE_PASS dans Settings → Secrets and variables → Actions."
+            echo "::error::Identifiants refusés par le site de la base article (HTTP $code) — mettez à jour BASE_USER / BASE_PASS dans Settings → Secrets and variables → Actions."
             exit 1
           fi
           if [ "$code" != "200" ]; then
