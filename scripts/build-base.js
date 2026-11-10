@@ -25,10 +25,24 @@ function parsePrice(s) {
   return isNaN(n) ? null : n;
 }
 
+// DT_PHOTO : date de la photo de la base (numéro de série Excel, date ou texte)
+function photoDate(v) {
+  if (v == null || v === '') return null;
+  let d = null;
+  if (typeof v === 'number') d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5);
+  else if (v instanceof Date) d = v;
+  else {
+    const m = String(v).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    d = m ? new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])) : new Date(String(v));
+  }
+  return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+}
+
 function parseBaseWorkbook(buf) {
   const wb = XLSX.read(buf, { type: 'buffer' });
   const eco = new Map();
   const info = new Map();
+  let photo = null;                      // date de photo la plus récente du classeur
   const addInfo = (code, name, price) => {
     const nm = name != null ? String(name).trim() : '';
     if (!nm && price == null) return;
@@ -50,6 +64,7 @@ function parseBaseWorkbook(buf) {
         (rows[r] || []).forEach((cell, i) => {
           const h = String(cell ?? '').trim().toUpperCase();
           if (h === 'EAN_13') c.ean = i;
+          else if (h === 'DT_PHOTO') c.photo = i;
           else if (h === 'MNT_DEA_TTC') c.dea = i;
           else if (h === 'MNT_DEEE_TTC') c.deee = i;
           else if (c.price == null && h.includes('PRIX') && h.includes('VENTE')) c.price = i;
@@ -63,6 +78,7 @@ function parseBaseWorkbook(buf) {
         const row = rows[r] || [];
         const code = String(row[c.ean] ?? '').trim();
         if (!/^\d{8,13}$/.test(code)) continue;
+        if (c.photo != null) { const p = photoDate(row[c.photo]); if (p && (!photo || p > photo)) photo = p; }
         const dea = c.dea != null ? (parseFloat(row[c.dea]) || 0) : 0;
         const deee = c.deee != null ? (parseFloat(row[c.deee]) || 0) : 0;
         const e = Math.round((dea + deee) * 100) / 100;
@@ -99,7 +115,7 @@ function parseBaseWorkbook(buf) {
       addInfo(code, nameCol >= 0 ? row[nameCol] : null, priceCol >= 0 ? parsePrice(row[priceCol]) : null);
     }
   }
-  return { eco, info };
+  return { eco, info, photo };
 }
 
 function buildPayload(eco, info, updated) {
@@ -124,7 +140,7 @@ function readExisting() {
   } catch (e) { return null; }
 }
 
-const { eco, info } = parseBaseWorkbook(fs.readFileSync(SRC));
+const { eco, info, photo } = parseBaseWorkbook(fs.readFileSync(SRC));
 if (!eco.size) {
   console.error('❌ Aucune éco-participation détectée — base inchangée.');
   process.exit(1);
@@ -146,7 +162,9 @@ const sameData = prev
 fs.writeFileSync(CHECKED,
   '/* Date de dernière vérification de la base (GitHub Actions). Généré automatiquement. */\n'
   + 'window.BASE_CHECKED = ' + JSON.stringify(now) + ';\n'
-  + 'window.BASE_DATA_UPDATED = ' + JSON.stringify(sameData ? prev.updated : now) + ';\n');
+  + 'window.BASE_DATA_UPDATED = ' + JSON.stringify(sameData ? prev.updated : now) + ';\n'
+  // vraie date des données : la photo de la base (colonne DT_PHOTO du classeur)
+  + 'window.BASE_PHOTO = ' + JSON.stringify(photo) + ';\n');
 
 if (sameData) {
   console.log(`✓ Données identiques (${eco.size} éco, ${info.size} libellés/prix) — base-eco.js inchangé, ${CHECKED} mis à jour.`);

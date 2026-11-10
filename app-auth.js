@@ -899,7 +899,7 @@
         const eco = Object.keys(b.data).length;
         const refs = b.info ? Object.keys(b.info).length : eco;
         base = refs + ' réf. (dont ' + eco + ' avec éco-participation), données du '
-             + (b.updated ? new Date(b.updated).toLocaleDateString('fr-FR') : '?')
+             + ((window.BASE_PHOTO || b.updated) ? new Date(window.BASE_PHOTO || b.updated).toLocaleDateString('fr-FR') : '?')
              + (window.BASE_CHECKED ? ', source vérifiée le ' + new Date(window.BASE_CHECKED).toLocaleDateString('fr-FR') : '');
       }
     } catch (e) {}
@@ -1650,14 +1650,17 @@
     link.href = run.url; link.hidden = false;
   }
   const fmtLong = (v) => v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '?';
+  const fmtDay = (v) => v ? new Date(v).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : '?';
   function showBaseCurrent(remote) {
     const b = window.BASE_ECO;
     const n = b && b.info ? Object.keys(b.info).length : (b && b.data ? Object.keys(b.data).length : 0);
     // les dates relues sur GitHub sont plus fraîches que celles du site (publication en différé)
-    const data = (remote && remote.data_updated) || (b && b.updated);
+    // vraie date des données : photo de la base (DT_PHOTO), à défaut la date de conversion
+    const photo = (remote && remote.photo) || window.BASE_PHOTO;
+    const data = photo || (remote && remote.data_updated) || (b && b.updated);
     const checked = (remote && remote.checked) || window.BASE_CHECKED;
     el('baseCurrent').textContent = b
-      ? `${n.toLocaleString('fr-FR')} références · données du ${fmtLong(data)} · dernière vérification le ${fmtLong(checked)}`
+      ? `${n.toLocaleString('fr-FR')} références · données du ${photo ? fmtDay(data) : fmtLong(data)} · dernière vérification le ${fmtLong(checked)}`
       : 'Base non chargée.';
   }
   async function refreshBaseStatus() {
@@ -1693,11 +1696,13 @@
           if (apres && avant && new Date(apres).getTime() === new Date(avant).getTime()) {
             // le fichier source n'a pas bougé : rien de nouveau à publier
             msg.className = 'gmsg';
-            msg.textContent = `Mise à jour terminée — aucune nouvelle donnée : le fichier source est identique à celui du ${fmtLong(apres)}.`;
+            const ph = (base && base.photo) || window.BASE_PHOTO;
+            msg.textContent = `Mise à jour terminée — aucune nouvelle donnée : le fichier en ligne est toujours la base du ${ph ? fmtDay(ph) : fmtLong(apres)}.`;
             toast('Base vérifiée : aucune nouvelle donnée');
           } else {
             msg.className = 'gmsg ok';
-            msg.textContent = `Nouvelles données${apres ? ' du ' + fmtLong(apres) : ''} ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour les utiliser.`;
+            const ph = base && base.photo;
+            msg.textContent = `Nouvelles données${ph ? ' du ' + fmtDay(ph) : ''} ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour les utiliser.`;
             toast('Base NOSICA mise à jour ✓');
           }
         } else {
