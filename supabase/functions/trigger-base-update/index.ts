@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
       if (b.ok) {
         const t = await b.text();
         const pick = (k: string) => (t.match(new RegExp(`${k}\\s*=\\s*"([^"]+)"`)) || [])[1] || null;
-        base = { checked: pick("BASE_CHECKED"), data_updated: pick("BASE_DATA_UPDATED") };
+        base = { checked: pick("BASE_CHECKED"), data_updated: pick("BASE_DATA_UPDATED"), photo: pick("BASE_PHOTO") };
       }
     } catch { /* facultatif */ }
 
