@@ -60,11 +60,32 @@ jobs:
           mv base.new.xlsx base.xlsx
           echo "Téléchargé : $(stat -c%s base.xlsx) octets"
 
+      - name: Téléchargement des produits à jour (products.json)
+        # Libellés et prix fond de rayon à jour, publiés par le site en JSON (sans
+        # éco-participations). Facultatif : en cas d'échec, la base Excel suffit
+        # et l'accueil affiche un avertissement au lieu du logo OK.
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          BASE_USER: ${{ secrets.BASE_USER }}
+          BASE_PASS: ${{ secrets.BASE_PASS }}
+          BASE_JSON_URL: ${{ secrets.BASE_JSON_URL }}
+        run: |
+          JSON_URL="${BASE_JSON_URL:-${BASE_URL%/*}/products.json}"
+          code=$(curl -sSL --retry 3 --retry-delay 10 --retry-all-errors -w '%{http_code}' \
+            --user "$BASE_USER:$BASE_PASS" "$JSON_URL" -o products.new.json || true)
+          if [ "$code" = "200" ] && [ "$(head -c 1 products.new.json)" = "[" ] && [ "$(stat -c%s products.new.json)" -gt 100000 ]; then
+            mv products.new.json products.json
+            echo "products.json téléchargé : $(stat -c%s products.json) octets"
+          else
+            rm -f products.new.json
+            echo "::warning::products.json indisponible (HTTP $code) — libellés et prix de la base Excel conservés."
+          fi
+
       - name: Installation de SheetJS
         run: npm install xlsx@0.18.5 --no-save
 
       - name: Conversion en base-eco.js
-        run: node scripts/build-base.js base.xlsx base-eco.js base-checked.js
+        run: node scripts/build-base.js base.xlsx base-eco.js base-checked.js $( [ -f products.json ] && echo products.json )
 
       - name: Commit & push si la base a changé
         run: |

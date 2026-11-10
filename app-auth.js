@@ -344,7 +344,7 @@
         <div data-adm="base">
         <div class="gpromo-sub" style="margin-top:0">La base article NOSICA (éco-participations, libellés, prix de vente) se met à jour automatiquement chaque nuit. Ce bouton relance la même mise à jour tout de suite : téléchargement de la base, conversion, publication. Comptez 1 à 3 minutes, puis rechargez la page.</div>
         <div class="gpromo">
-          <div class="gpromo-title">Base en ligne (mise à jour de nuit)</div>
+          <div class="gpromo-title">Base en ligne (base Excel + produits JSON, mise à jour de nuit)</div>
           <div class="gmsg" id="baseCurrent"></div>
           <div class="gpromo-title" style="margin-top:12px">Dernière mise à jour lancée</div>
           <div class="gmsg" id="baseRun">Chargement…</div>
@@ -1650,17 +1650,29 @@
     link.href = run.url; link.hidden = false;
   }
   const fmtLong = (v) => v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '?';
-  const fmtDay = (v) => v ? new Date(v).toLocaleDateString('fr-FR', { dateStyle: 'long' }) : '?';
+  /* État de la base : OK si la dernière mise à jour a lu la base Excel
+     (éco-participations) ET le fichier JSON des produits (libellés + prix),
+     et si elle date de moins de 48 h. */
+  function baseHealth(remote) {
+    const ok = (remote && remote.ok) || window.BASE_OK || null;
+    const checked = (remote && remote.checked) || window.BASE_CHECKED;
+    const fresh = checked && (Date.now() - new Date(checked).getTime()) < 48 * 36e5;
+    const xlsx = !!(ok && ok.xlsx), json = !!(ok && ok.json);
+    const pb = [];
+    if (!xlsx) pb.push('base Excel non lue');
+    if (!json) pb.push('produits (JSON) non lus');
+    if (!fresh) pb.push('mise à jour automatique en panne');
+    return { ok: !pb.length, xlsx, json, pb };
+  }
+  window.gefecBaseHealth = baseHealth;
   function showBaseCurrent(remote) {
     const b = window.BASE_ECO;
     const n = b && b.info ? Object.keys(b.info).length : (b && b.data ? Object.keys(b.data).length : 0);
-    // les dates relues sur GitHub sont plus fraîches que celles du site (publication en différé)
-    // vraie date des données : photo de la base (DT_PHOTO), à défaut la date de conversion
-    const photo = (remote && remote.photo) || window.BASE_PHOTO;
-    const data = photo || (remote && remote.data_updated) || (b && b.updated);
-    const checked = (remote && remote.checked) || window.BASE_CHECKED;
-    el('baseCurrent').textContent = b
-      ? `${n.toLocaleString('fr-FR')} références · données du ${photo ? fmtDay(data) : fmtLong(data)} · dernière vérification le ${fmtLong(checked)}`
+    const h = baseHealth(remote);
+    const box = el('baseCurrent');
+    box.className = 'gmsg ' + (h.ok ? 'ok' : 'err');
+    box.textContent = b
+      ? `${h.ok ? '✅ OK' : '⚠️ ' + h.pb.join(' · ')} — ${n.toLocaleString('fr-FR')} références · base Excel ${h.xlsx ? '✅' : '❌'} · produits JSON ${h.json ? '✅' : '❌'}`
       : 'Base non chargée.';
   }
   async function refreshBaseStatus() {
@@ -1696,13 +1708,11 @@
           if (apres && avant && new Date(apres).getTime() === new Date(avant).getTime()) {
             // le fichier source n'a pas bougé : rien de nouveau à publier
             msg.className = 'gmsg';
-            const ph = (base && base.photo) || window.BASE_PHOTO;
-            msg.textContent = `Mise à jour terminée — aucune nouvelle donnée : le fichier en ligne est toujours la base du ${ph ? fmtDay(ph) : fmtLong(apres)}.`;
+            msg.textContent = 'Mise à jour terminée — aucune nouvelle donnée en ligne.';
             toast('Base vérifiée : aucune nouvelle donnée');
           } else {
             msg.className = 'gmsg ok';
-            const ph = base && base.photo;
-            msg.textContent = `Nouvelles données${ph ? ' du ' + fmtDay(ph) : ''} ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour les utiliser.`;
+            msg.textContent = `Nouvelles données ✓ — rechargez la page dans 1 à 2 minutes (le temps de la publication) pour les utiliser.`;
             toast('Base NOSICA mise à jour ✓');
           }
         } else {

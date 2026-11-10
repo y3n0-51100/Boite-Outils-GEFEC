@@ -2968,18 +2968,18 @@ function updateBaseStatus(){
     const eco=b&&b.data?Object.keys(b.data).length:0;              // références portant une éco-participation
     const n=b&&b.info?Object.keys(b.info).length:eco;              // références réellement présentes dans la base
     if(!n) throw new Error('vide');
-    const fmt=v=>{const d=v?new Date(v):null;return d&&!isNaN(d.getTime())?d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}):null;};
-    // vraie date des données = photo de la base (DT_PHOTO), à défaut la date de conversion
-    const dataDate=window.BASE_PHOTO||b.updated;
-    const ds=fmt(dataDate)||'date inconnue';
-    const cs=fmt(window.BASE_CHECKED);
-    const check=cs&&cs!==ds?`<span class="sr-sep">·</span><span title="Contrôle automatique quotidien de la source">vérifiée le ${cs}</span>`:'';
-    // alerte si la source n'a pas bougé depuis longtemps : le contrôle quotidien
-    // peut réussir tous les jours tout en retéléchargeant un fichier figé.
-    const age=dataDate?Math.floor((Date.now()-new Date(dataDate).getTime())/86400000):null;
-    const stale=age!=null&&age>30;
-    const staleTxt=stale?`<span class="sr-sep">·</span><span class="sr-warn" title="La source n'a pas fourni de nouvelle version depuis ${age} jours — prévenir l'administrateur">⚠ figée depuis ${age} jours</span>`:'';
-    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ${stale?'late':'ok'}"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span title="${eco.toLocaleString('fr-FR')} portent une éco-participation">${n.toLocaleString('fr-FR')} références</span><span class="sr-sep">·</span><span>données du ${ds}</span>${check}${staleTxt}</div>`;
+    // logo OK : base Excel (éco-participations) ET produits JSON (libellés + prix)
+    // lus par la dernière mise à jour, et celle-ci date de moins de 48 h
+    const ok=window.BASE_OK||{};
+    const fresh=window.BASE_CHECKED&&(Date.now()-new Date(window.BASE_CHECKED).getTime())<48*36e5;
+    const pb=[];
+    if(!ok.xlsx) pb.push('base Excel non lue');
+    if(!ok.json) pb.push('produits (JSON) non lus');
+    if(!fresh) pb.push('mise à jour automatique en panne');
+    const etat=pb.length
+      ?`<span class="sr-warn" title="${pb.join(' · ')} — prévenir l'administrateur">⚠ ${pb.join(' · ')}</span>`
+      :`<span title="Base Excel et produits JSON à jour">✅ OK</span>`;
+    slot.innerHTML=`<div class="sr-chip"><span class="sr-dot ${pb.length?'late':'ok'}"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span title="${eco.toLocaleString('fr-FR')} portent une éco-participation">${n.toLocaleString('fr-FR')} références</span><span class="sr-sep">·</span>${etat}</div>`;
   }catch(e){
     slot.innerHTML=`<div class="sr-chip"><span class="sr-dot never"></span><span class="sr-name">Base NOSICA</span><span class="sr-sep">·</span><span>non chargée — contacter Rémi SCHAFFHAUSER</span></div>`;
   }
