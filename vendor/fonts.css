@@ -1,0 +1,6 @@
+/* Polices de l'interface, servies depuis le dépôt (plus aucun appel à Google
+   Fonts) : Manrope (400-800) et JetBrains Mono (400-600), sous licence OFL. */
+@font-face{font-family:'Manrope';font-style:normal;font-weight:400 800;font-display:swap;
+  src:url(fonts/manrope-latin.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 600;font-display:swap;
+  src:url(fonts/jetbrainsmono-latin.woff2) format('woff2')}

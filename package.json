@@ -1,20 +1,21 @@
 {
   "name": "boite-outils-gefec",
-  "version": "1.0.0",
-  "description": "Suite d'outils PDF pour le magasin, réunis dans une interface unique à la charte claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC + Étiquettes 2.0) : l'ancien outil **Plan Promo** a été **remplacé par Étiquettes 2.0**.",
+  "version": "2.0.0",
+  "description": "Boîte à Outils GEFEC — suite d'outils promo et affiches prix pour les magasins BUT.",
   "main": "server.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
     "dev": "node server.js",
-    "build": "echo 'Build complete'",
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/run.js",
+    "test:navigateur": "node tests/browser.js",
+    "test:tout": "node tests/run.js && node tests/browser.js"
   },
   "repository": {
     "type": "git",
-    "url": "http://local_proxy@127.0.0.1:37749/git/y3n0-51100/Boite-Outils-GEFEC"
+    "url": "https://github.com/y3n0-51100/Boite-Outils-GEFEC"
   },
   "keywords": [],
   "author": "",
@@ -22,5 +23,10 @@
   "dependencies": {
     "express": "^5.2.1",
     "pdfkit": "^0.19.1"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "3.11.174",
+    "jszip": "3.10.1",
+    "pdf-lib": "1.17.1"
   }
 }
