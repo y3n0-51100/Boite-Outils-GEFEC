@@ -1,5 +1,11 @@
 name: Envoi automatique des affiches
 
+# Déclenchement principal : à 6 h pile, le planificateur de Supabase (pg_cron)
+# appelle la fonction Edge « cron-auto-run », qui lance ce workflow à la
+# demande (workflow_dispatch) — sans le retard des tâches programmées de
+# GitHub, qui partaient vers midi. Les passages « schedule » ci-dessous ne
+# servent plus que de secours : une seule tournée automatique par jour.
+#
 # Chaque matin à 6 h (heure de Paris), envoie à chaque magasin inscrit les
 # affiches des offres TV / PEM qui démarrent, sur le masque de l'opération
 # commerciale renseignée par l'administrateur. Pas d'affiche = pas de mail.
