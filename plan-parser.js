@@ -773,6 +773,8 @@
     dates_absentes: 'dates de validité illisibles',
     dates_titre: 'dates reprises du titre du plan',
     dates_longues: 'période de plus de 4 mois',
+    dates_corrigees: 'date de fin antérieure au début dans le plan : année de fin corrigée (+1 an)',
+    dates_incoherentes: 'date de fin antérieure au début, non corrigeable : dates écartées',
     libelle_absent: 'référence illisible',
     lecture_secours: 'produit vu par une seule des deux lectures',
   };
@@ -860,9 +862,19 @@
     for (const p of products) {
       const F = new Set(p.flags || []);
       for (const k of ['prix_absent', 'libelle_absent', 'ean_invalide', 'dates_absentes', 'dates_longues', 'prix_suspect_bas', 'prix_suspect_haut']) F.delete(k);
+      if (p.toOrig) { p.to = p.toOrig; delete p.toOrig; F.delete('dates_corrigees'); }
       if (p.price == null) F.add('prix_absent');
       if (!p.name) F.add('libelle_absent');
       if (!eanValid(p.ean)) F.add('ean_invalide');
+      // fin avant début (erreur de saisie fréquente au changement d'année :
+      // « 13/11/2026 au 01/01/2026 ») : l'année de fin est corrigée si la
+      // période obtenue reste plausible, sinon les dates sont écartées
+      if (p.from && p.to && p.to < p.from) {
+        const fixed = (+p.to.slice(0, 4) + 1) + p.to.slice(4);
+        if (fixed >= p.from && (new Date(fixed) - new Date(p.from)) / 864e5 <= 124) {
+          p.toOrig = p.to; p.to = fixed; F.add('dates_corrigees');
+        } else { p.from = null; p.to = null; F.add('dates_incoherentes'); }
+      }
       if (!p.from || !p.to) F.add('dates_absentes');
       else if ((new Date(p.to) - new Date(p.from)) / 864e5 > 124) F.add('dates_longues');
       const b = base && base.get(p.key);
@@ -897,7 +909,7 @@
     const lines = [
       ['prix_absent', 'error'], ['prix_conflit', 'error'], ['prix_suspect_bas', 'error'], ['prix_deduit', 'warn'],
       ['prix_suspect_haut', 'warn'], ['dates_absentes', 'warn'], ['ean_invalide', 'warn'], ['libelle_absent', 'warn'],
-      ['dates_longues', 'warn'], ['dates_titre', 'info'], ['prix_secours', 'info'], ['lecture_secours', 'info'],
+      ['dates_longues', 'warn'], ['dates_corrigees', 'warn'], ['dates_incoherentes', 'warn'], ['dates_titre', 'info'], ['prix_secours', 'info'], ['lecture_secours', 'info'],
     ];
     for (const [k, level] of lines) if (count[k]) add(level, `${count[k]} produit(s) : ${FLAG_TEXT[k]}.`);
     const unknown = meta.base && meta.base.size ? products.filter(p => p.inBase === false).length : 0;
@@ -954,6 +966,23 @@
       const old = parsePrice(get('old'));
       let range = null;
       if (map && map.dates) range = parseDateRange(cell(get('dates')), { refYear });
+      // « DATES DE L'OPERATION » réparti sur plusieurs cellules (format de la
+      // centrale) : date de début | « au » | date de fin, en dates Excel
+      if (!range && map && map.dates) {
+        const i0 = map.dates.i, a = excelDate(row[i0]);
+        if (a) {
+          for (let k = i0 + 1; k <= i0 + 3 && k < row.length; k++) {
+            const b = /^\s*(au|a|-|–)?\s*$/i.test(cell(row[k])) ? null : excelDate(row[k]);
+            if (b) {
+              range = resolveRange(a, b, refYear);
+              // fin avant début : gardée telle quelle, checkProducts() la corrige ou l'écarte
+              const ya = fullYear(a.y) || refYear, yb = fullYear(b.y) || ya;
+              if (!range && validDMY(a.d, a.m, ya) && validDMY(b.d, b.m, yb)) range = { from: iso(ya, a.m, a.d), to: iso(yb, b.m, b.d) };
+              break;
+            }
+          }
+        }
+      }
       if (!range && map && map.from && map.to) {
         const a = excelDate(get('from')), b = excelDate(get('to'));
         if (a && b) range = resolveRange(a, b, refYear);

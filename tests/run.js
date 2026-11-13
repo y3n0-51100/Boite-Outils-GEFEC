@@ -144,6 +144,30 @@ async function rowsOf(buf) {
     ok(out.products.every(p => p.from === '2026-11-12' && p.to === '2026-11-25'), 'dates (numéro de série Excel + texte)');
   }
 
+  section('Plan Excel au format de la centrale (dates sur 3 cellules, fin avant début)');
+  {
+    // reproduit la structure du fichier « Plan promo PEM 2026 » réel : dates
+    // Excel (numéros de série) | « au » | date de fin, sans intitulé au-dessus
+    const serial = (iso) => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 864e5) + 25569;
+    const grid = [
+      ['FORMULE', 'FORMULE', 'FORMULE', 'à saisir '], [],
+      ['CATEGORIE', 'MARQUE', 'REFERENCES', 'EAN', 'GAMME', 'Prix de cession HT', 'Taux de marge Nosica', 'Taux de marge avec contribution fournisseur', 'PRIX PROMO', 'AVOIR HT MAGASIN A RECEVOIR', "DATES DE L'OPERATION", null, null, 'NUMERO DE CAMPAGNE', 'REMISE DIFFEREE\r\n(ODR FOURNISSEUR OU BONS D\'ACHAT BUT)', 'PRIX FINAL POUR LE CLIENT ODR/BA DEDUITE', 'COMMENTAIRES'],
+      [],
+      ['ASPIRATEUR BALAI', 'DYSON', 'ASPIBAL V8 CYCLONE', 5025155136195, 1000, 275.13, -0.33, 0.13, 249, 97.38, serial('2026-11-03'), 'au', serial('2026-11-30'), 99930845],
+      ['BLENDER', 'NUTRIBULLET', 'BLENDER NB606DG', 8006447000223, 1000, 32.09, 0.44, 0.51, 69.99, 4.17, serial('2026-11-13'), 'au ', serial('2026-01-01'), 99930755, 15, 54.99, '+15€ ODR = 54,99€'],
+    ];
+    const out = G.parsePlanGrid(grid, { refYear: 2026 });
+    G.checkProducts(out.products, new Map());
+    eq(out.products.length, 2, 'produits lus');
+    eq(out.products[0].from + ' ' + out.products[0].to, '2026-11-03 2026-11-30', 'dates Excel sur trois cellules');
+    eq(out.products[0].price, 249, 'prix promo (et non le prix final ODR déduite)');
+    eq(out.products[1].to, '2027-01-01', 'fin avant début : année de fin corrigée');
+    ok(out.products[1].flags.includes('dates_corrigees') && out.products[1].check === 'a_verifier', 'correction signalée « à vérifier »');
+    const bad = [{ key: '1', ean: '0000000000017', name: 'X', price: 10, from: '2026-06-01', to: '2026-01-15', flags: [] }];
+    G.checkProducts(bad, new Map());
+    ok(bad[0].from === null && bad[0].flags.includes('dates_incoherentes'), 'fin avant début non corrigeable : dates écartées');
+  }
+
   /* ── 5. affiches de la centrale ───────────────────────────── */
   section('Affiches centrale');
   {

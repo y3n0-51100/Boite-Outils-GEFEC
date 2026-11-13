@@ -1466,11 +1466,28 @@ async function handlePromoFile(files, forcedType) {
     const routed = [];
     for (const t of ['tv', 'pem']) {
       if (!byType[t].length) continue;
-      const seen = new Set(), prods = [];
+      // plusieurs sources pour un même plan (le ZIP de la centrale contient
+      // souvent le PDF ET l'Excel) : une ligne commune n'est gardée qu'une
+      // fois ; si les deux sources ne donnent pas le même prix, elle est
+      // bloquée ; les lignes propres à une source sont toutes conservées
+      const seen = new Map(), prods = [];
       for (const part of byType[t]) for (const p of part.products) {
         const k = p.key + '|' + (p.from || '') + '|' + (p.to || '');
-        if (seen.has(k)) continue;
-        seen.add(k); prods.push(p);
+        const prev = seen.get(k);
+        if (prev) {
+          if (prev.price != null && p.price != null && Math.abs(prev.price - p.price) >= 0.01) {
+            prev.altPrice = p.price;
+            if (!prev.flags.includes('prix_conflit')) prev.flags.push('prix_conflit');
+            prev.check = PLAN.checkLevel(prev.flags);
+          } else if (prev.price == null && p.price != null) {
+            prev.price = p.price; prev.flags = prev.flags.filter(f => f !== 'prix_absent'); prev.check = PLAN.checkLevel(prev.flags);
+          }
+          if (!prev.name && p.name) prev.name = p.name;
+          if (!prev.brand && p.brand) prev.brand = p.brand;
+          if (!prev.cat && p.cat) prev.cat = p.cat;
+          continue;
+        }
+        seen.set(k, p); prods.push(p);
       }
       if (!prods.length) continue;
       const pl = state.plans[t];
