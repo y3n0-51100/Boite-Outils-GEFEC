@@ -313,7 +313,7 @@
         plans: plans.plans, plansToken: plans.token, masks,
         date, since: settings.since, operations: ops, sent,
         fmtTV: prefs.tv || 'a4', fmtPEM: prefs.pem || 'a4',
-        printBg: settings.print_bg, onProgress: o.onStep,
+        printBg: settings.print_bg, onProgress: o.onStep, catchUp: !!o.catchUp,
       });
     }
 
@@ -413,6 +413,7 @@
         case 'offres_sans_dates': return `${a.n} offre(s) du plan sans dates lisibles : jamais envoyées automatiquement.`;
         case 'base_nosica': return `Base NOSICA non vérifiée depuis ${a.hours} h : la mise à jour quotidienne est en panne.`;
         case 'sans_plan': return 'Aucun plan promo TV ou PEM publié.';
+        case 'offres_non_envoyees': return `${a.store ? a.store + ' : ' : ''}${a.n} offre(s) déjà commencée(s) jamais envoyée(s) (plan publié après leur date de début) : non envoyées automatiquement — utilisez « Envoyer maintenant » si besoin (${(a.items || []).slice(0, 5).map(i => i.ean + ' ' + (i.name || '') + ' du ' + frDate(i.from)).join(', ')}${a.n > 5 ? '…' : ''}).`;
         case 'offres_a_verifier': return `${a.n} offre(s) au prix illisible ou incohérent avec la base NOSICA : non envoyées — à corriger dans le plan publié (${(a.items || []).slice(0, 5).map(i => i.ean + ' ' + (i.name || '')).join(', ')}${a.n > 5 ? '…' : ''}).`;
         default: return a.text || a.type;
       }
@@ -514,9 +515,20 @@
         const ops = await loadOperations();
         const stores = (await loadStores()).filter(s => s.auto);
         log(`Tournée du ${date} — ${stores.length} magasin(s) inscrit(s) à l'envoi automatique.`);
+        // un seul mail de tournée par magasin et par jour : un magasin déjà
+        // servi par une tournée de ce jour (automatique ou manuelle) est passé
+        const served = new Set();
+        if (!o.force) {
+          const { data: done } = await sb.from('auto_runs').select('id, details').eq('run_date', date).neq('id', run.id);
+          for (const r of (done || [])) for (const st of ((r.details && r.details.stores) || [])) if (st.status === 'envoye') served.add(st.id);
+        }
 
         for (const s of (plans.count ? stores : [])) {
           const name = s.name || s.id;
+          if (served.has(s.id)) {
+            log(`${s.id} : déjà servi aujourd'hui, un seul mail par jour.`);
+            report.push({ id: s.id, name, status: 'deja_servi' }); onStore(s, 'deja_servi'); continue;
+          }
           if (s.valo === 'never') {
             pushAlert({ type: 'sans_valo', store: name });
             report.push({ id: s.id, name, status: 'sans_valo' }); onStore(s, 'sans_valo'); continue;

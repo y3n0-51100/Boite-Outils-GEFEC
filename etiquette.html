@@ -3153,7 +3153,7 @@ window.gefecBuildAuto = async function (opts) {
   const alerts = [];
   const noOp = new Set(), badMask = new Set();
   let noDates = 0;
-  const blocked = [];
+  const blocked = [], missed = [];
   const groups = [];
   for (const t of AUTO_PLANS) {
     const pl = state.plans[t];
@@ -3162,10 +3162,18 @@ window.gefecBuildAuto = async function (opts) {
     const keep = [];
     for (const p of pl.products) {
       if (!p.from || !p.to) { noDates++; continue; }
-      if (p.from > date || p.to < date) continue;           // pas (ou plus) en cours
       if (o.since && p.from < o.since) continue;             // avant la mise en service
       const key = autoKey(t, { ...p, key: normCode(p.ean) });
       if (sent.has(key)) continue;                           // déjà envoyée
+      // une affiche part LE JOUR où son offre commence, jamais en rattrapage :
+      // une offre déjà commencée et jamais envoyée (plan publié en retard)
+      // est seulement signalée à l'administrateur
+      // (o.catchUp : « Envoyer maintenant », action volontaire de
+      // l'administrateur, qui rattrape aussi les offres en cours non envoyées)
+      if (p.from !== date && !(o.catchUp && p.from < date && p.to >= date)) {
+        if (p.from < date && p.to >= date) missed.push({ plan: t, ean: p.ean, name: p.name, from: p.from });
+        continue;
+      }
       if (p.check === 'bloquant') {                          // prix illisible ou douteux
         blocked.push({ plan: t, ean: p.ean, name: p.name, price: p.price, flags: p.flags });
         continue;                                            // pas mémorisée : repart quand le plan est corrigé
@@ -3188,6 +3196,7 @@ window.gefecBuildAuto = async function (opts) {
   if (badMask.size) alerts.push({ type: 'masque_introuvable', masks: [...badMask] });
   if (noDates) alerts.push({ type: 'offres_sans_dates', n: noDates });
   if (blocked.length) alerts.push({ type: 'offres_a_verifier', n: blocked.length, items: blocked.slice(0, 20) });
+  if (missed.length) alerts.push({ type: 'offres_non_envoyees', n: missed.length, items: missed.slice(0, 20) });
 
   const empty = { files: [], items: [], pages: 0, products: 0, operations: [], alerts, refs: state.storeKeys.size };
   if (!groups.length) return empty;

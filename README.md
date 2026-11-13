@@ -214,7 +214,7 @@ où son offre démarre**, sur le masque de l'opération commerciale en cours, et
 | Règle | Détail |
 | --- | --- |
 | Quand | Chaque matin à **6 h** (heure de Paris), GitHub Actions lance la tournée (`.github/workflows/envoi-auto-affiches.yml`). |
-| Quelles offres | Celles **en cours** ce jour-là (du ≤ J ≤ au), dont le début est postérieur à la **mise en service**, et **jamais envoyées** à ce magasin. Une offre ratée (plan publié en retard) part donc à la tournée suivante. |
+| Quelles offres | Celles qui **commencent ce jour-là** (début = J), postérieures à la **mise en service** et **jamais envoyées** à ce magasin. Une offre déjà commencée et jamais envoyée (plan publié en retard) **ne part pas** : elle est signalée à l'administrateur, qui peut l'envoyer avec « Envoyer maintenant ». Un magasin reçoit **au plus un mail de tournée par jour**. |
 | Doublons | Clé `plan + EAN + du + au + prix` mémorisée dans `auto_sent` : une offre reprise à l'identique d'un plan promo à l'autre ne repart jamais ; si le prix ou les dates changent, l'affiche repart. |
 | PROMO ou BON PLAN | Prix du plan **inférieur** au prix de vente de la base NOSICA → PROMO, avec le prix NOSICA **barré** ; sinon BON PLAN. |
 | Masque | Celui de l'opération qui couvre la **date de début** de l'offre. Aucune opération → PROMO DU MOMENT / BON PLAN, et alerte. |

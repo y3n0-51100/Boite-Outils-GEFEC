@@ -203,16 +203,23 @@ async function buildInputs() {
     const pemF = camp.files.find(f => f.id === 'pem');
     eq(pemF && pemF.pages, 3 + 1 + (F.PEM.length - 1 + 10 - 5), 'PEM : affiches centrale reprises + affiches générées');
     eq(camp.skipped, 0, 'aucune ligne bloquante écartée');
-    const auto = await e.evaluate(async ({ valo, zip }) => {
+    // tournée du jour : seules les offres qui COMMENCENT ce jour-là partent
+    const tour = (date, extra) => e.evaluate(async ({ valo, zip, date, extra }) => {
       const ab = (b64) => Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
-      const r = await window.gefecBuildAuto({
+      const r = await window.gefecBuildAuto(Object.assign({
         valo: ab(valo), plans: { pem: [{ data: ab(zip), name: 'centrale.zip' }] }, plansToken: 'x2',
-        date: '2026-11-15', operations: [], sent: [], fmtPEM: 'a4',
-      });
-      return { files: r.files.map(f => ({ id: f.id, pages: f.pages })), items: r.items.length, alerts: r.alerts.map(a => a.type) };
-    }, { valo: inp.valo.toString('base64'), zip: inp.zipBuf.toString('base64') });
-    ok(auto.items > 0 && auto.files.length === 1, 'tournée du jour : affiches PEM générées');
-    ok(auto.alerts.includes('sans_operation'), 'tournée : alerte « sans opération » remontée');
+        date, operations: [], sent: [], fmtPEM: 'a4',
+      }, extra || {}));
+      return { files: r.files.map(f => ({ id: f.id, pages: f.pages })), items: r.items.map(i => i.from), alerts: r.alerts.map(a => a.type) };
+    }, { valo: inp.valo.toString('base64'), zip: inp.zipBuf.toString('base64'), date, extra });
+    const j14 = await tour('2026-11-14');
+    ok(j14.items.length === 2 && j14.items.every(f => f === '2026-11-14'), 'tournée du 14 : uniquement les 2 offres qui commencent le 14');
+    ok(j14.alerts.includes('offres_non_envoyees'), 'offres déjà commencées : signalées, pas envoyées');
+    ok(j14.alerts.includes('sans_operation'), 'tournée : alerte « sans opération » remontée');
+    const j15 = await tour('2026-11-15');
+    eq(j15.files.length, 0, 'tournée du 15 : aucune offre ne commence -> aucun mail');
+    const rattrape = await tour('2026-11-15', { catchUp: true });
+    ok(rattrape.items.length > 1, '« Envoyer maintenant » : rattrape les offres en cours non envoyées');
     await e.close();
 
     /* ── 3. Masques ──────────────────────────────────────────── */

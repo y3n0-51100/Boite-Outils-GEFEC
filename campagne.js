@@ -487,7 +487,8 @@
     const date = E.parisDate();
     lock(true); setBar(s, 0);
     try {
-      const res = await E.buildStore(s, date, { onStep: stepper(s), operations: OPS, settings: SETTINGS });
+      // envoi manuel : les offres du jour ET celles déjà commencées jamais envoyées
+      const res = await E.buildStore(s, date, { onStep: stepper(s), operations: OPS, settings: SETTINGS, catchUp: true });
       setBar(s, null);
       if (!res.files.length) { setStatus(s, 'ok', "Rien à mettre en place aujourd'hui qui ne soit déjà parti : aucun mail envoyé."); return; }
       setStatus(s, 'run', `envoi du mail à ${to}…`);
@@ -502,9 +503,9 @@
   async function runNow() {
     if (busy) return;
     const n = STORES.filter(s => s.auto).length;
-    if (!confirm(`Lancer la tournée d'aujourd'hui maintenant ?\n${n} magasin(s) inscrit(s) recevront les affiches à mettre en place qui ne leur ont pas encore été envoyées.`)) return;
+    if (!confirm(`Lancer la tournée d'aujourd'hui maintenant ?\n${n} magasin(s) inscrit(s) recevront les affiches des offres qui commencent aujourd'hui.\nUn magasin déjà servi aujourd'hui ne reçoit pas de second mail.`)) return;
     lock(true);
-    const LBL = { generation: ['run', 'génération des affiches…'], envoi: ['run', 'envoi du mail…'], rien: ['ok', 'rien à mettre en place'], envoye: ['ok', 'affiches envoyées ✓'], valo_perimee: ['ko', 'valorisation périmée — rien envoyé'], sans_valo: ['ko', 'pas de valorisation — rien envoyé'], echec: ['ko', 'échec'] };
+    const LBL = { generation: ['run', 'génération des affiches…'], envoi: ['run', 'envoi du mail…'], rien: ['ok', 'rien à mettre en place'], deja_servi: ['ok', 'déjà servi aujourd\'hui'], envoye: ['ok', 'affiches envoyées ✓'], valo_perimee: ['ko', 'valorisation périmée — rien envoyé'], sans_valo: ['ko', 'pas de valorisation — rien envoyé'], echec: ['ko', 'échec'] };
     try {
       const out = await E.runDay({
         trigger: 'manuel',
