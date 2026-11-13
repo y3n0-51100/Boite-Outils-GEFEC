@@ -1030,7 +1030,12 @@
     for (const c of cands) { const cur = byKey.get(c.p.key); if (!cur || (c.price && !cur.price)) byKey.set(c.p.key, c); }
     let list = [...byKey.values()];
     if (list.length > 1 && list.some(c => c.price)) list = list.filter(c => c.price);
-    if (list.length > 1) { const best = Math.max(...list.map(c => c.len)); list = list.filter(c => c.len === best); }
+    // références emboîtées (RO2611 / RO2611EA) : seule la plus complète compte ;
+    // deux références distinctes (planche à deux poses) restent toutes deux
+    if (list.length > 1) {
+      const toks = new Map(list.map(c => [c, refTokens(c.p.name).filter(t => sq.includes(t) || fsq.includes(t))]));
+      list = list.filter(c => !toks.get(c).every(t => list.some(o => o !== c && toks.get(o).some(u => u !== t && u.includes(t)))));
+    }
     if (list.length > 2) return { keys: [], by: null, sure: false, ambiguous: list.map(c => c.p.key) };
     return { keys: list.map(c => c.p.key), by: 'reference', sure: list.every(c => c.price) };
   }

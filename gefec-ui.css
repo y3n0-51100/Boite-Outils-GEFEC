@@ -80,7 +80,7 @@ html[data-theme="light"][data-tool="campagne"]{ --mail:#6d3fd6; --mail-ink:#ffff
 /* SISTO : accent cyan, assombri sur fond clair pour rester lisible */
 html[data-theme="light"][data-tool="sisto"]{
   --primary:#0b7fc2; --primary-2:#0b6fb8; --primary-soft:rgba(11,127,194,.10); --ring:rgba(11,127,194,.28);
-  --lock:#6d3fd6; --rea:#0b7fc2;
+  --lock:#6d3fd6; --rea:#0b7fc2; --on-primary:#ffffff;
 }
 
 /* ── famille « bg-N » (CETELEM, Soldes) ─────────────────────── */

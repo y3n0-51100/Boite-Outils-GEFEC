@@ -77,6 +77,15 @@
   .gpromo-sub{font-size:12px;color:var(--text-3,#5c6478);font-weight:600;margin:3px 0 9px}
   .gpromo-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
   .gpromo-name{font-size:12px;color:var(--text-2,#8a93a6);font-weight:600}
+  .gcheck{margin:8px 0 4px;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.5;border:1px solid var(--border,#2a334a);background:var(--surface-2,#1a2030);color:var(--text-2,#8a93a6)}
+  .gcheck.ok{border-color:transparent;background:var(--g-ok-soft,rgba(74,222,128,.12));color:var(--g-ok,#4ade80)}
+  .gcheck.warn{border-color:transparent;background:var(--g-warn-soft,rgba(251,191,36,.12));color:var(--g-warn,#fbbf24)}
+  .gcheck.error{border-color:transparent;background:var(--g-bad-soft,rgba(248,113,113,.12));color:var(--g-bad,#f87171)}
+  .gcheck .gc-head{font-weight:700;margin:2px 0}
+  .gcheck ul{margin:4px 0 4px 18px;color:var(--text-2,#8a93a6)}
+  .gcheck li.error{color:var(--g-bad,#f87171)} .gcheck li.warn{color:var(--g-warn,#fbbf24)}
+  .gcheck details{margin-top:4px;color:var(--text-2,#8a93a6)} .gcheck summary{cursor:pointer;font-weight:700}
+  .gcheck .gc-foot{margin-top:6px;font-weight:600;color:var(--text,#e6e9f0)}
   .gsep{border:none;border-top:1px solid var(--border,#2a334a);margin:16px 0}
   .stsum{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}
   .stsum .pill{padding:7px 13px;border-radius:10px;background:var(--surface-2,#1a2030);font-size:12.5px;font-weight:700;color:var(--text-2,#8a93a6)}
@@ -285,6 +294,7 @@
             <input type="text" id="ds-medianum-${id}" placeholder="ex : 888" style="padding:4px 8px;font-size:12px;font-family:inherit;font-weight:600;border-radius:6px;border:1px solid rgba(255,107,0,0.4);background:rgba(255,107,0,0.1);color:#fff;width:130px;outline:none">
           </div>` : ''}
           <div class="gmsg" id="ds-status-${id}">Chargement…</div>
+          ${SHARED[id].check ? `<div class="gcheck" id="ds-check-${id}" hidden></div>` : ''}
           <input type="file" id="ds-file-${id}" accept="${SHARED[id].accept}"${SHARED[id].multi ? ' multiple' : ''} style="display:none">
           <div class="gpromo-actions">
             <button class="gbtn alt" data-pick="${id}">${SHARED[id].multi ? 'Choisir les fichiers' : 'Choisir le fichier'}</button>
@@ -389,6 +399,7 @@
         const n = fi.files ? fi.files.length : 0;
         const nm = el('ds-name-' + id);
         if (nm) nm.textContent = n === 0 ? '' : (n === 1 ? fi.files[0].name : n + ' fichiers sélectionnés');
+        if (n && SHARED[id].check) inspectShared(id).catch(() => {});
       });
     });
 
@@ -621,6 +632,7 @@
       await sb.auth.signOut(); showGate(); return;
     }
     CURRENT = { userId: user.id, role: prof.role, storeId: prof.store_id, name: prof.display_name || user.email };
+    window.GEFEC_ROLE = prof.role;   // lu par les outils (réglages réservés à l'administrateur)
 
     // horodatage de connexion (tableau de bord) — sans bloquer si la migration SQL n'est pas faite
     try { sb.rpc('mark_seen'); } catch (e) {}
@@ -790,7 +802,7 @@
   async function countPdfEans(file) {
     const lib = window.pdfjsLib;
     if (!lib) return null;                    // pas de lecteur : la fonction vérifiera le format
-    try { lib.GlobalWorkerOptions.workerSrc = lib.GlobalWorkerOptions.workerSrc || 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+    try { lib.GlobalWorkerOptions.workerSrc = lib.GlobalWorkerOptions.workerSrc || 'vendor/pdf.worker.min.js'; } catch (e) {}
     const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
     const set = new Set();
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -982,12 +994,12 @@
      des deux nouveaux plans n'est publié (l'outil Étiquettes reconnaît
      alors lui-même le type TV/PEM de chaque PDF). */
   const SHARED = {
-    'plan-promo-tv':    { name: 'Plan promo TV',           accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoTv', multi: true },
-    'plan-promo-pem':   { name: 'Plan promo PEM',          accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoPem', multi: true },
+    'plan-promo-tv':    { name: 'Plan promo TV',           hint: 'PDF de la centrale, ou ZIP (plan + affiches déjà faites). Contrôlé avant publication.', check: 'tv', accept: 'application/pdf,.pdf,.zip,application/zip,.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoTv', multi: true },
+    'plan-promo-pem':   { name: 'Plan promo PEM',          hint: 'PDF de la centrale, ou ZIP (plan + affiches déjà faites). Contrôlé avant publication.', check: 'pem', accept: 'application/pdf,.pdf,.zip,application/zip,.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoPem', multi: true },
     // Produits Star : fichier EXCEL (pas PDF), un seul fichier — la sélection
     // nationale de produits star, croisée avec la valorisation du magasin ;
     // n'imprime que le masque officiel PROMO DU MOMENT (repère ★ sur l'affiche).
-    'plan-promo-star':  { name: 'Plan Produits Star (fichier Excel)', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoStar' },
+    'plan-promo-star':  { name: 'Plan Produits Star (fichier Excel)', check: 'star', accept: '.xlsx,.xls,.csv', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromoStar' },
     'plan-promo':       { name: 'Plan promo (ancien format unique)', accept: 'application/pdf,.pdf', frameSel: '.tool-frame[data-src="etiquette.html"]', input: 'filePromo', multi: true, legacy: true },
     'affiches-cetelem': { name: 'Affiches CETELEM (dépliant PDF ou ZIP)', accept: '.pdf,application/pdf,.zip,application/zip', frameSel: '.tool-frame[data-tpl="tool-match"]', input: 'file2', multi: true, hasMediaNum: true },
     'medias-soldes':    { name: 'Fichiers Média Centrale', accept: '.pdf,.zip',           frameSel: '.tool-frame[data-tpl="tool-solde"]',    input: 'mc-input', multi: true },
@@ -1220,11 +1232,68 @@
     }
   }
   function refreshAllSharedStatus() { Object.keys(SHARED).forEach(refreshSharedStatus); }
+  /* Contrôle d'un plan AVANT publication : le fichier est lu par le moteur
+     d'affiches lui-même (cadre caché), exactement comme chez les magasins. */
+  const inspected = {};          // id -> { sig, result }
+  const fileSig = (files) => files.map(f => f.name + ':' + f.size + ':' + f.lastModified).join('|');
+  async function inspectShared(id) {
+    const cfg = SHARED[id];
+    const input = el('ds-file-' + id);
+    const files = input && input.files ? [...input.files] : [];
+    const box = el('ds-check-' + id);
+    if (!files.length || !box) return null;
+    const sig = fileSig(files);
+    if (inspected[id] && inspected[id].sig === sig) return inspected[id].result;
+    box.hidden = false;
+    box.className = 'gcheck wait';
+    box.innerHTML = '⏳ Contrôle de lecture en cours…';
+    let result = null;
+    try {
+      const win = (await getExportFrame()).contentWindow;
+      if (typeof win.gefecInspect !== 'function') throw new Error('contrôle indisponible');
+      const data = [];
+      for (const f of files) data.push({ data: await f.arrayBuffer(), name: f.name });
+      result = await win.gefecInspect(data, cfg.check);
+    } catch (e) {
+      box.className = 'gcheck error';
+      box.textContent = 'Contrôle impossible : ' + ((e && e.message) || e);
+      return null;
+    }
+    inspected[id] = { sig, result };
+    planCache = null;           // le cadre a relu d'autres plans : cache des envois à refaire
+    const LV = { ok: '✅ Lecture sûre', warn: '⚠️ Points à vérifier', error: '⛔ Points bloquants' };
+    if (!result.plans.length) {
+      box.className = 'gcheck error';
+      box.innerHTML = '⛔ Aucun produit reconnu dans ce fichier : ce n\'est pas un plan promo lisible (scan sans texte, mauvais fichier ?).';
+      return result;
+    }
+    const worst = result.plans.some(p => p.report.level === 'error') ? 'error' : result.plans.some(p => p.report.level === 'warn') ? 'warn' : 'ok';
+    box.className = 'gcheck ' + worst;
+    box.innerHTML = result.plans.map(p => {
+      const r = p.report;
+      const wrong = cfg.check !== 'star' && p.id !== cfg.check ? ` <b>(rangé dans ${esc(p.label)})</b>` : '';
+      return `<div class="gc-head">${LV[r.level]} — ${esc(p.label)}${wrong} : <b>${r.products}</b> produit(s), ${r.withPrice} prix, ${r.withDates} dates · ${r.ok} sûr(s), ${r.toCheck} à vérifier, ${r.blocking} bloquant(s)</div>`
+        + (r.issues.length ? '<ul>' + r.issues.slice(0, 6).map(i => `<li class="${i.level}">${esc(i.text)}</li>`).join('') + '</ul>' : '')
+        + (p.sample.length ? '<details><summary>Exemples de lignes signalées</summary><ul>' + p.sample.map(x =>
+          `<li>${esc(x.ean)} · ${esc(x.name || '?')} · ${x.price != null ? x.price.toFixed(2).replace('.', ',') + ' €' : 'prix vide'} — ${esc(x.flags.join(', '))}</li>`).join('') + '</ul></details>' : '');
+    }).join('') + (result.affiches.total
+      ? `<div class="gc-head">🖼️ ${result.affiches.total} affiche(s) de la centrale, ${result.affiches.linked} rattachée(s) automatiquement à un produit${result.affiches.total - result.affiches.linked ? ` — ${result.affiches.total - result.affiches.linked} à rattacher dans l'outil` : ''}.</div>` : '')
+      + (worst === 'error' ? '<div class="gc-foot">Les lignes bloquantes ne seront <b>jamais envoyées automatiquement</b> : elles restent à corriger dans l\'outil.</div>' : '');
+    return result;
+  }
+
   async function onUploadShared(id) {
     const cfg = SHARED[id];
     const input = el('ds-file-' + id);
     const files = input && input.files ? [...input.files] : [];
     if (!files.length) { toast('Choisissez d’abord un fichier', true); return; }
+    if (cfg.check) {
+      const res = await inspectShared(id);
+      const bad = !res || !res.plans.length;
+      const blocking = res && res.plans.reduce((n, p) => n + p.report.blocking, 0);
+      if (bad && !confirm(`Le contrôle n'a reconnu aucun produit dans ce fichier.\nPublier « ${cfg.name} » quand même ?`)) return;
+      if (!bad && blocking && !confirm(`${blocking} ligne(s) du plan ont un prix illisible ou incohérent : elles ne seront pas imprimées sans correction.\nPublier quand même ?`)) return;
+    }
     const btn = document.querySelector(`[data-upload="${id}"]`);
     if (btn) { btn.disabled = true; btn.textContent = 'Téléversement…'; }
     try {
@@ -1275,6 +1344,7 @@
       const mediaLabel = mediaNum ? ` (Média ${mediaNum})` : '';
       toast(cfg.name + mediaLabel + (files.length > 1 ? ` (${files.length} fichiers)` : '') + ' publié pour tous les magasins ✓');
       input.value = ''; const nm = el('ds-name-' + id); if (nm) nm.textContent = '';
+      planCache = null;
       refreshSharedStatus(id);
     } catch (e) {
       toast('Échec de la publication : ' + (e.message || e), true);
@@ -1365,7 +1435,7 @@
   async function pdfFirstPageToBlob(file, targetW) {
     if (!window.pdfjsLib) throw new Error('pdf.js indisponible');
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc)
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
     const page = await pdf.getPage(1);

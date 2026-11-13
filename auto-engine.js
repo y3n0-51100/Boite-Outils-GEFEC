@@ -413,6 +413,7 @@
         case 'offres_sans_dates': return `${a.n} offre(s) du plan sans dates lisibles : jamais envoyées automatiquement.`;
         case 'base_nosica': return `Base NOSICA non vérifiée depuis ${a.hours} h : la mise à jour quotidienne est en panne.`;
         case 'sans_plan': return 'Aucun plan promo TV ou PEM publié.';
+        case 'offres_a_verifier': return `${a.n} offre(s) au prix illisible ou incohérent avec la base NOSICA : non envoyées — à corriger dans le plan publié (${(a.items || []).slice(0, 5).map(i => i.ean + ' ' + (i.name || '')).join(', ')}${a.n > 5 ? '…' : ''}).`;
         default: return a.text || a.type;
       }
     }
