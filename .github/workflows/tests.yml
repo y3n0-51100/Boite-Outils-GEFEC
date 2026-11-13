@@ -1,0 +1,36 @@
+name: Tests de l'outil
+
+# À chaque envoi de code et à chaque demande de fusion : le lecteur de plan
+# promo est relu sur neuf mises en page différentes, puis l'outil complet est
+# exercé dans Chromium (dépôt PDF + ZIP centrale, affiches, impression, PDF,
+# chaîne d'envoi, rendu de tous les masques). Rien ne part en production si
+# un test échoue.
+
+on:
+  push:
+    paths-ignore: ['base-eco.js', 'base-checked.js', 'base.xlsx']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Dépendances de test
+        run: npm ci
+      - name: Lecteur de plan promo
+        run: npm test
+      - name: Chromium
+        run: |
+          npm install playwright@1.48.2 --no-save
+          npx playwright install --with-deps chromium
+      - name: Outil complet dans le navigateur
+        run: node tests/browser.js

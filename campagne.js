@@ -305,7 +305,9 @@
           <td>${esc(o.cat)}<br><b>${esc(o.brand)} ${esc(o.name)}</b></td>
           <td>${esc(o.ean)}</td>
           <td class="is-num">${fmtPrice(o.price)}${o.kind === 'promo' ? `<br><s style="color:var(--text-3)">${fmtPrice(o.base)}</s>` : ''}</td>
-          <td><span class="tag ${o.kind === 'promo' ? 'is-promo' : 'is-bonplan'}">${o.kind === 'promo' ? 'PROMO' : 'BON PLAN'}</span></td>
+          <td><span class="tag ${o.kind === 'promo' ? 'is-promo' : 'is-bonplan'}">${o.kind === 'promo' ? 'PROMO' : 'BON PLAN'}</span>${o.check === 'bloquant'
+            ? `<br><span class="tag is-ko" title="${esc((o.flags || []).join(' · '))}">⛔ non envoyée : prix à corriger</span>`
+            : o.check === 'a_verifier' ? `<br><span class="tag is-warn" title="${esc((o.flags || []).join(' · '))}">⚠ à vérifier</span>` : ''}${o.centrale ? '<br><span class="tag is-info">🖼 affiche centrale</span>' : ''}</td>
           <td>${esc(maskName(mask))}</td>
           <td>${frDate(o.from)} → ${frDate(o.to)}</td>
         </tr>`;
@@ -317,6 +319,7 @@
             <span class="schedule_op">${esc(opNames.join(' + '))}</span>
             ${opNames.includes('—') ? '<span class="tag is-warn">sans opération → masques standard</span>' : ''}
             <span class="tag is-promo">${nPromo} promo</span><span class="tag is-bonplan">${list.length - nPromo} bon plan</span>
+            ${list.some(o => o.check === 'bloquant') ? `<span class="tag is-ko">${list.filter(o => o.check === 'bloquant').length} bloquée(s)</span>` : ''}
           </div>
           <div class="schedule_count">${tv ? tv + ' TV' : ''}${tv && pem ? ' · ' : ''}${pem ? pem + ' PEM' : ''}</div>
         </summary>

@@ -4,6 +4,23 @@ Suite d'outils PDF pour le magasin, réunis dans une interface unique à la char
 claire et professionnelle. Fusion des deux outils existants (Outil-Promo-GEFEC +
 Étiquettes 2.0) : l'ancien outil **Plan Promo** a été **remplacé par Étiquettes 2.0**.
 
+## Version 2 — ce qui change
+
+| Sujet | Version 2 |
+| --- | --- |
+| **Plan promo dont la mise en page change** | Le PDF est lu **deux fois** par `plan-parser.js` : le lecteur historique (format habituel) et un lecteur **adaptatif** qui reconnaît les colonnes à leur intitulé (synonymes compris : « Code EAN », « Prix de vente promo TTC », « Période de validité », « PA HT », « Remise arrière »…), où qu'elles soient. Le meilleur des deux fait foi, l'autre sert de contre-lecture. |
+| **Contrôle de lecture** | Chaque plan affiche ce que l'outil a compris : produits, prix et dates lus, colonnes reconnues, anomalies. Chaque prix est confronté au prix NOSICA (un « prix promo » à 42 € sur un produit à 899 € est bloqué). |
+| **Lignes douteuses** | Classées *sûre / à vérifier / à corriger*. Une ligne « à corriger » (prix illisible, contradictoire ou incohérent) n'est **jamais cochée ni envoyée automatiquement** : elle attend une correction dans le tableau. |
+| **ZIP de la centrale** | Plan promo + affiches déjà faites, dans un seul ZIP (sous-dossiers acceptés). Les affiches sont **rattachées à leur produit** (EAN imprimé, EAN dans le nom du fichier, ou référence + prix) et **remplacent obligatoirement** l'affiche générée : aperçu, impression, PDF téléchargé, campagne mail et tournée automatique. Une affiche non reconnue se rattache à la main. |
+| **Plan en Excel / CSV** | Accepté aussi, avec les mêmes contrôles. |
+| **Contrôle avant publication** | Dans ⚙️ Plans promo & documents, le fichier choisi est lu avant d'être publié : l'administrateur voit le rapport et doit confirmer s'il reste des points bloquants. |
+| **Interface** | Charte commune claire / sombre (bouton en haut à droite, mémorisé), en-tête compact, onglets TV / PEM / Star, tableau filtrable (à vérifier, affiche centrale, non cochés) avec recherche, aperçu à côté des réglages avec zoom, téléchargement du PDF des affiches, export CSV. |
+| **Fiabilité** | Plus aucune bibliothèque chargée depuis un CDN : tout est servi depuis `vendor/` (pdf.js, SheetJS, JSZip, pdf-lib, html2canvas, jsPDF, Supabase, polices). Le mot de passe « admin123 » écrit dans le code a disparu : les réglages de l'outil sont réservés au compte administrateur connecté. |
+| **Tests** | `npm test` (lecteur de plan, 9 mises en page) et `npm run test:navigateur` (outil complet dans Chromium, masques comparés pixel à pixel avec la version d'origine via `GEFEC_REF`). Lancés par GitHub Actions à chaque envoi (`.github/workflows/tests.yml`). |
+
+Rapport détaillé : [`docs/v2/Rapport-Version-2.pdf`](./docs/v2/Rapport-Version-2.pdf)
+(`node scripts/make-rapport-v2.js`, captures : `node scripts/shoot-v2.js`).
+
 ## Deux profils d'accès
 
 Le rôle du compte connecté (table `profiles`) décide de l'interface servie —
@@ -245,6 +262,15 @@ node scripts/make-tutoriel.js                     # régénère le PDF
 `scripts/fonts/` contient Manrope (OFL), la police de la charte, embarquée dans
 le PDF pour qu'il soit identique partout.
 
+## Tests
+
+```bash
+npm install                 # dépendances de test (pdf.js, JSZip, pdf-lib, pdfkit)
+npm test                    # lecteur de plan promo
+npm run test:navigateur     # outil complet dans Chromium (Playwright requis)
+GEFEC_REF=/chemin/ancien/etiquette.html npm run test:navigateur   # + comparaison des masques
+```
+
 ## Démarrage
 
 Servir le dossier (les outils étant chargés en iframe + `base-eco.js` en relatif,
@@ -255,8 +281,8 @@ python3 -m http.server 8080   # puis ouvrir http://localhost:8080
 ```
 
 Ou publier le dépôt sur **GitHub Pages** (Settings → Pages → branche `main`).
-Une connexion internet est requise au premier chargement (polices + bibliothèques
-PDF via CDN).
+Les polices et bibliothèques sont dans `vendor/` : seule la connexion à Supabase
+(comptes, documents publiés) demande internet.
 
 ## Charte graphique
 
