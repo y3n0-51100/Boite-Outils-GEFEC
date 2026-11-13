@@ -69,6 +69,14 @@ function drawPlan(o) {
   let y = 0, page = 0, i = 0;
   const cell = (c, text, yy, opt) => {
     doc.font(opt && opt.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fs);
+    if (c.noClip) {
+      // texte qui déborde de sa colonne, comme dans les PDF de la centrale
+      const w = doc.widthOfString(String(text));
+      const al = opt && opt.bold ? 'center' : (c.align || 'center');   // en-têtes toujours centrés
+      const x = al === 'center' ? c.x + (c.w - w) / 2 : c.x + 1;
+      doc.text(String(text), x, yy, { lineBreak: false });
+      return;
+    }
     doc.text(String(text), c.x + 2, yy, { width: c.w - 4, align: c.align || 'center', lineBreak: false });
   };
   const header = () => {
@@ -206,6 +214,29 @@ const VARIANTS = {
     return { type: 'tv', rows, pdf: drawPlan({
       title: 'PLAN PROMO TV - SEMAINE 46', headerEveryPage: true, rows, rotate: 0,
       cols: [COL.techno, COL.marque, COL.refs, COL.ean, COL.cession, COL.promo, COL.avoir, COL.dates],
+    }) };
+  },
+  /* 9 bis. mise en page RÉELLE du plan PEM de la centrale (novembre 2026) :
+     colonne MARQUE étroite, références calées à gauche juste à côté — le
+     lecteur historique y collait la référence à la marque — et une date de
+     fin saisie avant la date de début (« 13/11/2026 au 01/01/2026 ») */
+  'pem-centrale-reel': () => {
+    const rows = PEM.map((r, i) => (i === 2 ? Object.assign({}, r, { to: '2027-01-01', _toTxt: '01/01/2026', from: '2026-11-13' }) : r));
+    return { type: 'pem', rows, pdf: drawPlan({
+      title: '', headerEveryPage: true, rows, portrait: false, fontSize: 7,
+      cols: [
+        { key: 'cat', label: ['CATEGORIE'], w: 100 },
+        { key: 'brand', label: ['MARQUE'], w: 24, noClip: true },
+        { key: 'ref', label: ['REFERENCES'], w: 120, align: 'left', noClip: true, fmt: (r) => r.ref },
+        { key: 'ean', label: ['EAN'], w: 66, fmt: (r) => r.ean.replace(/^0+/, '') },
+        { key: 'gamme', label: ['GAMME'], w: 34, fmt: () => '2000' },
+        COL.cession,
+        { key: 'marge', label: ['Taux de', 'marge', 'Nosica'], w: 34, fmt: () => '-12,4%' },
+        COL.promo, COL.avoir,
+        { key: 'dates', label: ["DATES DE L'OPERATION"], w: 116, fmt: (r) => `${fr(r.from)}  au  ${r._toTxt || fr(r.to)}` },
+        { key: 'camp', label: ['NUMERO DE', 'CAMPAGNE'], w: 50, fmt: () => '99930847' },
+        { key: 'com', label: ['COMMENTAIRES'], w: 90, fmt: () => 'prix barré' },
+      ],
     }) };
   },
   /* 9. aucun en-tête : seuls les codes, les dates et (via NOSICA) rien d'autre de sûr */

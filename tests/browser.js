@@ -177,6 +177,19 @@ async function buildInputs() {
     eq(sizes.filter(s => s === '842x595').length, pv5 - 4, 'PDF : planches A5 ×2 et planche centrale en paysage');
     await p.evaluate(() => setFmt('a4'));
 
+    // dates de validité : jamais inventées pour un produit du plan sans dates
+    const dv = await p.evaluate(() => {
+      const base = { id: 1, ean: '3221694001235', name: 'X', brand: 'Y', price: 10, eco: null, selected: true, flags: [] };
+      return [
+        validityTextFor(Object.assign({}, base, { from: '2026-11-12', to: '2026-11-25' })),
+        validityTextFor(Object.assign({}, base, { from: null, to: '2026-11-22' })),
+        validityTextFor(Object.assign({}, base, { from: null, to: null })),
+      ];
+    });
+    eq(dv[0], 'PRIX VALABLE DU 12 NOVEMBRE AU 25 NOVEMBRE 2026', 'dates du plan imprimées');
+    eq(dv[1], "PRIX VALABLE JUSQU'AU 22 NOVEMBRE 2026", "date de fin seule : « jusqu'au »");
+    eq(dv[2], '', 'produit du plan sans dates : aucune date inventée');
+
     // thème sombre
     await p.evaluate(() => GefecUI.setTheme('dark'));
     await p.evaluate(() => goStep(2));

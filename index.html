@@ -2917,6 +2917,11 @@ function updateBaseStatus(){
     if(!ok.xlsx) pb.push('base Excel non lue');
     if(!ok.json) pb.push('produits (JSON) non lus');
     if(!fresh) pb.push('mise à jour automatique en panne');
+    // éco-participations : la base Excel peut être téléchargée chaque nuit sans
+    // que le site source ne la rafraîchisse (date de photo DT_PHOTO)
+    const photo=window.BASE_PHOTO?new Date(window.BASE_PHOTO+'T00:00:00'):null;
+    const photoDays=photo&&!isNaN(photo)?Math.floor((Date.now()-photo.getTime())/864e5):null;
+    if(photoDays!=null&&photoDays>45) pb.push(`éco-participations du ${photo.toLocaleDateString('fr-FR')} (base Excel non rafraîchie par le site source)`);
     const etat=pb.length
       ?`<span class="sr-warn" title="${pb.join(' · ')} — prévenir l'administrateur">⚠ ${pb.join(' · ')}</span>`
       :`<span title="Base Excel et produits JSON à jour">✅ OK</span>`;

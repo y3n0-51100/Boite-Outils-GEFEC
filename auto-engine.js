@@ -29,6 +29,7 @@
   const VALO_REMIND_EVERY_H = 72;
   const SITE_URL = 'https://y3n0-51100.github.io/Boite-Outils-GEFEC/';
   const BASE_MAX_HOURS = 48;
+  const BASE_PHOTO_MAX_DAYS = 45;   // au-delà, les éco-participations de la base Excel sont réputées périmées
   const AFF_BUCKET = 'affiches';
 
   const DEFAULT_SUBJECT = 'Affiches à mettre en place le {date} — {operations} — {magasin}';
@@ -401,6 +402,16 @@
         return m ? Math.round((Date.now() - new Date(m[1]).getTime()) / 36e5) : null;
       } catch (e) { return null; }
     }
+    /* âge (jours) des données de la base Excel NOSICA — seule source des
+       éco-participations : la base peut être téléchargée chaque nuit sans
+       que le site source ne la rafraîchisse (colonne DT_PHOTO) */
+    async function basePhotoDays() {
+      try {
+        const txt = await (await fetch('base-checked.js?t=' + Date.now(), { cache: 'no-store' })).text();
+        const m = txt.match(/BASE_PHOTO\s*=\s*"(\d{4}-\d{2}-\d{2})"/);
+        return m ? Math.floor((Date.now() - new Date(m[1] + 'T00:00:00Z').getTime()) / 864e5) : null;
+      } catch (e) { return null; }
+    }
 
     /* ---------- Libellé des alertes ---------- */
     function alertText(a) {
@@ -414,6 +425,8 @@
         case 'base_nosica': return `Base NOSICA non vérifiée depuis ${a.hours} h : la mise à jour quotidienne est en panne.`;
         case 'sans_plan': return 'Aucun plan promo TV ou PEM publié.';
         case 'offres_non_envoyees': return `${a.store ? a.store + ' : ' : ''}${a.n} offre(s) déjà commencée(s) jamais envoyée(s) (plan publié après leur date de début) : non envoyées automatiquement — utilisez « Envoyer maintenant » si besoin (${(a.items || []).slice(0, 5).map(i => i.ean + ' ' + (i.name || '') + ' du ' + frDate(i.from)).join(', ')}${a.n > 5 ? '…' : ''}).`;
+        case 'eco_absente': return `${a.store ? a.store + ' : ' : ''}${a.n} affiche(s) envoyée(s) sans éco-participation (produit absent de la base NOSICA ou sans montant) : ${(a.items || []).slice(0, 6).map(i => i.ean + ' ' + (i.name || '')).join(', ')}${a.n > 6 ? '…' : ''}.`;
+        case 'base_eco_ancienne': return `Base Excel NOSICA (éco-participations) datée de ${a.days} jours : le site source ne la rafraîchit plus — les produits récents n'ont pas d'éco-participation.`;
         case 'offres_a_verifier': return `${a.n} offre(s) au prix illisible ou incohérent avec la base NOSICA : non envoyées — à corriger dans le plan publié (${(a.items || []).slice(0, 5).map(i => i.ean + ' ' + (i.name || '')).join(', ')}${a.n > 5 ? '…' : ''}).`;
         default: return a.text || a.type;
       }
@@ -509,6 +522,17 @@
       try {
         const hours = await baseAgeHours();
         if (hours != null && hours > BASE_MAX_HOURS) pushAlert({ type: 'base_nosica', hours });
+        const photoDays = await basePhotoDays();
+        if (photoDays != null && photoDays > BASE_PHOTO_MAX_DAYS) pushAlert({ type: 'base_eco_ancienne', days: photoDays });
+        // offres déjà signalées comme « non envoyées » lors des tournées
+        // précédentes : signalées une seule fois, pas tous les jours
+        const alreadyMissed = new Set();
+        try {
+          const { data: past } = await sb.from('auto_runs').select('details').neq('id', run.id)
+            .gte('run_date', addDays(date, -60));
+          for (const r of (past || [])) for (const a of ((r.details && r.details.alerts) || []))
+            if (a.type === 'offres_non_envoyees') for (const i of (a.items || [])) alreadyMissed.add((a.store || '') + '|' + i.ean + '|' + i.from);
+        } catch (e) {}
 
         const plans = await planFiles();
         if (!plans.count) pushAlert({ type: 'sans_plan' });
@@ -540,7 +564,12 @@
           try {
             onStore(s, 'generation');
             const res = await buildStore(s, date, { operations: ops, settings });
-            res.alerts.forEach(pushAlert);
+            for (const a of res.alerts) {
+              if (a.type === 'eco_absente') { a.store = name; pushAlert(a); continue; }
+              if (a.type !== 'offres_non_envoyees') { pushAlert(a); continue; }
+              const fresh = (a.items || []).filter(i => !alreadyMissed.has(name + '|' + i.ean + '|' + i.from));
+              if (fresh.length) pushAlert({ type: 'offres_non_envoyees', store: name, n: fresh.length, items: fresh });
+            }
             if (!res.files.length) {
               log(`${s.id} : rien à mettre en place.`);
               report.push({ id: s.id, name, status: 'rien' }); onStore(s, 'rien'); continue;

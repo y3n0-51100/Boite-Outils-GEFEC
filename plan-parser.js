@@ -109,14 +109,14 @@
   /* Deux dates (jour, mois, année facultative) -> période ISO. L'année
      manquante est déduite de l'autre date, sinon de l'année de référence ;
      une fin dont le mois précède celui du début bascule sur l'année suivante. */
-  function resolveRange(a, b, refYear) {
+  function resolveRange(a, b, refYear, allowReverse) {
     let ya = fullYear(a.y), yb = fullYear(b.y);
     if (ya == null && yb == null) { ya = refYear; yb = (b.m < a.m) ? refYear + 1 : refYear; }
     else if (ya == null) ya = (a.m > b.m) ? yb - 1 : yb;
     else if (yb == null) yb = (b.m < a.m) ? ya + 1 : ya;
     if (!validDMY(a.d, a.m, ya) || !validDMY(b.d, b.m, yb)) return null;
     const from = iso(ya, a.m, a.d), to = iso(yb, b.m, b.d);
-    if (from > to) return null;
+    if (from > to && !allowReverse) return null;
     return { from, to };
   }
   const D_NUM = '(\\d{1,2})\\s*[\\/.]\\s*(\\d{1,2})(?:\\s*[\\/.]\\s*(\\d{4}|\\d{2}))?';
@@ -138,7 +138,7 @@
     if (!t) return null;
     let m = t.match(o.strict ? RE_NUM_STRICT : RE_NUM_LOOSE);
     if (m) {
-      const r = resolveRange({ d: +m[1], m: +m[2], y: m[3] ? +m[3] : null }, { d: +m[4], m: +m[5], y: m[6] ? +m[6] : null }, refYear);
+      const r = resolveRange({ d: +m[1], m: +m[2], y: m[3] ? +m[3] : null }, { d: +m[4], m: +m[5], y: m[6] ? +m[6] : null }, refYear, o.allowReverse);
       if (r) return r;
     }
     m = t.match(RE_DASH);
@@ -565,7 +565,14 @@
       inside.sort((a, b) => a.cx - b.cx);
       let left = c[0];
       inside.forEach((h, i) => {
-        const right = i + 1 < inside.length ? (h.x1 + inside[i + 1].x0) / 2 : c[1];
+        let right = i + 1 < inside.length ? (h.x1 + inside[i + 1].x0) / 2 : c[1];
+        // deux colonnes collées (marque centrée, références calées à gauche
+        // juste à côté) : la colonne de droite se repère à ses valeurs qui
+        // commencent toutes au même endroit — la frontière passe juste avant
+        if (i + 1 < inside.length) {
+          const edge = alignedStart(dataRows, h.cx, inside[i + 1].x1);
+          if (edge != null) right = Math.min(right, edge - 0.5);
+        }
         zones.push({ field: h.field, label: h.label, x0: left, x1: right, col: h });
         used.add(h); left = right;
       });
@@ -583,6 +590,19 @@
       if (best) { best.field = h.field; best.label = h.label; best.col = h; used.add(h); }
     }
     return zones.sort((a, b) => a.x0 - b.x0);
+  }
+  /* Abscisse où commencent la plupart des valeurs entre deux bornes (colonne
+     calée à gauche), ou null. Au moins 60 % des lignes, à 1,5 pt près. */
+  function alignedStart(rows, from, to) {
+    const xs = [];
+    for (const r of rows) for (const it of r.items) if (it.x > from && it.x < to) xs.push(it.x);
+    if (xs.length < 3) return null;
+    let best = null, bestN = 0;
+    for (const x of xs) {
+      const n = xs.filter(v => Math.abs(v - x) <= 1.5).length;
+      if (n > bestN || (n === bestN && x < best)) { bestN = n; best = x; }
+    }
+    return bestN >= Math.max(3, rows.length * 0.6) ? best : null;
   }
   function zoneOf(zones, it) {
     const cx = itemCx(it);
@@ -734,7 +754,9 @@
         const price = priceOf(f.promo);
         const oldPrice = priceOf(f.old);
         let range = null, datesBy = null;
-        if (f.dates.length) { range = parseDateRange(txt(f.dates), { refYear }); if (range) datesBy = 'colonne'; }
+        // colonne des dates : une fin saisie avant le début est gardée telle
+        // quelle, checkProducts() la corrige (ou l'écarte) et la signale
+        if (f.dates.length) { range = parseDateRange(txt(f.dates), { refYear, allowReverse: true }); if (range) datesBy = 'colonne'; }
         if (!range && (f.from.length || f.to.length)) {
           const a = parseOneDate(txt(f.from), refYear), b = parseOneDate(txt(f.to), refYear);
           if (a && b) { range = resolveRange(a, b, refYear); if (range) datesBy = 'colonnes'; }
@@ -774,12 +796,37 @@
     dates_titre: 'dates reprises du titre du plan',
     dates_longues: 'période de plus de 4 mois',
     dates_corrigees: 'date de fin antérieure au début dans le plan : année de fin corrigée (+1 an)',
+    categorie_douteuse: 'catégorie du plan inexploitable (« Pas trouvé »…) : non imprimée',
     dates_incoherentes: 'date de fin antérieure au début, non corrigeable : dates écartées',
     libelle_absent: 'référence illisible',
     lecture_secours: 'produit vu par une seule des deux lectures',
   };
   /* ce qui empêche un envoi AUTOMATIQUE (personne ne relit avant le mail) */
   const BLOCKING = ['prix_absent', 'prix_conflit', 'prix_deduit', 'prix_suspect_bas'];
+
+  /* Deux lectures d'un même champ : si la plus longue contient la plus courte
+     plus un morceau d'une autre colonne, la plus courte est la bonne. */
+  function cleanerBrand(x, y) {
+    if (!x || !y) return x || y || '';
+    const X = up(x), Y = up(y);
+    if (X === Y) return x;
+    const [L, S, sv] = X.length > Y.length ? [X, Y, y] : [Y, X, x];
+    // le surplus d'une marque polluée est une référence : il contient un chiffre
+    if (L.startsWith(S + ' ') && /\d/.test(L.slice(S.length))) return sv;
+    return x;
+  }
+  function cleanerName(x, y, ctx) {
+    if (!x || !y) return x || y || '';
+    const X = up(x), Y = up(y);
+    if (X === Y) return x;
+    const [L, S, sv] = X.length > Y.length ? [X, Y, y] : [Y, X, x];
+    if (!L.endsWith(S)) return x;
+    // le surplus doit venir d'une autre colonne (marque, catégorie) : sinon
+    // c'est un vrai mot de la référence (« LM9012/60 NOIR ») et on le garde
+    const extra = L.slice(0, L.length - S.length);
+    const other = (ctx || []).filter(Boolean).map(up);
+    return other.some(o => o && extra.includes(o)) ? sv : x;
+  }
 
   function score(r) {
     const n = r.products.length;
@@ -833,6 +880,13 @@
           if (okS && !okP) { p.altPrice = p.price; p.price = s.price; }
           p.flags.push('prix_conflit');
         }
+        // marque / référence : une lecture peut coller la colonne voisine
+        // (« ROWENTA ASPITRA RO2611EA » au lieu de « ROWENTA ») : la valeur
+        // propre l'emporte, quelle que soit la lecture principale
+        // (le nettoyage ne fait que retirer un morceau de colonne voisine : il
+        // s'applique même quand la contre-lecture a moins bien lu les prix)
+        p.brand = cleanerBrand(p.brand, s.brand);
+        p.name = cleanerName(p.name, s.name, [p.brand, s.brand, p.cat, s.cat]);
         if (!p.from && !p.to && (s.from || s.to)) { p.from = s.from; p.to = s.to; if ((s.flags || []).includes('dates_titre')) p.flags.push('dates_titre'); }
         if (!p.name && s.name) p.name = s.name;
         if (!p.brand && s.brand) p.brand = s.brand;
@@ -863,8 +917,13 @@
       const F = new Set(p.flags || []);
       for (const k of ['prix_absent', 'libelle_absent', 'ean_invalide', 'dates_absentes', 'dates_longues', 'prix_suspect_bas', 'prix_suspect_haut']) F.delete(k);
       if (p.toOrig) { p.to = p.toOrig; delete p.toOrig; F.delete('dates_corrigees'); }
+      if (p.catOrig) { p.cat = p.catOrig; delete p.catOrig; F.delete('categorie_douteuse'); }
       if (p.price == null) F.add('prix_absent');
       if (!p.name) F.add('libelle_absent');
+      // « Pas trouvé », « ? », « N/A »… : un commentaire, jamais un titre d'affiche
+      if (p.cat && /^(PAS TROUV|NON TROUV|INCONNU|A DEFINIR|A COMPLETER|N\/?A$|NC$|ND$|\?|-+$|\.+$)/.test(up(p.cat))) {
+        p.catOrig = p.cat; p.cat = ''; F.add('categorie_douteuse');
+      }
       if (!eanValid(p.ean)) F.add('ean_invalide');
       // fin avant début (erreur de saisie fréquente au changement d'année :
       // « 13/11/2026 au 01/01/2026 ») : l'année de fin est corrigée si la
@@ -909,7 +968,7 @@
     const lines = [
       ['prix_absent', 'error'], ['prix_conflit', 'error'], ['prix_suspect_bas', 'error'], ['prix_deduit', 'warn'],
       ['prix_suspect_haut', 'warn'], ['dates_absentes', 'warn'], ['ean_invalide', 'warn'], ['libelle_absent', 'warn'],
-      ['dates_longues', 'warn'], ['dates_corrigees', 'warn'], ['dates_incoherentes', 'warn'], ['dates_titre', 'info'], ['prix_secours', 'info'], ['lecture_secours', 'info'],
+      ['dates_longues', 'warn'], ['dates_corrigees', 'warn'], ['categorie_douteuse', 'warn'], ['dates_incoherentes', 'warn'], ['dates_titre', 'info'], ['prix_secours', 'info'], ['lecture_secours', 'info'],
     ];
     for (const [k, level] of lines) if (count[k]) add(level, `${count[k]} produit(s) : ${FLAG_TEXT[k]}.`);
     const unknown = meta.base && meta.base.size ? products.filter(p => p.inBase === false).length : 0;
@@ -1106,7 +1165,7 @@
     parsePlan, parsePlanGrid, readLegacy, readAdaptive, detectPlanType, classifyHeader,
     extractRows, rowsFromItems, splitWideItem, rowText, parsePrice, parseDateRange, cleanRef,
     normCode, padCode, eanValid, stripAccents, matchAffiche, afficheFormat, looksLikePlan, pageKinds,
-    checkProducts, checkLevel, buildReport, hasPrice,
+    checkProducts, checkLevel, buildReport, hasPrice, cleanerBrand, cleanerName,
     FLAG_TEXT, BLOCKING,
   };
 });

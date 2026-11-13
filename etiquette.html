@@ -959,9 +959,19 @@ function validityText(from, to) {
   const sameYear = from.slice(0, 4) === to.slice(0, 4);
   return `PRIX VALABLE DU ${fmtDateFR(from, !sameYear)} AU ${fmtDateFR(to, true)}`;
 }
+/* Mention de validité d'une affiche. Avec « dates du plan promo » (le
+   réglage par défaut, et toujours le cas des envois), une affiche n'affiche
+   QUE les dates de son produit : jamais les dates saisies à la main par
+   défaut, qui seraient inventées. Sans date de début connue : « jusqu'au ». */
 function validityTextFor(p) {
   const usePer = document.getElementById('perProductDates').checked;
-  if (usePer && p && p.from && p.to) return validityText(p.from, p.to);
+  if (usePer && p && (p.from || p.to || p.id != null)) {
+    if (p.from && p.to) return validityText(p.from, p.to);
+    if (p.to) return `PRIX VALABLE JUSQU'AU ${fmtDateFR(p.to, true)}`;
+    // produit sans date (Promo Perso, ajout manuel) : dates saisies dans les réglages
+    if (state.plan === 'perso' || !p.flags) return validityText(document.getElementById('dateFrom').value, document.getElementById('dateTo').value);
+    return '';
+  }
   return validityText(document.getElementById('dateFrom').value, document.getElementById('dateTo').value);
 }
 
@@ -988,6 +998,11 @@ const CODE_ITEM_RE = /^\d{11,13}$/;   // EAN, éventuellement amputé de ses zé
 
 /* Valorisation magasin : lignes "V? 0011120238679 LIBELLÉ … qté valeur".
    On collecte les codes (normalisés) + libellés en secours. */
+function ean8Valid(s) {
+  let sum = 0;
+  for (let i = 0; i < 7; i++) sum += (+s[i]) * (i % 2 ? 1 : 3);
+  return (10 - (sum % 10)) % 10 === +s[7];
+}
 function parseValoPdf(pages) {
   const keys = new Set();
   const names = new Map();
@@ -995,7 +1010,8 @@ function parseValoPdf(pages) {
     for (const row of rows) {
       for (let i = 0; i < row.items.length; i++) {
         const it = row.items[i];
-        if (!CODE_ITEM_RE.test(it.s)) continue;
+        // EAN-13 (ou amputé de ses zéros), et EAN-8 seulement si sa clé est juste
+        if (!CODE_ITEM_RE.test(it.s) && !(/^\d{8}$/.test(it.s) && ean8Valid(it.s))) continue;
         const key = normCode(it.s);
         keys.add(key);
         const after = row.items.slice(i + 1)
@@ -1482,6 +1498,8 @@ async function handlePromoFile(files, forcedType) {
           } else if (prev.price == null && p.price != null) {
             prev.price = p.price; prev.flags = prev.flags.filter(f => f !== 'prix_absent'); prev.check = PLAN.checkLevel(prev.flags);
           }
+          prev.brand = PLAN.cleanerBrand(prev.brand, p.brand);
+          prev.name = PLAN.cleanerName(prev.name, p.name, [prev.brand, p.brand, prev.cat, p.cat]);
           if (!prev.name && p.name) prev.name = p.name;
           if (!prev.brand && p.brand) prev.brand = p.brand;
           if (!prev.cat && p.cat) prev.cat = p.cat;
@@ -1703,7 +1721,11 @@ function renderReport() {
     k('', r.products, 'produits lus') + k('', `${r.withPrice}/${r.products}`, 'prix lus') +
     k('', `${r.withDates}/${r.products}`, 'dates lues') + k('ok', r.ok, 'sûrs') +
     k('warn', r.toCheck, 'à vérifier') + k('bad', r.blocking, 'bloquants');
-  document.getElementById('reportIssues').innerHTML = r.issues.map(i => `<div class="issue ${i.level}">${esc(i.text)}</div>`).join('')
+  // éco-participation : obligatoire sur l'affiche des produits électriques ;
+  // un produit absent de la base NOSICA ou sans montant est signalé ici
+  const noEco = state.ecoMap.size ? state.plans[state.plan].promoProducts.filter(p => !state.ecoMap.has(p.key)) : [];
+  const ecoIssue = noEco.length ? [{ level: 'warn', text: `${noEco.length} produit(s) sans éco-participation dans la base NOSICA : l'affiche ne portera pas la mention « dont … d'éco-participation » (à saisir dans le tableau si le produit en a une). Ex. : ${[...new Set(noEco.map(p => p.name || p.ean))].slice(0, 6).join(', ')}.` }] : [];
+  document.getElementById('reportIssues').innerHTML = ecoIssue.concat(r.issues).map(i => `<div class="issue ${i.level}">${esc(i.text)}</div>`).join('')
     || '<div class="issue info">Aucune anomalie : toutes les lignes ont un prix cohérent, une référence et des dates.</div>';
   const cols = (r.columns || []).filter(c => c.field);
   document.getElementById('reportCols').innerHTML = cols.length
@@ -1840,7 +1862,8 @@ function addPersoProducts(items) {
     const name = v.name || alt.name || state.storeNames.get(code) || '';
     // même règle que la recherche manuelle : le prix connu est le prix de vente
     // NORMAL (« ancien prix », barré sur l'étiquette), pas le prix promo.
-    const oldPrice = v.price != null ? v.price : (alt.price != null ? +alt.price : null);
+    // un prix de 0 € dans la base NOSICA = prix inconnu, jamais un ancien prix barré
+    const oldPrice = v.price > 0 ? v.price : (alt.price > 0 ? +alt.price : null);
     if (!name && oldPrice == null && !state.ecoMap.has(code)) { notFound++; continue; }
     state.products.unshift({
       id: nextId++, ean: padCode(code), name, brand: alt.brand || '',
@@ -2265,7 +2288,7 @@ function addFromBase(code) {
   state.products.unshift({
     id: nextId++, ean: padCode(code),
     name, brand: '',
-    price: null, oldPrice: v.price != null ? v.price : null,
+    price: null, oldPrice: v.price > 0 ? v.price : null,
     eco: state.ecoMap.has(k) ? state.ecoMap.get(k) : null,
     from: null, to: null, selected: true,
   });
@@ -3196,7 +3219,9 @@ window.gefecBuildAuto = async function (opts) {
   if (badMask.size) alerts.push({ type: 'masque_introuvable', masks: [...badMask] });
   if (noDates) alerts.push({ type: 'offres_sans_dates', n: noDates });
   if (blocked.length) alerts.push({ type: 'offres_a_verifier', n: blocked.length, items: blocked.slice(0, 20) });
-  if (missed.length) alerts.push({ type: 'offres_non_envoyees', n: missed.length, items: missed.slice(0, 20) });
+  if (missed.length) alerts.push({ type: 'offres_non_envoyees', n: missed.length, items: missed });
+  const noEcoSent = groups.flatMap(g => g.list).filter(p => p.eco == null);
+  if (noEcoSent.length) alerts.push({ type: 'eco_absente', n: noEcoSent.length, items: noEcoSent.slice(0, 20).map(p => ({ ean: p.ean, name: p.name })) });
 
   const empty = { files: [], items: [], pages: 0, products: 0, operations: [], alerts, refs: state.storeKeys.size };
   if (!groups.length) return empty;
@@ -3426,10 +3451,12 @@ function applySimpleMode() {
   } catch (e) { /* stockage indisponible : l'outil reste utilisable sans persistance */ }
   renderMaskSlots();
   // dates globales par défaut : aujourd'hui -> +4 semaines
+  // dates locales (le magasin est en France) : toISOString() donnerait la veille entre minuit et 1 h
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const today = new Date();
-  const plus4w = new Date(today.getTime() + 28 * 864e5);
-  document.getElementById('dateFrom').value = today.toISOString().slice(0, 10);
-  document.getElementById('dateTo').value = plus4w.toISOString().slice(0, 10);
+  const plus4w = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 28);
+  document.getElementById('dateFrom').value = ymd(today);
+  document.getElementById('dateTo').value = ymd(plus4w);
   renderPlanStatus();
   renderTable();
   // base éco : 1) base-eco.js publiée dans le dépôt, 2) copie mémorisée localement
@@ -3441,8 +3468,12 @@ function applySimpleMode() {
     }
     setBaseStatus(`✅ ${state.ecoMap.size} éco-participation(s) — base en ligne`);
     const fresh = window.BASE_CHECKED && (Date.now() - new Date(window.BASE_CHECKED).getTime()) < 48 * 36e5;
-    setChip('chipBase', fresh ? 'ok' : 'warn', `Base NOSICA · ${state.baseInfo.size.toLocaleString('fr-FR')} réf.`,
-      fresh ? 'Base article à jour' : 'Base article non vérifiée depuis plus de 48 h');
+    const photo = window.BASE_PHOTO ? new Date(window.BASE_PHOTO + 'T00:00:00') : null;
+    const ecoOld = photo && !isNaN(photo) && (Date.now() - photo.getTime()) / 864e5 > 45;
+    setChip('chipBase', fresh && !ecoOld ? 'ok' : 'warn', `Base NOSICA · ${state.baseInfo.size.toLocaleString('fr-FR')} réf.`,
+      !fresh ? 'Base article non vérifiée depuis plus de 48 h'
+        : ecoOld ? `Éco-participations datées du ${photo.toLocaleDateString('fr-FR')} : la base Excel n'est plus rafraîchie par le site source`
+        : 'Base article à jour');
   } else {
     try {
       const baseEco = await kvGet('baseEco');
