@@ -315,6 +315,7 @@
         date, since: settings.since, operations: ops, sent,
         fmtTV: prefs.tv || 'a4', fmtPEM: prefs.pem || 'a4',
         printBg: settings.print_bg, onProgress: o.onStep, catchUp: !!o.catchUp,
+        onlyPlans: o.onlyPlans || null, onlyEans: o.onlyEans || null,
       });
     }
 

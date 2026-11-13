@@ -1,0 +1,40 @@
+name: Envoi correctif d'affiches TV
+
+# Lancement manuel uniquement. Régénère et renvoie des affiches TV précises
+# (ici : celles envoyées avec un prix barré, interdit en TV), avec un mail
+# demandant au magasin de retirer les anciennes. Voir auto-run.html,
+# window.gefecCorrectifTV.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cibles:
+        description: 'JSON { "magasin": ["EAN", …] }'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: envoi-auto-affiches
+  cancel-in-progress: false
+
+jobs:
+  correctif:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Installation de Playwright (Chromium)
+        run: |
+          npm install playwright@1.48.2 --no-save
+          npx playwright install --with-deps chromium
+      - name: Envoi correctif
+        env:
+          GEFEC_ROBOT_USER: ${{ secrets.GEFEC_ROBOT_USER }}
+          GEFEC_ROBOT_PASS: ${{ secrets.GEFEC_ROBOT_PASS }}
+          GEFEC_CORRECTIF: ${{ github.event.inputs.cibles }}
+        run: node scripts/run-auto.js

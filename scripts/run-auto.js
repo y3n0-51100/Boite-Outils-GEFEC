@@ -30,7 +30,7 @@ function parisHour() {
 
 // Le planificateur GitHub passe à 4 h et 5 h UTC : on ne part qu'à partir
 // de 6 h, heure de Paris (heure d'hiver comme d'été).
-if (!FORCE && !DATE && parisHour() < 6) {
+if (!FORCE && !DATE && !process.env.GEFEC_CORRECTIF && parisHour() < 6) {
   console.log(`Il est ${parisHour()} h à Paris : la tournée part à 6 h, rien à faire maintenant.`);
   process.exit(0);
 }
@@ -71,6 +71,13 @@ function serve() {
     page.on('pageerror', (e) => console.log('erreur de page : ' + e.message));
     await page.goto(`http://127.0.0.1:${port}/auto-run.html`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => typeof window.gefecAutoRun === 'function' && window.GefecAuto, null, { timeout: 60000 });
+    // envoi correctif ponctuel (workflow « correctif-affiches.yml ») : GEFEC_CORRECTIF = JSON { magasin: [EAN, …] }
+    if (process.env.GEFEC_CORRECTIF) {
+      const res = await page.evaluate((o) => window.gefecCorrectifTV(o), { user: USER, pass: PASS, targets: JSON.parse(process.env.GEFEC_CORRECTIF) });
+      for (const r of res) console.log(`${r.store} : ${r.status}${r.affiches ? ` — ${r.affiches} affiche(s) à ${r.to}` : ''}${r.failed && r.failed.length ? ' — échecs : ' + r.failed.join(' · ') : ''}`);
+      if (res.some(r => r.status !== 'envoye')) code = 1;
+      return;
+    }
     const out = await page.evaluate((o) => window.gefecAutoRun(o), { user: USER, pass: PASS, date: DATE, force: FORCE });
     if (out && out.skipped) {
       console.log('Tournée non lancée : ' + out.skipped);

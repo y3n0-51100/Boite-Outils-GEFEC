@@ -3185,12 +3185,15 @@ window.gefecBuildAuto = async function (opts) {
   let noDates = 0;
   const blocked = [], missed = [];
   const groups = [];
-  for (const t of AUTO_PLANS) {
+  // envoi correctif ciblé : certains plans et/ou certains EAN seulement
+  const onlyEans = o.onlyEans ? new Set(o.onlyEans.map(e => normCode(e))) : null;
+  for (const t of AUTO_PLANS.filter(x => !o.onlyPlans || o.onlyPlans.includes(x))) {
     const pl = state.plans[t];
     if (!pl.promoProducts.length) continue;
     withPlan(t, doMatch);
     const keep = [];
     for (const p of pl.products) {
+      if (onlyEans && !onlyEans.has(normCode(p.ean))) continue;
       if (!p.from || !p.to) { noDates++; continue; }
       if (o.since && p.from < o.since) continue;             // avant la mise en service
       const key = autoKey(t, { ...p, key: normCode(p.ean) });

@@ -32,6 +32,61 @@ window.gefecAutoRun = async function (o) {
   await sb.auth.signOut();
   return out;
 };
+
+/* Envoi correctif (ponctuel, lancé à la main) : affiches TV envoyées avec
+   un prix barré, interdit en TV. Pour chaque magasin : la trace d'envoi des
+   affiches visées est effacée, elles sont régénérées (prix du plan, sans
+   prix barré) et envoyées avec un mail demandant de retirer les anciennes.
+   o = { user, pass, targets: { magasin: [EAN, …] } } */
+window.gefecCorrectifTV = async function (o) {
+  const cfg = window.GEFEC_CONFIG || {};
+  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY, { auth: { persistSession: false } });
+  const id = String(o.user || '').trim();
+  const email = id.includes('@') ? id : `${id.toLowerCase()}@${cfg.EMAIL_DOMAIN || 'gefec.local'}`;
+  const { data: auth, error } = await sb.auth.signInWithPassword({ email, password: o.pass });
+  if (error || !auth || !auth.user) throw new Error('connexion du compte robot refusée : ' + ((error && error.message) || 'inconnu'));
+  const log = (m) => console.log('[tournée] ' + m);
+  const E = window.GefecAuto.create(sb, { userId: auth.user.id, log });
+  const date = E.parisDate();
+  const settings = await E.loadSettings();
+  const operations = await E.loadOperations();
+  const stores = await E.loadStores();
+  const out = [];
+  for (const [storeId, eans] of Object.entries(o.targets || {})) {
+    const s = stores.find(x => x.id === storeId);
+    if (!s) { log(`${storeId} : magasin introuvable`); out.push({ store: storeId, status: 'introuvable' }); continue; }
+    // 1) les affiches visées ne sont plus « déjà envoyées »
+    const { data: del, error: derr } = await sb.from('auto_sent').delete()
+      .eq('store_id', storeId).eq('plan', 'tv').in('ean', eans).select('ean');
+    if (derr) throw new Error(`${storeId} : historique non effacé — ${derr.message}`);
+    log(`${storeId} : ${(del || []).length} trace(s) d'envoi effacée(s).`);
+    // 2) régénération : uniquement ces affiches TV, offres en cours
+    const res = await E.buildStore(s, date, { operations, settings, catchUp: true, onlyPlans: ['tv'], onlyEans: eans });
+    if (!res.files.length) { log(`${storeId} : aucune affiche régénérée`); out.push({ store: storeId, status: 'rien' }); continue; }
+    const list = res.items.map(i => `  • ${i.name || i.ean} — ${String(i.price.toFixed(2)).replace('.', ',')} €`).join('\n');
+    // 3) mail correctif
+    const msg = [
+      'Bonjour,',
+      '',
+      "⚠️ CORRECTIF — les affiches TV envoyées ces derniers jours comportaient par erreur un PRIX BARRÉ, ce qui est interdit sur les affiches TV.",
+      '',
+      "Merci de RETIRER IMMÉDIATEMENT du rayon les affiches TV suivantes et de les REMPLACER par celles jointes à ce mail :",
+      list,
+      '',
+      "Les prix promo sont inchangés : seul le prix barré disparaît.",
+      '',
+      'Merci et bonne vente,',
+    ].join('\n');
+    const d = await E.deliver(s, date, res, { settings: Object.assign({}, settings, {
+      subject: '⚠️ CORRECTIF — affiches TV à retirer et remplacer — {magasin}',
+      message: msg,
+    }) });
+    log(`${storeId} : ${res.products} affiche(s) corrigée(s) envoyée(s) à ${d.to}.`);
+    out.push({ store: storeId, status: 'envoye', affiches: res.products, to: d.to, failed: d.failed });
+  }
+  await sb.auth.signOut();
+  return out;
+};
 </script>
 </body>
 </html>

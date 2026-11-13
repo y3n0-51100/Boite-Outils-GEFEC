@@ -254,6 +254,9 @@ async function buildInputs() {
     eq(tvRes.price, 349.99, 'TV : prix du plan promo');
     eq(tvRes.old, null, 'TV : aucun prix NOSICA barré dans la tournée');
     eq(tvRes.crossed, false, 'TV : aucun prix barré au rendu, quel que soit le chemin');
+    // envoi correctif ciblé : uniquement le plan et les EAN demandés
+    const cible = await tour('2026-11-15', { catchUp: true, onlyPlans: ['pem'], onlyEans: [F.PEM[0].ean] });
+    ok(cible.items.length === 1, 'envoi correctif : seule l\'affiche visée est régénérée');
     const rattrape = await tour('2026-11-15', { catchUp: true });
     ok(rattrape.items.length > 1, '« Envoyer maintenant » : rattrape les offres en cours non envoyées');
     await e.close();
