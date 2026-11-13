@@ -2004,7 +2004,7 @@ function doMatch() {
       price: p.price,
       // Produits Star : prix fond de rayon barré, posé par parseStarWorkbook
       // quand le produit a une vraie promo (sinon null, comme TV/PEM).
-      oldPrice: p.oldPrice != null ? p.oldPrice : null,
+      oldPrice: p.oldPrice != null && !NO_CROSSED_PLANS.includes(state.plan) ? p.oldPrice : null,
       eco: state.ecoMap.has(p.key) ? state.ecoMap.get(p.key) : null,
       from: p.from, to: p.to,
       // diagnostic de lecture : un prix illisible ou douteux n'est PAS coché
@@ -2119,7 +2119,9 @@ function renderTable() {
       <td><input class="cell" value="${esc(p.name)}" onchange="updProd(${p.id},'name',this.value)"></td>
       <td><input class="cell" style="width:100px" value="${esc(p.brand)}" onchange="updProd(${p.id},'brand',this.value)"></td>
       <td><input class="cell num ${priceBad ? 'badv' : priceWarn ? 'warnv' : ''}" value="${p.price != null ? p.price.toFixed(2) : ''}" placeholder="à saisir" title="${esc(checkTitle(p))}" onchange="updProd(${p.id},'price',this.value)"></td>
-      <td><input class="cell num" value="${p.oldPrice != null ? p.oldPrice.toFixed(2) : ''}" onchange="updProd(${p.id},'oldPrice',this.value)"></td>
+      <td>${NO_CROSSED_PLANS.includes(state.plan)
+        ? '<span class="validity" title="Prix barré interdit sur les affiches TV">—</span>'
+        : `<input class="cell num" value="${p.oldPrice != null ? p.oldPrice.toFixed(2) : ''}" onchange="updProd(${p.id},'oldPrice',this.value)">`}</td>
       <td style="white-space:nowrap">
         <input class="cell num" style="width:62px" value="${p.eco != null ? p.eco.toFixed(2) : ''}" onchange="updProd(${p.id},'eco',this.value)">
         ${p.eco != null ? '' : '<span class="tag eco-no" title="Éco-participation absente de la base NOSICA">manquante</span>'}
@@ -2288,7 +2290,7 @@ function addFromBase(code) {
   state.products.unshift({
     id: nextId++, ean: padCode(code),
     name, brand: '',
-    price: null, oldPrice: v.price > 0 ? v.price : null,
+    price: null, oldPrice: v.price > 0 && !NO_CROSSED_PLANS.includes(state.plan) ? v.price : null,
     eco: state.ecoMap.has(k) ? state.ecoMap.get(k) : null,
     from: null, to: null, selected: true,
   });
@@ -2445,7 +2447,12 @@ function printNow() {
 }
 function getMask(key) { return state.masks[key] || DEFAULT_MASKS[key] || null; }
 
+/* Plan TV : prix barré formellement interdit — l'affiche porte uniquement le
+   prix du plan promo. Verrou posé au rendu, il couvre tous les chemins :
+   outil, campagne mail, tournée automatique, saisie manuelle. */
+const NO_CROSSED_PLANS = ['tv'];
 function labelHtml(p, fmtClass) {
+  if (p && p.oldPrice != null && NO_CROSSED_PLANS.includes(state.plan)) p = Object.assign({}, p, { oldPrice: null });
   // Produits Star : masque choisi automatiquement PAR PRODUIT (aucun choix
   // utilisateur) — BON PLAN si prix fond de rayon seul, PROMO DU MOMENT dès
   // que le produit a une vraie promo (prix barré + pastille de remise).
@@ -3206,7 +3213,8 @@ window.gefecBuildAuto = async function (opts) {
       let tpl = op ? (k.kind === 'promo' ? op.mask_promo : op.mask_bonplan) : k.kind;
       if (!op) noOp.add(p.from);
       if (!autoMaskOk(tpl)) { badMask.add(tpl); tpl = k.kind; }
-      p.oldPrice = k.kind === 'promo' ? k.base : null;       // prix NOSICA barré
+      // prix NOSICA barré (PEM uniquement : interdit en TV)
+      p.oldPrice = k.kind === 'promo' && !NO_CROSSED_PLANS.includes(t) ? k.base : null;
       p._tpl = tpl;
       p._key = key; p._kind = k.kind; p._op = op ? op.id : null; p._opName = op ? op.name : '';
       p.selected = true;

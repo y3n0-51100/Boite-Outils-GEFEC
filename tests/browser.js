@@ -231,6 +231,29 @@ async function buildInputs() {
     ok(j14.alerts.includes('sans_operation'), 'tournée : alerte « sans opération » remontée');
     const j15 = await tour('2026-11-15');
     eq(j15.files.length, 0, 'tournée du 15 : aucune offre ne commence -> aucun mail');
+    // TV : prix barré formellement interdit, même quand NOSICA est plus cher
+    // (cas réel : TV 50S5L, plan 349,99 €, NOSICA 399,99 €)
+    const tvEan = '5901292530358';
+    const tvPlan = await F.drawPlan({ title: 'PLAN PROMO TV', headerEveryPage: true,
+      rows: [{ ean: tvEan, cat: '4K', brand: 'TCL', ref: '50S5L', price: 349.99, cession: 250, avoir: 20, from: '2026-11-10', to: '2026-11-30' }],
+      cols: [{ key: 'cat', label: ['TECHNO'], w: 62 }, { key: 'brand', label: ['MARQUE'], w: 58 }, { key: 'ref', label: ['REFERENCES'], w: 118, align: 'left' },
+        { key: 'ean', label: ['EAN'], w: 74 }, { key: 'price', label: ['PRIX', 'PROMO'], w: 58, fmt: (r) => F.euro(r.price) },
+        { key: 'dates', label: ['DATES'], w: 110, fmt: () => '10/11/2026 au 30/11/2026' }] });
+    const tvValo = await F.makeValo([tvEan]);
+    const tvRes = await e.evaluate(async ({ valo, tv }) => {
+      const ab = (b64) => Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
+      const r = await window.gefecBuildAuto({ valo: ab(valo), plans: { tv: [{ data: ab(tv), name: 'tv.pdf' }] }, plansToken: 'tv1',
+        date: '2026-11-10', operations: [], sent: [], fmtTV: 'a4' });
+      const prev = state.plan; state.plan = 'tv';
+      const p = state.plans.tv.products[0];
+      const html = labelHtml(Object.assign({}, p, { oldPrice: 399.99 }), 'fa4');   // même si un prix barré traîne
+      state.plan = prev;
+      return { n: r.items.length, price: r.items[0] && r.items[0].price, old: p.oldPrice, crossed: /class="crossed/.test(html) };
+    }, { valo: tvValo.toString('base64'), tv: tvPlan.toString('base64') });
+    eq(tvRes.n, 1, 'TV : affiche du jour générée');
+    eq(tvRes.price, 349.99, 'TV : prix du plan promo');
+    eq(tvRes.old, null, 'TV : aucun prix NOSICA barré dans la tournée');
+    eq(tvRes.crossed, false, 'TV : aucun prix barré au rendu, quel que soit le chemin');
     const rattrape = await tour('2026-11-15', { catchUp: true });
     ok(rattrape.items.length > 1, '« Envoyer maintenant » : rattrape les offres en cours non envoyées');
     await e.close();
