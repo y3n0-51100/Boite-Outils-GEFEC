@@ -329,10 +329,14 @@
     async function buildPack(store, date, o) {
       o = o || {};
       const res = await buildStore(store, date, { ...o, ignoreSent: true, all: true, single: true });
-      if (!res.files.length) return null;
+      const path = `${store.id}/campagne/toutes-offres.pdf`;
+      if (!res.files.length) {
+        // plus aucune offre : l'ancien pack ne doit plus être proposé
+        try { await sb.storage.from(AFF_BUCKET).remove([path]); } catch (e) {}
+        return null;
+      }
       await localBlobs(res);
       const f = res.files[0];
-      const path = `${store.id}/campagne/toutes-offres.pdf`;
       const up = await sb.storage.from(AFF_BUCKET).upload(path, f.blob, { upsert: true, contentType: 'application/pdf' });
       if (up.error) throw new Error('dépôt du pack : ' + up.error.message);
       const { data, error } = await sb.storage.from(AFF_BUCKET).createSignedUrl(path, PACK_DAYS * 86400,
@@ -594,17 +598,19 @@
               const fresh = (a.items || []).filter(i => !alreadyMissed.has(name + '|' + i.ean + '|' + i.from));
               if (fresh.length) pushAlert({ type: 'offres_non_envoyees', store: name, n: fresh.length, items: fresh });
             }
-            if (!res.files.length) {
-              log(`${s.id} : rien à mettre en place.`);
-              report.push({ id: s.id, name, status: 'rien' }); onStore(s, 'rien'); continue;
-            }
-            // pack « toutes les offres » : son échec ne bloque jamais le mail du jour
+            // pack « toutes les offres » : refait chaque jour, mail ou pas (il
+            // est aussi proposé dans l'espace magasin) ; son échec ne bloque
+            // jamais le mail du jour
             await localBlobs(res);
             let pack = null;
             try {
               pack = await buildPack(s, date, { operations: ops, settings });
               if (pack) log(`${s.id} : pack toutes offres prêt (${pack.products} affiche(s)).`);
             } catch (e) { log(`⚠️ ${s.id} : pack toutes offres non généré — ${(e && e.message) || e}`); }
+            if (!res.files.length) {
+              log(`${s.id} : rien à mettre en place.`);
+              report.push({ id: s.id, name, status: 'rien' }); onStore(s, 'rien'); continue;
+            }
             onStore(s, 'envoi');
             const d = await deliver(s, date, res, { settings, pack });
             storesSent++; affiches += res.products;

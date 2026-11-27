@@ -548,6 +548,13 @@
         </div>
 
         <section class="vgate-card sp-card">
+          <div class="vgate-title">Vous souhaitez toutes les offres en cours ou à venir ?</div>
+          <div class="vgate-sub" id="spPackInfo">Chargement…</div>
+          <div class="sp-actions"><button class="gbtn" id="spPackDl" type="button" hidden>⬇ Cliquez ici</button></div>
+          <div class="vgate-msg" id="spPackMsg"></div>
+        </section>
+
+        <section class="vgate-card sp-card">
           <div class="vgate-title">Adresses de réception</div>
           <div class="vgate-sub">Les affiches de votre magasin sont envoyées à ces adresses (3 au maximum).</div>
           <div class="sp-mails">
@@ -580,6 +587,7 @@
     document.body.appendChild(sp);
     el('spLogout').addEventListener('click', doLogout);
     el('spSave').addEventListener('click', onPortalSave);
+    el('spPackDl').addEventListener('click', onPortalPack);
     const spDrop = el('spDrop');
     spDrop.addEventListener('click', () => el('spFile').click());
     spDrop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el('spFile').click(); } });
@@ -713,7 +721,48 @@
     ['spMail1', 'spMail2', 'spMail3'].forEach((id, i) => { el(id).value = mails[i] || ''; });
     el('spEnabled').checked = !STORE_ROW || STORE_ROW.mail_enabled !== false;
     spMsg('');
-    await Promise.all([renderPortalValo(), renderPortalHistory()]);
+    await Promise.all([renderPortalValo(), renderPortalHistory(), renderPortalPack()]);
+  }
+
+  /* Pack « toutes les offres en cours ou à venir » : PDF refait chaque matin
+     par la tournée automatique (auto-engine.js → buildPack) dans le dossier
+     du magasin du bucket « affiches », que le compte magasin peut lire. */
+  const PACK_FILE = 'toutes-offres.pdf';
+  const packPath = () => `${CURRENT.storeId}/campagne/${PACK_FILE}`;
+  async function renderPortalPack() {
+    const info = el('spPackInfo'), btn = el('spPackDl');
+    el('spPackMsg').textContent = '';
+    btn.hidden = true;
+    try {
+      const { data, error } = await sb.storage.from('affiches')
+        .list(`${CURRENT.storeId}/campagne`, { search: PACK_FILE, limit: 10 });
+      if (error) throw error;
+      const f = (data || []).find(x => x.name === PACK_FILE);
+      if (!f) {
+        info.textContent = "Aucun PDF disponible pour le moment : il est préparé chaque matin pour les magasins inscrits à l'envoi automatique, avec une valorisation à jour.";
+        return;
+      }
+      const d = new Date(f.updated_at || f.created_at);
+      info.innerHTML = 'Toutes les affiches TV et PEM de votre magasin, en un seul PDF'
+        + (isNaN(d.getTime()) ? '.' : ` — mis à jour le <b>${esc(d.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }))}</b>.`);
+      btn.hidden = false;
+    } catch (e) {
+      info.textContent = 'PDF indisponible : ' + (e.message || e);
+    }
+  }
+  async function onPortalPack() {
+    const btn = el('spPackDl'), msg = el('spPackMsg');
+    btn.disabled = true; msg.className = 'vgate-msg wait'; msg.textContent = 'Préparation du lien…';
+    try {
+      const day = new Date().toISOString().slice(0, 10);
+      const { data, error } = await sb.storage.from('affiches')
+        .createSignedUrl(packPath(), 300, { download: `affiches-toutes-offres-${CURRENT.storeId}-${day}.pdf` });
+      if (error || !data || !data.signedUrl) throw new Error((error && error.message) || 'lien indisponible');
+      window.location.href = data.signedUrl;   // téléchargement direct
+      msg.textContent = '';
+    } catch (e) {
+      msg.className = 'vgate-msg err'; msg.textContent = 'Échec : ' + (e.message || e);
+    } finally { btn.disabled = false; }
   }
 
   /* Valorisation : le magasin la met à jour lui-même. Au-delà de 30 jours,
