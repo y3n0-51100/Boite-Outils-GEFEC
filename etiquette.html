@@ -3157,6 +3157,8 @@ window.gefecPlanOffers = async function (opts) {
      operations:[{id,name,date_from,date_to,mask_promo,mask_bonplan}],
      sent:[clé, …]           affiches déjà envoyées à ce magasin
      fmtTV, fmtPEM, printBg, onProgress
+     all:true                toutes les offres en cours ou à venir à J (ignore sent / since)
+     single:true             un seul PDF pour tous les plans
    }
    -> { files:[{id,label,blob,pages,products}], items:[…], pages, products,
         operations:[noms], alerts:[{type,…}], refs }
@@ -3195,8 +3197,13 @@ window.gefecBuildAuto = async function (opts) {
     for (const p of pl.products) {
       if (onlyEans && !onlyEans.has(normCode(p.ean))) continue;
       if (!p.from || !p.to) { noDates++; continue; }
-      if (o.since && p.from < o.since) continue;             // avant la mise en service
       const key = autoKey(t, { ...p, key: normCode(p.ean) });
+      if (o.all) {
+        // pack « toutes les offres » : en cours ou à venir à J, déjà envoyées
+        // ou non, quelle que soit la date de mise en service
+        if (p.to < date) continue;
+      } else {
+      if (o.since && p.from < o.since) continue;             // avant la mise en service
       if (sent.has(key)) continue;                           // déjà envoyée
       // une affiche part LE JOUR où son offre commence, jamais en rattrapage :
       // une offre déjà commencée et jamais envoyée (plan publié en retard)
@@ -3206,6 +3213,7 @@ window.gefecBuildAuto = async function (opts) {
       if (p.from !== date && !(o.catchUp && p.from < date && p.to >= date)) {
         if (p.from < date && p.to >= date) missed.push({ plan: t, ean: p.ean, name: p.name, from: p.from });
         continue;
+      }
       }
       if (p.check === 'bloquant') {                          // prix illisible ou douteux
         blocked.push({ plan: t, ean: p.ean, name: p.name, price: p.price, flags: p.flags });
@@ -3272,7 +3280,13 @@ window.gefecBuildAuto = async function (opts) {
   say('pdf', 0, total);
   let done = 0;
   const files = [];
-  for (const p of byPlan) {
+  if (o.single) {
+    // un seul PDF pour tous les plans (pack téléchargeable depuis le mail)
+    const blob = await sheetsToPdf(byPlan.flatMap(p => p.sheets), 'a4', () => say('pdf', ++done, total));
+    files.push({ id: 'auto-tout', plan: 'tout', label: byPlan.map(p => p.label).join(' + '), blob, pages: total,
+      products: byPlan.reduce((n, p) => n + p.list.length, 0) });
+  }
+  for (const p of (o.single ? [] : byPlan)) {
     const blob = await sheetsToPdf(p.sheets, 'a4', () => say('pdf', ++done, total));
     files.push({ id: 'auto-' + p.id, plan: p.id, label: p.label, blob, pages: p.sheets.length, products: p.list.length });
   }

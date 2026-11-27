@@ -259,6 +259,7 @@ async function sendSmtp(o: {
 function body(o: {
   message: string; storeName: string; storeId: string;
   files: { label: string; filename: string; pages: number; products: number }[];
+  pack?: { url: string; products: number } | null;
 }) {
   const lignes = o.files.map((f) =>
     `${f.label} — ${f.products} affiche(s), ${f.pages} page(s) — ${f.filename}`
@@ -269,9 +270,22 @@ function body(o: {
     ...(o.files.length
       ? ["", `Pièces jointes (${o.files.length}) :`, ...lignes.map((l) => `• ${l}`)]
       : []),
+    ...(o.pack
+      ? ["", "Vous souhaitez toutes les offres en cours ou à venir ? Cliquez ici :", o.pack.url]
+      : []),
     "",
     "— Boîte à Outils GEFEC",
   ].join("\n");
+
+  // bouton « toutes les offres en cours ou à venir » (mail quotidien)
+  const pack = o.pack
+    ? `<div style="margin:26px 0 6px;padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;text-align:center">
+    <div style="font-weight:700;font-size:15px;margin-bottom:12px">Vous souhaitez toutes les offres en cours ou à venir ?</div>
+    <a href="${esc(o.pack.url)}" style="background:#e6071a;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;display:inline-block">
+      ⬇ Cliquez ici</a>
+    ${o.pack.products ? `<div style="font-size:12.5px;color:#6b7280;margin-top:10px">${o.pack.products} affiche(s) en un seul PDF — lien valable 7 jours</div>` : ""}
+  </div>`
+    : "";
 
   const jointes = o.files.length
     ? `<div style="margin:22px 0 8px;font-weight:700;font-size:14px">Pièces jointes (${o.files.length})</div>
@@ -287,6 +301,7 @@ function body(o: {
   const html = `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#111827;max-width:600px">
   <div>${esc(o.message.trim()).replace(/\n/g, "<br>")}</div>
   ${jointes}
+  ${pack}
   <p style="font-size:13px;color:#6b7280;margin-top:22px">
      ${o.storeId ? esc(o.storeName) + " — " + esc(o.storeId) + "<br>" : ""}— Boîte à Outils GEFEC</p>
 </div>`;
@@ -388,9 +403,28 @@ Deno.serve(async (req) => {
     }
     console.log(`total pieces jointes : ${(total / 1048576).toFixed(2)} Mo pour ${attachments.length} fichier(s)`);
 
+    // Lien « toutes les offres » (facultatif) : uniquement une URL signée du
+    // PDF pack de CE magasin dans le bucket « affiches » — jamais un lien libre
+    let pack: { url: string; products: number } | null = null;
+    if (b.pack_url) {
+      const link = String(b.pack_url).trim();
+      let ok = false;
+      try {
+        const u = new URL(link);
+        const host = new URL(url).hostname;
+        ok = u.protocol === "https:"
+          && (u.hostname === host || u.hostname.endsWith(".supabase.co"))
+          && !!storeId
+          && decodeURIComponent(u.pathname) === `/storage/v1/object/sign/affiches/${storeId}/campagne/toutes-offres.pdf`;
+      } catch (_e) { ok = false; }
+      if (!ok) return json(400, { error: "Lien « toutes les offres » invalide." });
+      pack = { url: link, products: Number(b.pack_products ?? 0) };
+    }
+
     const mail = body({
       message, storeName, storeId,
       files: wanted.map((f, i) => ({ ...f, filename: attachments[i]?.filename ?? f.filename })),
+      pack,
     });
 
     // 5) La voie d'envoi

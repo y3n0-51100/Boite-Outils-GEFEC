@@ -31,6 +31,7 @@
   const BASE_MAX_HOURS = 48;
   const BASE_PHOTO_MAX_DAYS = 45;   // au-delà, les éco-participations de la base Excel sont réputées périmées
   const AFF_BUCKET = 'affiches';
+  const PACK_DAYS = 7;   // validité du lien « toutes les offres » du mail quotidien
 
   const DEFAULT_SUBJECT = 'Affiches à mettre en place le {date} — {operations} — {magasin}';
   const DEFAULT_MESSAGE = [
@@ -316,7 +317,28 @@
         fmtTV: prefs.tv || 'a4', fmtPEM: prefs.pem || 'a4',
         printBg: settings.print_bg, onProgress: o.onStep, catchUp: !!o.catchUp,
         onlyPlans: o.onlyPlans || null, onlyEans: o.onlyEans || null,
+        all: !!o.all, single: !!o.single,
       });
+    }
+
+    /* ---------- Pack « toutes les offres en cours ou à venir » ----------
+       Un seul PDF par magasin, régénéré à chaque tournée et toujours déposé
+       au même chemin : un lien reçu un jour précédent ouvre donc la version
+       la plus récente. Lien signé valable PACK_DAYS jours.
+       -> { url, products, pages } ou null s'il n'y a aucune offre */
+    async function buildPack(store, date, o) {
+      o = o || {};
+      const res = await buildStore(store, date, { ...o, ignoreSent: true, all: true, single: true });
+      if (!res.files.length) return null;
+      await localBlobs(res);
+      const f = res.files[0];
+      const path = `${store.id}/campagne/toutes-offres.pdf`;
+      const up = await sb.storage.from(AFF_BUCKET).upload(path, f.blob, { upsert: true, contentType: 'application/pdf' });
+      if (up.error) throw new Error('dépôt du pack : ' + up.error.message);
+      const { data, error } = await sb.storage.from(AFF_BUCKET).createSignedUrl(path, PACK_DAYS * 86400,
+        { download: `affiches-toutes-offres-${slugify(store.name || store.id)}-${date}.pdf` });
+      if (error || !data || !data.signedUrl) throw new Error('lien du pack : ' + ((error && error.message) || 'indisponible'));
+      return { url: data.signedUrl, products: res.products, pages: res.pages };
     }
 
     /* PDF d'un AUTRE realm (cadre générateur) : reconstruits ici */
@@ -366,6 +388,7 @@
             to, store_id: store.id, store_name: store.name || store.id,
             subject, message: fill(settings.message, vars),
             files: files.map(f => ({ path: f.path, filename: f.filename, label: f.label, pages: f.pages, products: f.products })),
+            ...(o.pack ? { pack_url: o.pack.url, pack_products: o.pack.products } : {}),
           });
           sentTo.push(to);
         } catch (e) { failed.push(`${to} : ${(e && e.message) || e}`); }
@@ -575,8 +598,15 @@
               log(`${s.id} : rien à mettre en place.`);
               report.push({ id: s.id, name, status: 'rien' }); onStore(s, 'rien'); continue;
             }
+            // pack « toutes les offres » : son échec ne bloque jamais le mail du jour
+            await localBlobs(res);
+            let pack = null;
+            try {
+              pack = await buildPack(s, date, { operations: ops, settings });
+              if (pack) log(`${s.id} : pack toutes offres prêt (${pack.products} affiche(s)).`);
+            } catch (e) { log(`⚠️ ${s.id} : pack toutes offres non généré — ${(e && e.message) || e}`); }
             onStore(s, 'envoi');
-            const d = await deliver(s, date, res, { settings });
+            const d = await deliver(s, date, res, { settings, pack });
             storesSent++; affiches += res.products;
             log(`${s.id} : ${res.products} affiche(s) envoyée(s) à ${d.to}.`);
             report.push({ id: s.id, name, status: 'envoye', affiches: res.products, pages: res.pages, to: d.to, operations: res.operations });
@@ -625,7 +655,7 @@
       parisDate, parisHour, addDays, frDate, isMail, slugify, alertText,
       loadSettings, saveSettings, loadOperations, saveOperation, deleteOperation,
       loadStores, planFiles, loadMasks, resetCaches, planOffers, sentKeys,
-      buildStore, localBlobs, deliver, runDay, sendMail, genWin, sendValoReminders,
+      buildStore, buildPack, localBlobs, deliver, runDay, sendMail, genWin, sendValoReminders,
       VALO_MAX_DAYS, DEFAULT_SUBJECT, DEFAULT_MESSAGE, PLAN_LABEL,
     };
   }
