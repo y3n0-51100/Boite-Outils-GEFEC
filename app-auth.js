@@ -71,6 +71,18 @@
   .grow button{border:1px solid var(--border,#2a334a);background:var(--surface,#11151e);border-radius:8px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text-2,#8a93a6)}
   .grow button:hover{background:var(--surface-3,#232b3d)}
   .grow button.danger{color:#f87171;border-color:rgba(248,113,113,.35)}
+  /* aperçu d'un masque personnalisé (au-dessus de la modale admin) */
+  #maskPreview{position:fixed;inset:0;z-index:10000;background:rgba(3,5,10,.8);display:none;align-items:center;justify-content:center;padding:16px}
+  #maskPreview.open{display:flex}
+  #maskPreview .mp-box{background:var(--surface,#11151e);border:1px solid var(--border,#2a334a);border-radius:14px;padding:14px;max-width:min(960px,100%);max-height:100%;display:flex;flex-direction:column;gap:10px}
+  #maskPreview .mp-head{display:flex;align-items:center;gap:8px;color:var(--text,#e6e9f0);font-size:14px;font-weight:800}
+  #maskPreview .mp-head .mp-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #maskPreview .mp-head button{border:1px solid var(--border,#2a334a);background:var(--surface,#11151e);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text-2,#8a93a6)}
+  #maskPreview .mp-head button.on{background:var(--surface-3,#232b3d);color:var(--text,#e6e9f0)}
+  #maskPreview .mp-head button:disabled{opacity:.4;cursor:not-allowed}
+  #maskPreview .mp-body{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center}
+  #maskPreview .mp-body img{max-width:100%;max-height:calc(100vh - 120px);display:block;background:#fff;border-radius:4px}
+  #maskPreview .mp-body .gempty{color:var(--text-2,#8a93a6)}
   .gempty{font-size:12.5px;color:var(--text-3,#5c6478);font-weight:600;padding:10px 2px}
   .gpromo{background:var(--surface-2,#1a2030);border:1px solid var(--border,#2a334a);border-radius:12px;padding:14px 16px;margin-bottom:6px}
   .gpromo-title{font-weight:800;font-size:14px;color:var(--text,#e6e9f0)}
@@ -1439,9 +1451,72 @@
         <span class="tagrole">Masque</span>
         <div class="gr-main"><b>${esc(m.name)}</b>
           <div class="gr-sub">A4${m.a5 ? ' + A5' : ''} · publié le ${m.updated_at ? new Date(m.updated_at).toLocaleDateString('fr-FR') : '—'}</div></div>
+        <button data-viewmask="${esc(m.id)}">👁 Voir</button>
         <button class="danger" data-delmask="${esc(m.id)}" data-name="${esc(m.name)}">Supprimer</button>
       </div>`).join('');
+    host.querySelectorAll('[data-viewmask]').forEach(b => b.addEventListener('click', () => {
+      const m = masks.find(x => x.id === b.dataset.viewmask);
+      if (m) openMaskPreview(m);
+    }));
     host.querySelectorAll('[data-delmask]').forEach(b => b.addEventListener('click', () => onDeleteMask(b.dataset.delmask, b.dataset.name)));
+  }
+
+  /* Pop-up d'aperçu d'un masque : bascule A4 / A5, images téléchargées
+     depuis le bucket "shared" et affichées via une URL locale (blob) */
+  let maskPreviewUrls = [];
+  function closeMaskPreview() {
+    const ov = document.getElementById('maskPreview');
+    if (ov) ov.classList.remove('open');
+    maskPreviewUrls.forEach(u => URL.revokeObjectURL(u)); // libère la mémoire
+    maskPreviewUrls = [];
+  }
+  function maskPreviewOverlay() {
+    let ov = document.getElementById('maskPreview');
+    if (ov) return ov;
+    ov = document.createElement('div');
+    ov.id = 'maskPreview';
+    ov.innerHTML = `<div class="mp-box" role="dialog" aria-modal="true">
+        <div class="mp-head">
+          <span class="mp-title"></span>
+          <button data-fmt="a4">A4</button>
+          <button data-fmt="a5">A5</button>
+          <button data-close aria-label="Fermer">✕</button>
+        </div>
+        <div class="mp-body"></div>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-close]')) closeMaskPreview(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && ov.classList.contains('open')) closeMaskPreview(); });
+    return ov;
+  }
+  async function openMaskPreview(m) {
+    closeMaskPreview();
+    const ov = maskPreviewOverlay();
+    const body = ov.querySelector('.mp-body');
+    ov.querySelector('.mp-title').textContent = m.name;
+    const cache = {}; // format -> URL blob déjà chargée
+    const show = async fmt => {
+      ov.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('on', b.dataset.fmt === fmt));
+      if (!m[fmt]) { body.innerHTML = '<div class="gempty">Pas de version ' + fmt.toUpperCase() + ' pour ce masque.</div>'; return; }
+      if (!cache[fmt]) {
+        body.innerHTML = '<div class="gempty">Chargement…</div>';
+        const { data, error } = await sb.storage.from('shared').download(m[fmt]);
+        if (error || !data) { body.innerHTML = '<div class="gempty">Image introuvable.</div>'; return; }
+        cache[fmt] = URL.createObjectURL(data);
+        maskPreviewUrls.push(cache[fmt]);
+      }
+      body.innerHTML = '';
+      const img = document.createElement('img');
+      img.alt = m.name + ' — ' + fmt.toUpperCase();
+      img.src = cache[fmt];
+      body.appendChild(img);
+    };
+    ov.querySelectorAll('[data-fmt]').forEach(b => {
+      b.disabled = !m[b.dataset.fmt];
+      b.onclick = () => show(b.dataset.fmt);
+    });
+    ov.classList.add('open');
+    show('a4');
   }
 
   // 1re page d'un PDF → image JPEG (≈150 dpi A4) pour servir de fond
