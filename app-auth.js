@@ -1405,9 +1405,19 @@
   }
   async function loadMaskManifest() {
     try {
-      const { data, error } = await sb.storage.from('shared').download(MASK_MANIFEST);
-      if (error || !data) return [];
-      const arr = JSON.parse(await data.text());
+      // lecture sans cache (URL signée + horodatage) : download() pouvait
+      // renvoyer l'ancien manifeste et faire « disparaître » un masque publié
+      let arr = null;
+      const s = await sb.storage.from('shared').createSignedUrl(MASK_MANIFEST, 60);
+      if (s.data && s.data.signedUrl) {
+        const r = await fetch(s.data.signedUrl + '&t=' + Date.now(), { cache: 'no-store' });
+        if (r.ok) arr = await r.json();
+      }
+      if (!arr) {
+        const { data, error } = await sb.storage.from('shared').download(MASK_MANIFEST);
+        if (error || !data) return [];
+        arr = JSON.parse(await data.text());
+      }
       return Array.isArray(arr.masks) ? arr.masks : [];
     } catch (e) { return []; }
   }
@@ -1417,9 +1427,12 @@
     if (error) throw error;
   }
 
-  async function refreshMasksList() {
+  // masks fourni = liste déjà connue (juste après publication/suppression) :
+  // évite de relire le manifeste, dont le téléchargement peut renvoyer
+  // l'ancienne version encore en cache
+  async function refreshMasksList(masks) {
     const host = el('masksList'); if (!host) return;
-    const masks = await loadMaskManifest();
+    if (!Array.isArray(masks)) masks = await loadMaskManifest();
     if (!masks.length) { host.innerHTML = '<div class="gempty">Aucun masque personnalisé publié.</div>'; return; }
     host.innerHTML = masks.map(m => `
       <div class="grow">
@@ -1478,8 +1491,8 @@
       el('maskName').value = ''; el('maskFilePdf').value = ''; el('maskNamePdf').textContent = '';
       el('maskFilePdfA5').value = ''; el('maskNamePdfA5').textContent = '';
       msg.className = 'gmsg ok'; msg.textContent = `Masque « ${name} » publié pour tous les magasins${p5 ? ' (A4 + A5)' : ' (A4 seul)'} ✓`;
-      refreshMasksList();
-      await loadCustomMasks(); // rafraîchit l'injection dans l'outil
+      refreshMasksList(masks);
+      await loadCustomMasks(masks); // rafraîchit l'injection dans l'outil
     } catch (e) {
       msg.className = 'gmsg err'; msg.textContent = 'Échec : ' + (e.message || e);
     } finally { btn.disabled = false; btn.textContent = '＋ Publier le masque'; }
@@ -1493,15 +1506,15 @@
       const keep = masks.filter(x => x.id !== id);
       await saveMaskManifest(keep);
       if (m) { try { await sb.storage.from('shared').remove([m.a4, m.a5].filter(Boolean)); } catch (e) {} }
-      refreshMasksList();
-      await loadCustomMasks();
+      refreshMasksList(keep);
+      await loadCustomMasks(keep);
       toast('Masque supprimé.');
     } catch (e) { toast('Échec de la suppression : ' + (e.message || e), true); }
   }
 
   // Client : télécharge les masques et les injecte dans l'outil Étiquettes
-  async function loadCustomMasks() {
-    const manifest = await loadMaskManifest();
+  async function loadCustomMasks(known) {
+    const manifest = Array.isArray(known) ? known : await loadMaskManifest();
     const out = [];
     for (const m of manifest) {
       try {
