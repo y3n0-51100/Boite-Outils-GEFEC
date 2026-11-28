@@ -3159,7 +3159,6 @@ window.gefecPlanOffers = async function (opts) {
      fmtTV, fmtPEM, printBg, onProgress
      all:true                toutes les offres en cours ou à venir à J (ignore sent / since)
      single:true             un seul PDF pour tous les plans
-     noValo:true             sans valorisation : toutes les offres des plans
    }
    -> { files:[{id,label,blob,pages,products}], items:[…], pages, products,
         operations:[noms], alerts:[{type,…}], refs }
@@ -3174,23 +3173,11 @@ window.gefecBuildAuto = async function (opts) {
   await ensureExportLibs();
   if (o.masks && o.masks.length) { try { applyCustomMasks(o.masks); } catch (e) {} }
 
-  // o.noValo : toutes les offres des plans, sans croisement avec un magasin
-  // (envoi « toutes les affiches » à l'administrateur)
-  if (!o.noValo) {
-    say('valo');
-    await handleValoFile(fileFromShell(o.valo, o.valoName || 'valorisation.pdf'));
-    if (!state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
-  }
+  say('valo');
+  await handleValoFile(fileFromShell(o.valo, o.valoName || 'valorisation.pdf'));
+  if (!state.storeKeys.size) throw new Error('valorisation illisible (aucune référence trouvée)');
 
   await loadExportPlans(o, say);
-
-  if (o.noValo) {
-    // « valorisation » fictive = tous les codes des plans TV / PEM ; le
-    // prochain magasin traité recharge la sienne (handleValoFile la remplace)
-    state.storeKeys = new Set(AUTO_PLANS.flatMap(t => state.plans[t].promoProducts.map(p => p.key)));
-    state.storeNames = new Map();
-    if (!state.storeKeys.size) throw new Error('aucune offre dans les plans TV / PEM publiés');
-  }
 
   say('match');
   const sent = new Set(o.sent || []);

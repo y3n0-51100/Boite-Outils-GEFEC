@@ -265,34 +265,57 @@
       OFFERS = [];
       setMsg('planMsg', 'err', 'Plans promo : ' + e.message);
     }
-    el('btnMailAll').disabled = busy || !OFFERS.length;
+    syncMailAll();
     renderSchedule();
   }
 
-  /* Toutes les affiches TV et PEM en cours et à venir, tous magasins
-     confondus (sans valorisation), envoyées à une adresse au choix */
+  /* Toutes les affiches TV et PEM en cours et à venir, croisées avec la
+     valorisation de CHAQUE magasin prêt (valo à jour + inscrit), envoyées
+     au magasin. Les affiches envoyées sont mémorisées : elles ne repartiront
+     pas le jour où leur offre démarre. */
+  const mailAllReady = () => STORES.filter(s => s.valo === 'ok' && s.auto);
+  async function deliverSplit(s, date, res) {
+    try { return [await E.deliver(s, date, res, { settings: SETTINGS })]; }
+    catch (e) {
+      // pièces jointes > 20 Mo : un mail par plan
+      if (res.files.length < 2 || !/trop lourdes/i.test(e.message || '')) throw e;
+      const out = [];
+      for (const f of res.files) {
+        const items = res.items.filter(i => i.plan === f.plan);
+        out.push(await E.deliver(s, date, { ...res, files: [f], items, products: f.products, pages: f.pages,
+          operations: [...new Set(items.map(i => i.operation).filter(Boolean))] }, { settings: SETTINGS }));
+      }
+      return out;
+    }
+  }
   async function mailAll() {
-    if (busy) return;
+    const targets = mailAllReady();
+    if (busy || !targets.length) return;
+    if (!confirm(`Envoyer à ${targets.length} magasin(s) TOUTES les affiches TV et PEM en cours et à venir présentes dans leur valorisation ?\nLes magasins sans valorisation à jour ou sans adresse sont ignorés.`)) return;
     const today = E.parisDate();
-    const n = OFFERS.filter(o => o.to && o.to >= today && o.check !== 'bloquant').length;
-    const to = (prompt(`Envoyer les affiches des ${n} offre(s) TV et PEM en cours et à venir.\nAdresse de réception :`,
-      (SETTINGS && SETTINGS.admin_email) || '') || '').trim();
-    if (!to) return;
-    if (!isMail(to)) { setMsg('mailAllMsg', 'err', 'Adresse e-mail invalide.'); return; }
     lock(true);
-    const say = (phase, i, k) => setMsg('mailAllMsg', 'warn', phase === 'pdf'
-      ? (k ? `Génération : affiche ${i}/${k}…` : 'Mise en page…') : 'Génération : ' + (PHASE[phase] || 'en cours…'));
-    try {
-      const res = await E.buildAllOffers(today, { onStep: say, operations: OPS, settings: SETTINGS });
-      if (!res.files.length) { setMsg('mailAllMsg', 'ok', 'Aucune offre TV ou PEM en cours ou à venir : aucun mail envoyé.'); return; }
-      setMsg('mailAllMsg', 'warn', `Envoi du mail à ${to}…`);
-      const d = await E.deliverAll(today, res, to);
-      const txt = `${res.products} affiche(s), ${res.pages} page(s) envoyée(s) à ${to}${d.mails > 1 ? ` en ${d.mails} mails (pièces jointes trop lourdes pour un seul)` : ''} ✓`;
-      setMsg('mailAllMsg', 'ok', txt);
-      toast('Toutes les affiches envoyées ✓');
-    } catch (e) {
-      setMsg('mailAllMsg', 'err', 'Échec : ' + e.message); toast('Échec : ' + e.message, true);
-    } finally { lock(false); }
+    let ok = 0, rien = 0, ko = 0, aff = 0;
+    for (const s of targets) {
+      setBar(s, 0);
+      try {
+        const res = await E.buildStore(s, today, { onStep: stepper(s), operations: OPS, settings: SETTINGS, all: true, ignoreSent: true });
+        setBar(s, null);
+        if (!res.files.length) { rien++; setStatus(s, 'ok', 'Aucune offre TV ou PEM en cours ou à venir dans sa valorisation : aucun mail.'); continue; }
+        setStatus(s, 'run', 'envoi du mail…');
+        const d = await deliverSplit(s, today, res);
+        ok++; aff += res.products;
+        setStatus(s, 'ok', `Toutes les affiches envoyées à ${d[0].to} — ${res.products} affiche(s), ${res.pages} page(s)${d.length > 1 ? ` en ${d.length} mails` : ''} ✓`);
+      } catch (e) { ko++; setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message); }
+    }
+    lock(false);
+    const txt = `${ok} magasin(s) servi(s), ${aff} affiche(s)${rien ? ` · ${rien} sans offre` : ''}${ko ? ` · ${ko} échec(s)` : ''}`;
+    setMsg('mailAllMsg', ko && !ok ? 'err' : 'ok', txt);
+    toast(txt, ko && !ok);
+  }
+  function syncMailAll() {
+    const n = mailAllReady().length;
+    el('btnMailAll').textContent = `✉️ Toutes les affiches TV & PEM (${n})`;
+    el('btnMailAll').disabled = busy || !n || !OFFERS.length;
   }
   function renderSchedule() {
     const host = el('schedule');
@@ -438,6 +461,7 @@
       inp.addEventListener('change', () => saveEmail(s, inp.value));
     });
     syncLegacyBulk();
+    syncMailAll();
   }
   const rowOf = (s) => el('stores').querySelector(`.store_item[data-id="${CSS.escape(String(s.id))}"]`);
   function setStatus(s, cls, txt) {
@@ -460,12 +484,12 @@
     busy = on;
     el('btnRunNow').disabled = on;
     el('btnReload').disabled = on;
-    el('btnMailAll').disabled = on || !OFFERS.length;
     el('stores').querySelectorAll('button').forEach(b => {
       const s = STORES.find(x => String(x.id) === b.closest('.store_item').dataset.id);
       b.disabled = on || (!b.hasAttribute('data-remind') && (!s || s.valo !== 'ok'));
     });
     syncLegacyBulk();
+    syncMailAll();
   }
 
   // « a@x.fr, b@y.fr » -> ['a@x.fr', 'b@y.fr'] (dédoublonné)
