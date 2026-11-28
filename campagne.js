@@ -271,8 +271,18 @@
   /* Envoi des affiches d'un magasin ; au-delà de 20 Mo de pièces jointes,
      un mail par plan. Les affiches envoyées sont mémorisées : elles ne
      repartiront pas le jour où leur offre démarre. */
+  /* objet et message propres à l'envoi « 🗂 Tout » (pas ceux du mail quotidien) */
+  const ALL_SUBJECT = 'Toutes vos affiches en cours et à venir — {plans} — {magasin}';
+  const ALL_MESSAGE = [
+    'Bonjour,', '',
+    'Voici toutes les affiches des offres en cours et à venir au {date} ({plans}) : {operations}.', '',
+    'Vous trouverez en pièces jointes {affiches} affiche(s) ({pages} page(s) à imprimer),',
+    'uniquement pour les produits présents dans votre valorisation.', '',
+    "Pensez à vérifier les dates de chaque offre avant de les poser en rayon.", '', 'Bonne vente,',
+  ].join('\n');
   async function deliverSplit(s, date, res) {
-    try { return [await E.deliver(s, date, res, { settings: SETTINGS })]; }
+    const settings = { ...SETTINGS, subject: ALL_SUBJECT, message: ALL_MESSAGE };
+    try { return [await E.deliver(s, date, res, { settings })]; }
     catch (e) {
       // pièces jointes > 20 Mo : un mail par plan
       if (res.files.length < 2 || !/trop lourdes/i.test(e.message || '')) throw e;
@@ -280,7 +290,7 @@
       for (const f of res.files) {
         const items = res.items.filter(i => i.plan === f.plan);
         out.push(await E.deliver(s, date, { ...res, files: [f], items, products: f.products, pages: f.pages,
-          operations: [...new Set(items.map(i => i.operation).filter(Boolean))] }, { settings: SETTINGS }));
+          operations: [...new Set(items.map(i => i.operation).filter(Boolean))] }, { settings }));
       }
       return out;
     }
