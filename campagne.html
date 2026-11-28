@@ -325,8 +325,12 @@ textarea.form_input{resize:vertical;line-height:1.55;min-height:150px}
           <div class="card_title">Prochains envois</div>
           <div class="card_desc">Offres des plans TV et PEM publiés, par jour de démarrage. Chaque magasin ne reçoit que les références présentes dans sa valorisation, et jamais deux fois la même affiche.</div>
         </div>
-        <div class="card_tools"><span class="msg" id="planMsg"></span></div>
+        <div class="card_tools">
+          <span class="msg" id="planMsg"></span>
+          <button class="button is-primary" id="btnMailAll" type="button" disabled title="Envoie par mail les affiches de toutes les offres TV et PEM en cours et à venir, tous magasins confondus">✉️ Envoyer toutes les affiches TV &amp; PEM</button>
+        </div>
       </div>
+      <div class="msg" id="mailAllMsg" style="margin-bottom:12px"></div>
       <div class="schedule_list" id="schedule"><div class="empty">Chargement…</div></div>
     </div>
 

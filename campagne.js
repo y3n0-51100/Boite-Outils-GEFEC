@@ -265,7 +265,34 @@
       OFFERS = [];
       setMsg('planMsg', 'err', 'Plans promo : ' + e.message);
     }
+    el('btnMailAll').disabled = busy || !OFFERS.length;
     renderSchedule();
+  }
+
+  /* Toutes les affiches TV et PEM en cours et à venir, tous magasins
+     confondus (sans valorisation), envoyées à une adresse au choix */
+  async function mailAll() {
+    if (busy) return;
+    const today = E.parisDate();
+    const n = OFFERS.filter(o => o.to && o.to >= today && o.check !== 'bloquant').length;
+    const to = (prompt(`Envoyer les affiches des ${n} offre(s) TV et PEM en cours et à venir.\nAdresse de réception :`,
+      (SETTINGS && SETTINGS.admin_email) || '') || '').trim();
+    if (!to) return;
+    if (!isMail(to)) { setMsg('mailAllMsg', 'err', 'Adresse e-mail invalide.'); return; }
+    lock(true);
+    const say = (phase, i, k) => setMsg('mailAllMsg', 'warn', phase === 'pdf'
+      ? (k ? `Génération : affiche ${i}/${k}…` : 'Mise en page…') : 'Génération : ' + (PHASE[phase] || 'en cours…'));
+    try {
+      const res = await E.buildAllOffers(today, { onStep: say, operations: OPS, settings: SETTINGS });
+      if (!res.files.length) { setMsg('mailAllMsg', 'ok', 'Aucune offre TV ou PEM en cours ou à venir : aucun mail envoyé.'); return; }
+      setMsg('mailAllMsg', 'warn', `Envoi du mail à ${to}…`);
+      const d = await E.deliverAll(today, res, to);
+      const txt = `${res.products} affiche(s), ${res.pages} page(s) envoyée(s) à ${to}${d.mails > 1 ? ` en ${d.mails} mails (pièces jointes trop lourdes pour un seul)` : ''} ✓`;
+      setMsg('mailAllMsg', 'ok', txt);
+      toast('Toutes les affiches envoyées ✓');
+    } catch (e) {
+      setMsg('mailAllMsg', 'err', 'Échec : ' + e.message); toast('Échec : ' + e.message, true);
+    } finally { lock(false); }
   }
   function renderSchedule() {
     const host = el('schedule');
@@ -433,6 +460,7 @@
     busy = on;
     el('btnRunNow').disabled = on;
     el('btnReload').disabled = on;
+    el('btnMailAll').disabled = on || !OFFERS.length;
     el('stores').querySelectorAll('button').forEach(b => {
       const s = STORES.find(x => String(x.id) === b.closest('.store_item').dataset.id);
       b.disabled = on || (!b.hasAttribute('data-remind') && (!s || s.valo !== 'ok'));
@@ -777,6 +805,7 @@
     el('setSave').addEventListener('click', saveSettingsUI);
     el('btnRunNow').addEventListener('click', runNow);
     el('btnAllLegacy').addEventListener('click', legacyAll);
+    el('btnMailAll').addEventListener('click', mailAll);
 
     sb = getSb();
     if (!sb) { guard('<b>Configuration Supabase manquante.</b><br>Vérifiez <code>app-config.js</code>.'); return; }

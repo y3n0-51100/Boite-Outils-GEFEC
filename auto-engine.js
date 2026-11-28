@@ -32,6 +32,7 @@
   const BASE_PHOTO_MAX_DAYS = 45;   // au-delà, les éco-participations de la base Excel sont réputées périmées
   const AFF_BUCKET = 'affiches';
   const PACK_DAYS = 7;   // validité du lien « toutes les offres » du mail quotidien
+  const ADMIN_DIR = 'tous-magasins';   // dossier des affiches « toutes les offres » envoyées à l'admin
 
   const DEFAULT_SUBJECT = 'Affiches à mettre en place le {date} — {operations} — {magasin}';
   const DEFAULT_MESSAGE = [
@@ -343,6 +344,58 @@
         { download: `affiches-toutes-offres-${slugify(store.name || store.id)}-${date}.pdf` });
       if (error || !data || !data.signedUrl) throw new Error('lien du pack : ' + ((error && error.message) || 'indisponible'));
       return { url: data.signedUrl, products: res.products, pages: res.pages };
+    }
+
+    /* ---------- Toutes les affiches TV / PEM, tous magasins confondus ----------
+       Offres en cours ou à venir à J, sans valorisation ni historique :
+       un PDF par plan, au masque de l'opération commerciale. */
+    async function buildAllOffers(date, o) {
+      o = o || {};
+      const [plans, masks, ops, settings] = await Promise.all([
+        planFiles(), loadMasks(), o.operations || loadOperations(), o.settings || loadSettings(),
+      ]);
+      if (!plans.count) throw new Error('aucun plan promo TV ou PEM publié');
+      const w = await genWin();
+      return w.gefecBuildAuto({
+        noValo: true, all: true, sent: [],
+        plans: plans.plans, plansToken: plans.token, masks,
+        date, operations: ops, fmtTV: 'a4', fmtPEM: 'a4',
+        printBg: settings.print_bg, onProgress: o.onStep,
+      });
+    }
+
+    /* Envoi de ces affiches à une adresse (l'administrateur) : un seul mail,
+       ou un mail par plan si les pièces jointes dépassent la limite */
+    async function deliverAll(date, res, to) {
+      if (!isMail(to)) throw new Error('adresse du destinataire invalide');
+      await localBlobs(res);
+      const files = [];
+      for (const f of res.files) {
+        const path = `${ADMIN_DIR}/campagne/toutes-offres-${f.plan}.pdf`;
+        const { error } = await sb.storage.from(AFF_BUCKET).upload(path, f.blob, { upsert: true, contentType: 'application/pdf' });
+        if (error) throw new Error('dépôt du PDF : ' + error.message);
+        files.push({ path, label: f.label, pages: f.pages, products: f.products,
+          filename: `affiches-${f.plan}-toutes-offres-${date}.pdf` });
+      }
+      const send = (list) => {
+        const n = list.reduce((k, f) => k + f.products, 0), pages = list.reduce((k, f) => k + f.pages, 0);
+        return sendMail({
+          to, store_id: ADMIN_DIR, store_name: 'Tous magasins',
+          subject: `Toutes les affiches ${list.map(f => f.label).join(' + ')} en cours et à venir — ${frDate(date)}`,
+          message: [
+            'Bonjour,', '',
+            `Voici toutes les affiches des offres en cours et à venir au ${frDate(date)} (${list.map(f => f.label).join(' + ')}), tous magasins confondus.`,
+            `${n} affiche(s), ${pages} page(s)${res.operations.length ? ` — ${res.operations.join(' + ')}` : ''}.`,
+          ].join('\n'),
+          files: list,
+        });
+      };
+      try { await send(files); return { mails: 1, files }; }
+      catch (e) {
+        if (files.length < 2 || !/trop lourdes/i.test(e.message || '')) throw e;
+        for (const f of files) await send([f]);
+        return { mails: files.length, files };
+      }
     }
 
     /* PDF d'un AUTRE realm (cadre générateur) : reconstruits ici */
@@ -661,7 +714,7 @@
       parisDate, parisHour, addDays, frDate, isMail, slugify, alertText,
       loadSettings, saveSettings, loadOperations, saveOperation, deleteOperation,
       loadStores, planFiles, loadMasks, resetCaches, planOffers, sentKeys,
-      buildStore, buildPack, localBlobs, deliver, runDay, sendMail, genWin, sendValoReminders,
+      buildStore, buildPack, buildAllOffers, deliverAll, localBlobs, deliver, runDay, sendMail, genWin, sendValoReminders,
       VALO_MAX_DAYS, DEFAULT_SUBJECT, DEFAULT_MESSAGE, PLAN_LABEL,
     };
   }
