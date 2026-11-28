@@ -334,16 +334,14 @@ textarea.form_input{resize:vertical;line-height:1.55;min-height:150px}
       <div class="card_head">
         <div>
           <div class="card_title">Magasins</div>
-          <div class="card_desc">« Aperçu » télécharge les affiches qu'un magasin recevra le jour choisi. « Envoyer maintenant » envoie ce qui est à mettre en place aujourd'hui et pas encore parti.</div>
+          <div class="card_desc">« Aperçu » télécharge les affiches qu'un magasin recevra le jour choisi. « Envoyer maintenant » envoie ce qui est à mettre en place aujourd'hui et pas encore parti. « 🗂 Tout » envoie toutes les affiches TV et PEM en cours et à venir de sa valorisation.</div>
         </div>
         <div class="card_tools">
           <label class="form_field" style="flex-direction:row;align-items:center;gap:8px">Jour
             <input class="form_input" type="date" id="previewDate" style="width:auto"></label>
           <button class="button is-primary" id="btnRunNow" type="button">▶️ Lancer la tournée du jour</button>
-          <button class="button is-primary" id="btnMailAll" type="button" disabled title="Envoie à chaque magasin prêt toutes les affiches TV et PEM en cours et à venir présentes dans sa valorisation">✉️ Toutes les affiches TV &amp; PEM</button>
         </div>
       </div>
-      <div class="msg" id="mailAllMsg" style="margin-bottom:12px"></div>
       <div class="pills" id="pills"></div>
       <div class="store_list" id="stores"><div class="empty">Chargement…</div></div>
     </div>

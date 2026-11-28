@@ -265,15 +265,12 @@
       OFFERS = [];
       setMsg('planMsg', 'err', 'Plans promo : ' + e.message);
     }
-    syncMailAll();
     renderSchedule();
   }
 
-  /* Toutes les affiches TV et PEM en cours et à venir, croisées avec la
-     valorisation de CHAQUE magasin prêt (valo à jour + inscrit), envoyées
-     au magasin. Les affiches envoyées sont mémorisées : elles ne repartiront
-     pas le jour où leur offre démarre. */
-  const mailAllReady = () => STORES.filter(s => s.valo === 'ok' && s.auto);
+  /* Envoi des affiches d'un magasin ; au-delà de 20 Mo de pièces jointes,
+     un mail par plan. Les affiches envoyées sont mémorisées : elles ne
+     repartiront pas le jour où leur offre démarre. */
   async function deliverSplit(s, date, res) {
     try { return [await E.deliver(s, date, res, { settings: SETTINGS })]; }
     catch (e) {
@@ -288,34 +285,29 @@
       return out;
     }
   }
-  async function mailAll() {
-    const targets = mailAllReady();
-    if (busy || !targets.length) return;
-    if (!confirm(`Envoyer à ${targets.length} magasin(s) TOUTES les affiches TV et PEM en cours et à venir présentes dans leur valorisation ?\nLes magasins sans valorisation à jour ou sans adresse sont ignorés.`)) return;
+  /* Bouton « 🗂 Tout » d'un magasin : toutes ses affiches TV et PEM en cours
+     et à venir, selon sa valorisation */
+  async function mailAll(s) {
+    if (busy) return;
+    if (s.valo !== 'ok') { setStatus(s, 'ko', 'Valorisation absente ou périmée : rien envoyé.'); return; }
+    const list = mailsOf(s);
+    if (!list.length) { setStatus(s, 'ko', 'Adresse e-mail du magasin manquante.'); return; }
+    if (!await saveEmail(s, list.join(','))) return;
+    if (s.mail_enabled === false) { setStatus(s, 'ko', 'Le magasin a désactivé la réception des mails.'); return; }
+    if (!confirm(`Envoyer à ${s.name || s.id} TOUTES les affiches TV et PEM en cours et à venir présentes dans sa valorisation ?`)) return;
     const today = E.parisDate();
-    lock(true);
-    let ok = 0, rien = 0, ko = 0, aff = 0;
-    for (const s of targets) {
-      setBar(s, 0);
-      try {
-        const res = await E.buildStore(s, today, { onStep: stepper(s), operations: OPS, settings: SETTINGS, all: true, ignoreSent: true });
-        setBar(s, null);
-        if (!res.files.length) { rien++; setStatus(s, 'ok', 'Aucune offre TV ou PEM en cours ou à venir dans sa valorisation : aucun mail.'); continue; }
-        setStatus(s, 'run', 'envoi du mail…');
-        const d = await deliverSplit(s, today, res);
-        ok++; aff += res.products;
-        setStatus(s, 'ok', `Toutes les affiches envoyées à ${d[0].to} — ${res.products} affiche(s), ${res.pages} page(s)${d.length > 1 ? ` en ${d.length} mails` : ''} ✓`);
-      } catch (e) { ko++; setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message); }
-    }
-    lock(false);
-    const txt = `${ok} magasin(s) servi(s), ${aff} affiche(s)${rien ? ` · ${rien} sans offre` : ''}${ko ? ` · ${ko} échec(s)` : ''}`;
-    setMsg('mailAllMsg', ko && !ok ? 'err' : 'ok', txt);
-    toast(txt, ko && !ok);
-  }
-  function syncMailAll() {
-    const n = mailAllReady().length;
-    el('btnMailAll').textContent = `✉️ Toutes les affiches TV & PEM (${n})`;
-    el('btnMailAll').disabled = busy || !n || !OFFERS.length;
+    lock(true); setBar(s, 0);
+    try {
+      const res = await E.buildStore(s, today, { onStep: stepper(s), operations: OPS, settings: SETTINGS, all: true, ignoreSent: true });
+      setBar(s, null);
+      if (!res.files.length) { setStatus(s, 'ok', 'Aucune offre TV ou PEM en cours ou à venir dans sa valorisation : aucun mail.'); return; }
+      setStatus(s, 'run', `envoi du mail à ${list.join(', ')}…`);
+      const d = await deliverSplit(s, today, res);
+      setStatus(s, 'ok', `Toutes les affiches envoyées à ${d[0].to} — ${res.products} affiche(s), ${res.pages} page(s)${d.length > 1 ? ` en ${d.length} mails` : ''} ✓`);
+      toast(`Toutes les affiches envoyées à ${s.name || s.id} ✓`);
+    } catch (e) {
+      setBar(s, null); setStatus(s, 'ko', 'Échec : ' + e.message); toast('Échec : ' + e.message, true);
+    } finally { lock(false); }
   }
   function renderSchedule() {
     const host = el('schedule');
@@ -444,6 +436,7 @@
           ${s.valo !== 'ok' ? '<button class="button is-small" data-remind type="button">🔔 Relancer</button>' : ''}
           <button class="button is-small" data-preview type="button"${blocked ? ' disabled' : ''} title="Télécharger les affiches du jour choisi">👁 Aperçu</button>
           <button class="button is-small is-primary" data-send type="button"${blocked ? ' disabled' : ''}>✉️ Envoyer maintenant</button>
+          <button class="button is-small" data-all type="button"${blocked ? ' disabled' : ''} title="Toutes les affiches TV et PEM en cours et à venir, selon sa valorisation">🗂 Tout</button>
           <button class="button is-small" data-legacy type="button"${blocked ? ' disabled' : ''} title="Campagne complète (ancien mode)">📦</button>
         </div>
         <div class="progress_bar" hidden><i></i></div>
@@ -455,13 +448,13 @@
       row.querySelector('[data-preview]').addEventListener('click', () => preview(s));
       row.querySelector('[data-send]').addEventListener('click', () => sendNow(s));
       row.querySelector('[data-legacy]').addEventListener('click', () => legacyOne(s));
+      row.querySelector('[data-all]').addEventListener('click', () => mailAll(s));
       const r = row.querySelector('[data-remind]');
       if (r) r.addEventListener('click', () => remind(s));
       const inp = row.querySelector('[data-mail]');
       inp.addEventListener('change', () => saveEmail(s, inp.value));
     });
     syncLegacyBulk();
-    syncMailAll();
   }
   const rowOf = (s) => el('stores').querySelector(`.store_item[data-id="${CSS.escape(String(s.id))}"]`);
   function setStatus(s, cls, txt) {
@@ -489,7 +482,6 @@
       b.disabled = on || (!b.hasAttribute('data-remind') && (!s || s.valo !== 'ok'));
     });
     syncLegacyBulk();
-    syncMailAll();
   }
 
   // « a@x.fr, b@y.fr » -> ['a@x.fr', 'b@y.fr'] (dédoublonné)
@@ -829,7 +821,6 @@
     el('setSave').addEventListener('click', saveSettingsUI);
     el('btnRunNow').addEventListener('click', runNow);
     el('btnAllLegacy').addEventListener('click', legacyAll);
-    el('btnMailAll').addEventListener('click', mailAll);
 
     sb = getSb();
     if (!sb) { guard('<b>Configuration Supabase manquante.</b><br>Vérifiez <code>app-config.js</code>.'); return; }
